@@ -276,9 +276,21 @@ class SensorClientApp(QWidget):
             self, "Server Error", f"Status Code: {response.status_code}\n{response.text}"
         )
 
+  def show_disconnect_popup(self):
+    if hasattr(self, '_disconnect_shown') and self._disconnect_shown:
+      return
+    self._disconnect_shown = True
+    reply = QMessageBox.critical(
+        self, "Error", "Error, disconnected to server. Please wait...",
+        QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
+    )
+    self._disconnect_shown = False
+    if reply == QMessageBox.StandardButton.Ok:
+      QApplication.quit()
+
   def on_send_error(self, msg):
     self.append_log("ERROR | Disconnected to server. Please wait...")
-    QMessageBox.critical(self, "Connection Error", "Error, disconnected to server. Please wait...")
+    self.show_disconnect_popup()
 
   def fetch_logs(self, silent=False):
     url = self.url_entry.text().strip()
@@ -302,7 +314,7 @@ class SensorClientApp(QWidget):
 
   def on_fetch_error(self, msg):
     self.append_log("ERROR | Disconnected to server. Please wait...")
-    QMessageBox.critical(self, "Connection Error", "Error, disconnected to server. Please wait...")
+    self.show_disconnect_popup()
 
   def draw_line_chart(self, data):
     self.figure.clear()

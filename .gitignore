@@ -33,3 +33,39 @@ temp/
 .cache/
 __pycache__/
 *.tmp
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+a.txt
+app2.py
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build and coverage output
+dist/
+build/
+coverage/
+tmp/
+temp/
+
+# Cache files
+.cache/
+__pycache__/
+*.tmp

@@ -137,6 +137,74 @@ h1 {
     box-shadow: 0 8px 24px rgba(35, 53, 85, .06)
 }
 
+.chart-panel {
+    margin-bottom: 24px
+}
+
+.chart-legend {
+    display: flex;
+    gap: 16px;
+    color: #667085;
+    font-size: 13px;
+    font-weight: 700
+}
+
+.chart-legend span::before {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    margin-right: 6px;
+    border-radius: 50%;
+    content: ""
+}
+
+.legend-temperature::before { background: #e56a54 }
+.legend-humidity::before { background: #3d7ee8 }
+
+.stale-warning {
+    margin: 16px 24px 0;
+    padding: 12px 14px;
+    border: 1px solid #f2b7b7;
+    border-radius: 10px;
+    background: #fff0f0;
+    color: #b42318;
+    font-size: 14px;
+    font-weight: 700
+}
+
+.top-warning {
+    margin: -8px 0 24px
+}
+
+.chart-wrap {
+    height: 400px;
+    padding: 16px 18px 8px
+}
+
+.chart-wrap svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible
+}
+
+.chart-empty {
+    padding: 70px 24px;
+    color: #8994a7;
+    text-align: center
+}
+
+.chart-grid { stroke: #e9edf4; stroke-width: 1 }
+.chart-line { fill: none; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round }
+.temperature-line { stroke: #e56a54 }
+.humidity-line { stroke: #3d7ee8 }
+.chart-dot { stroke: #fff; stroke-width: 2 }
+.temperature-dot { fill: #e56a54 }
+.humidity-dot { fill: #3d7ee8 }
+.chart-axis, .chart-label { fill: #7d889b; font-family: Inter, "Segoe UI", Arial, sans-serif; font-size: 11px }
+.temp-axis { fill: #d45641 }
+.humidity-axis { fill: #2e6fcf }
+
 .panel-header {
     display: flex;
     align-items: center;
@@ -214,6 +282,36 @@ th {
     letter-spacing: .6px
 }
 
+.sort-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit
+}
+
+.sort-button:hover,
+.sort-button:focus-visible {
+    background: transparent;
+    color: #5271ff
+}
+
+.sort-button:focus-visible {
+    outline: 2px solid #5271ff;
+    outline-offset: 3px
+}
+
+.sort-indicator {
+    font-size: 14px;
+    line-height: 1
+}
+
 td {
     font-size: 14px
 }
@@ -268,6 +366,16 @@ footer {
     .panel-header {
         align-items: flex-start;
         flex-direction: column
+    }
+
+    .chart-legend {
+        gap: 12px
+    }
+
+    .chart-wrap {
+        height: 330px;
+        padding-right: 12px;
+        padding-left: 12px
     }
 
     th,

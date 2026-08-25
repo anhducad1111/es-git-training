@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('Asia/Ho_Chi_Minh');
 header("Content-Type: application/json; charset=UTF-8");
 $host = "localhost";
 $dbname = "mini_db";
@@ -15,7 +16,7 @@ $method = $_SERVER["REQUEST_METHOD"];
 if ($method === "GET") {
   try {
     $stmt = $pdo->query("SELECT id, device_name, temperature, humidity, created_at FROM sensor_logs ORDER BY created_at DESC, id DESC LIMIT 10");
-    echo json_encode(["success" => true, "data" => $stmt->fetchAll()], JSON_UNESCAPED_UNICODE);
+    echo json_encode(["success" => true, "data" => $stmt->fetchAll(), "server_time" => date("Y-m-d H:i:s")], JSON_UNESCAPED_UNICODE);
   } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(["success" => false, "message" => "Failed to fetch sensor data"]);

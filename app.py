@@ -1,5 +1,6 @@
-import sys
+﻿import sys
 import requests
+from datetime import datetime
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
@@ -11,11 +12,12 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSlider,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
     QSizePolicy,
 )
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 
 class SensorClientApp(QWidget):
@@ -26,41 +28,30 @@ class SensorClientApp(QWidget):
 
   def init_ui(self):
     self.setWindowTitle("Haru - Sensor Logger Client")
-    self.resize(1000, 500)  
+    self.resize(1000, 500)
 
-    # --- メインレイアウト (水平) ---
     main_layout = QHBoxLayout(self)
     main_layout.setContentsMargins(20, 20, 20, 20)
     main_layout.setSpacing(10)
 
-    # --- 左側のレイアウト (垂直) ---
     left_layout = QVBoxLayout()
     left_layout.setSpacing(10)
 
-    # 1. 接続設定エリア (左上)
     left_layout.addWidget(self.create_config_group())
-
-    # 2. センサーデータ入力エリア (左下)
-    # こちらは縦に伸びてほしくないので、スペーサーを追加して調整
     left_layout.addWidget(self.create_input_group())
-    left_layout.addStretch()  # 下部の余白を詰める
+    left_layout.addStretch()
 
-    # --- 右側のレイアウト (右側全体) ---
-    # こちらは縦横に伸びてほしい
-    log_group = self.create_log_group()
-    # 右側のグループボックスが左側の2倍くらいの幅になるように比率を設定
-    # (左:1, 右:2 の比率)
+    chart_group = self.create_chart_group()
+
     main_layout.addLayout(left_layout, stretch=1)
-    main_layout.addWidget(log_group, stretch=2)
-
-  # 各エリアを作成するメソッドを整理しました
+    main_layout.addWidget(chart_group, stretch=2)
 
   def create_config_group(self):
-    group = QGroupBox("Server Configuration") 
+    group = QGroupBox("Server Configuration")
     layout = QFormLayout()
     layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-    self.url_entry = QLineEdit("http://192.168.1.100/api/log.php")
+    self.url_entry = QLineEdit("http://192.168.2.68/shodai-api/api/log.php")
     self.device_entry = QLineEdit("Haru-Client")
 
     layout.addRow(QLabel("API URL:"), self.url_entry)
@@ -72,24 +63,22 @@ class SensorClientApp(QWidget):
     group = QGroupBox("Sensor Data input")
     layout = QVBoxLayout()
 
-    # 温度スライダー
     temp_box = QWidget()
     temp_layout = QHBoxLayout(temp_box)
-    temp_layout.setContentsMargins(0,0,0,0)
-    temp_layout.addWidget(QLabel("Temp (°C):"))
+    temp_layout.setContentsMargins(0, 0, 0, 0)
+    temp_layout.addWidget(QLabel("Temp (C):"))
     self.temp_slider = QSlider(Qt.Orientation.Horizontal)
     self.temp_slider.setRange(-100, 500)
     self.temp_slider.setValue(250)
     self.temp_slider.valueChanged.connect(self.update_temp_label)
     temp_layout.addWidget(self.temp_slider)
-    self.temp_val_label = QLabel("25.0°C")
+    self.temp_val_label = QLabel("25.0C")
     self.temp_val_label.setFixedWidth(50)
     temp_layout.addWidget(self.temp_val_label)
 
-    # 湿度スライダー
     humi_box = QWidget()
     humi_layout = QHBoxLayout(humi_box)
-    humi_layout.setContentsMargins(0,0,0,0)
+    humi_layout.setContentsMargins(0, 0, 0, 0)
     humi_layout.addWidget(QLabel("Humidity (%):"))
     self.humi_slider = QSlider(Qt.Orientation.Horizontal)
     self.humi_slider.setRange(0, 100)
@@ -100,7 +89,6 @@ class SensorClientApp(QWidget):
     self.humi_val_label.setFixedWidth(50)
     humi_layout.addWidget(self.humi_val_label)
 
-    # 送信ボタン
     self.send_btn = QPushButton("Send Data (POST)")
     self.send_btn.setStyleSheet(
         "background-color: #4CAF50; color: white; font-weight: bold; padding: 5px;"
@@ -113,31 +101,28 @@ class SensorClientApp(QWidget):
     group.setLayout(layout)
     return group
 
-  def create_log_group(self):
-    group = QGroupBox("Server logs(Latest 10)")
+  def create_chart_group(self):
+    group = QGroupBox("Temperature & Humidity History")
     layout = QVBoxLayout()
 
-    self.refresh_btn = QPushButton("Refresh List (GET)")
+    self.refresh_btn = QPushButton("Refresh Chart (GET)")
     self.refresh_btn.setStyleSheet(
         "background-color: #2196F3; color: white; padding: 5px;"
     )
     self.refresh_btn.clicked.connect(self.fetch_logs)
 
-    self.log_text = QTextEdit()
-    self.log_text.setReadOnly(True)
-    self.log_text.setStyleSheet("font-family: Consolas; font-size: 9pt;")
-
-    self.log_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    self.figure = Figure(figsize=(5, 4), dpi=100, tight_layout=True)
+    self.canvas = FigureCanvas(self.figure)
+    self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     layout.addWidget(self.refresh_btn)
-    layout.addWidget(self.log_text)
+    layout.addWidget(self.canvas)
     group.setLayout(layout)
     return group
 
-
   def update_temp_label(self, value):
     actual_value = value / 10.0
-    self.temp_val_label.setText(f"{actual_value:.1f}°C")
+    self.temp_val_label.setText(f"{actual_value:.1f}C")
 
   def update_humi_label(self, value):
     self.humi_val_label.setText(f"{value}%")
@@ -148,14 +133,14 @@ class SensorClientApp(QWidget):
     try:
         temp = self.temp_slider.value() / 10.0
         humidity = self.humi_slider.value()
-    except AttributeError: # 初期化エラー防止
+    except AttributeError:
         temp = 25.0
         humidity = 60
 
     payload = {"device": device, "temp": temp, "humidity": humidity}
 
     try:
-      response = requests.post(url, json=payload, timeout=3) # タイムアウト短縮
+      response = requests.post(url, json=payload, timeout=10)
       if response.status_code == 200:
         QMessageBox.information(
             self, "Success", f"Data sent successfully!\nResponse: {response.text}"
@@ -175,29 +160,56 @@ class SensorClientApp(QWidget):
   def fetch_logs(self):
     url = self.url_entry.text().strip()
     try:
-      response = requests.get(url, timeout=3)
+      response = requests.get(url, timeout=10)
       if response.status_code == 200:
         try:
-          data = response.json()
-          self.log_text.clear()
-
-          if isinstance(data, list):
-            for row in data:
-              log_str = (
-                  f"[{row.get('created_at', 'N/A')}] "
-                  f"Device: {row.get('device_name', 'Unknown')} | "
-                  f"Temp: {row.get('temp', row.get('temperature', 'N/A'))}°C | "
-                  f"Hum: {row.get('humidity', 'N/A')}%\n"
-              )
-              self.log_text.append(log_str)
-          else:
-            self.log_text.setPlainText(str(data))
+          result = response.json()
+          data = result.get("data", result) if isinstance(result, dict) else result
+          self.draw_line_chart(data)
         except ValueError:
-          self.log_text.setPlainText(response.text)
-      else:
-         self.log_text.setPlainText(f"Error: {response.status_code}")
+          pass
     except requests.exceptions.RequestException as e:
-      self.log_text.setPlainText(f"Connection Failed: {e}")
+      QMessageBox.critical(self, "Connection Error", f"Failed to connect:\n{e}")
+
+  def draw_line_chart(self, data):
+    self.figure.clear()
+    if not isinstance(data, list) or len(data) == 0:
+      ax = self.figure.add_subplot(111)
+      ax.text(0.5, 0.5, "No data available", ha="center", va="center", fontsize=14)
+      self.canvas.draw()
+      return
+
+    data_sorted = sorted(data, key=lambda r: r.get("created_at", ""))
+    timestamps = [row.get("created_at", "") for row in data_sorted]
+    short_labels = []
+    for t in timestamps:
+      try:
+        dt = datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
+        short_labels.append(dt.strftime("%m/%d %H:%M"))
+      except Exception:
+        short_labels.append(t)
+
+    temps = [row.get("temperature", row.get("temp", 0)) for row in data_sorted]
+    hums = [row.get("humidity", 0) for row in data_sorted]
+
+    ax1 = self.figure.add_subplot(111)
+    ax2 = ax1.twinx()
+
+    line1, = ax1.plot(short_labels, temps, "o-", color="#E53935", label="Temp (C)")
+    line2, = ax2.plot(short_labels, hums, "s--", color="#1E88E5", label="Humidity (%)")
+
+    ax1.set_xlabel("Time")
+    ax1.set_ylabel("Temperature (C)", color="#E53935")
+    ax2.set_ylabel("Humidity (%)", color="#1E88E5")
+    ax1.set_title("Sensor Data History")
+    ax1.tick_params(axis="x", rotation=45)
+
+    lines = [line1, line2]
+    labels = [l.get_label() for l in lines]
+    ax1.legend(lines, labels, loc="upper left")
+
+    self.figure.tight_layout()
+    self.canvas.draw()
 
 
 if __name__ == "__main__":

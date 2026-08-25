@@ -1,11 +1,11 @@
 ﻿import sys
 import math
 import random
-import requests
 from datetime import datetime
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -17,32 +17,9 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
-    QSizePolicy,
 )
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-
-
-class Worker(QThread):
-  finished = pyqtSignal(str, object)
-  error = pyqtSignal(str)
-
-  def __init__(self, task, url, payload=None):
-    super().__init__()
-    self.task = task
-    self.url = url
-    self.payload = payload
-
-  def run(self):
-    try:
-      if self.task == "post":
-        response = requests.post(self.url, json=self.payload, timeout=10)
-        self.finished.emit("post", response)
-      elif self.task == "get":
-        response = requests.get(self.url, timeout=10)
-        self.finished.emit("get", response)
-    except requests.exceptions.RequestException as e:
-      self.error.emit(str(e))
+from worker import Worker
+from chart import ChartWidget
 
 
 class SensorClientApp(QWidget):
@@ -69,10 +46,14 @@ class SensorClientApp(QWidget):
     left_layout.addWidget(self.create_input_group())
     left_layout.addStretch()
 
-    chart_group = self.create_chart_group()
+    self.chart_widget = ChartWidget(on_refresh=self.fetch_logs)
+
+    right_layout = QVBoxLayout()
+    right_layout.addWidget(self.chart_widget)
+    right_layout.addWidget(self.create_upload_group())
 
     main_layout.addLayout(left_layout, stretch=1)
-    main_layout.addWidget(chart_group, stretch=2)
+    main_layout.addLayout(right_layout, stretch=2)
 
   def create_config_group(self):
     group = QGroupBox("Server Configuration")
@@ -157,24 +138,71 @@ class SensorClientApp(QWidget):
     group.setLayout(layout)
     return group
 
-  def create_chart_group(self):
-    group = QGroupBox("Temperature & Humidity History")
+  def create_upload_group(self):
+    group = QGroupBox("File Upload (WiFi)")
     layout = QVBoxLayout()
 
-    self.refresh_btn = QPushButton("Refresh Chart (GET)")
-    self.refresh_btn.setStyleSheet(
-        "background-color: #2196F3; color: white; padding: 5px;"
+    url_layout = QHBoxLayout()
+    url_layout.addWidget(QLabel("Upload URL:"))
+    self.upload_url_entry = QLineEdit("http://192.168.2.68/shodai-api/api/upload.php")
+    url_layout.addWidget(self.upload_url_entry)
+    layout.addLayout(url_layout)
+
+    self.file_path_label = QLabel("No file selected")
+    self.file_path_label.setStyleSheet("color: gray;")
+    layout.addWidget(self.file_path_label)
+
+    btn_layout = QHBoxLayout()
+    self.select_btn = QPushButton("Select File")
+    self.select_btn.setStyleSheet(
+        "background-color: #FF9800; color: white; font-weight: bold; padding: 5px;"
     )
-    self.refresh_btn.clicked.connect(self.fetch_logs)
+    self.select_btn.clicked.connect(self.select_file)
 
-    self.figure = Figure(figsize=(5, 4), dpi=100, tight_layout=True)
-    self.canvas = FigureCanvas(self.figure)
-    self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    self.upload_btn = QPushButton("Upload")
+    self.upload_btn.setStyleSheet(
+        "background-color: #9C27B0; color: white; font-weight: bold; padding: 5px;"
+    )
+    self.upload_btn.clicked.connect(self.upload_file)
+    self.upload_btn.setEnabled(False)
 
-    layout.addWidget(self.refresh_btn)
-    layout.addWidget(self.canvas)
+    btn_layout.addWidget(self.select_btn)
+    btn_layout.addWidget(self.upload_btn)
+    layout.addLayout(btn_layout)
+
     group.setLayout(layout)
     return group
+
+  def select_file(self):
+    file_path, _ = QFileDialog.getOpenFileName(self, "Select File")
+    if file_path:
+      self._upload_file_path = file_path
+      fname = file_path.split("/")[-1].split("\\")[-1]
+      self.file_path_label.setText(fname)
+      self.file_path_label.setStyleSheet("color: black;")
+      self.upload_btn.setEnabled(True)
+
+  def upload_file(self):
+    if not hasattr(self, "_upload_file_path"):
+      return
+    url = self.upload_url_entry.text().strip()
+    self.append_log(f"UPLOADING | {self._upload_file_path.split('/')[-1].split(chr(92))[-1]}")
+
+    self._upload_worker = Worker("upload", url, file_path=self._upload_file_path)
+    self._upload_worker.finished.connect(self.on_upload_done)
+    self._upload_worker.error.connect(self.on_upload_error)
+    self._upload_worker.start()
+
+  def on_upload_done(self, task, response):
+    fname = self._upload_file_path.split("/")[-1].split("\\")[-1]
+    if response.status_code == 200:
+      self.append_log(f"UPLOAD OK | {fname}")
+    else:
+      self.append_log(f"UPLOAD FAIL | Status {response.status_code}")
+
+  def on_upload_error(self, msg):
+    self.append_log("ERROR | Upload failed. Disconnected to server.")
+    self.show_disconnect_popup()
 
   def update_temp_label(self, value):
     actual_value = value / 10.0
@@ -281,7 +309,7 @@ class SensorClientApp(QWidget):
       return
     self._disconnect_shown = True
     reply = QMessageBox.critical(
-        self, "Error", "Error, disconnected to server. Please wait...  if you want to exit, click ok",
+        self, "Error", "Error, disconnected to server. Please wait...   if you want to exit, click ok",
         QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
     )
     self._disconnect_shown = False
@@ -308,53 +336,13 @@ class SensorClientApp(QWidget):
         data = result.get("data", result) if isinstance(result, dict) else result
         count = len(data) if isinstance(data, list) else 0
         self.append_log(f"GET OK | {count} records fetched")
-        self.draw_line_chart(data)
+        self.chart_widget.draw_line_chart(data)
       except ValueError:
         self.append_log("GET OK | Response not JSON")
 
   def on_fetch_error(self, msg):
     self.append_log("ERROR | Disconnected to server. Please wait...")
     self.show_disconnect_popup()
-
-  def draw_line_chart(self, data):
-    self.figure.clear()
-    if not isinstance(data, list) or len(data) == 0:
-      ax = self.figure.add_subplot(111)
-      ax.text(0.5, 0.5, "No data available", ha="center", va="center", fontsize=14)
-      self.canvas.draw()
-      return
-
-    data_sorted = sorted(data, key=lambda r: r.get("created_at", ""))
-    timestamps = [row.get("created_at", "") for row in data_sorted]
-    short_labels = []
-    for t in timestamps:
-      try:
-        dt = datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
-        short_labels.append(dt.strftime("%H:%M:%S"))
-      except Exception:
-        short_labels.append(t)
-
-    temps = [row.get("temperature", row.get("temp", 0)) for row in data_sorted]
-    hums = [row.get("humidity", 0) for row in data_sorted]
-
-    ax1 = self.figure.add_subplot(111)
-    ax2 = ax1.twinx()
-
-    line1, = ax1.plot(short_labels, temps, "o-", color="#E53935", label="Temp (C)")
-    line2, = ax2.plot(short_labels, hums, "s--", color="#1E88E5", label="Humidity (%)")
-
-    ax1.set_xlabel("Time")
-    ax1.set_ylabel("Temperature (C)", color="#E53935")
-    ax2.set_ylabel("Humidity (%)", color="#1E88E5")
-    ax1.set_title("Sensor Data History")
-    ax1.tick_params(axis="x", rotation=45)
-
-    lines = [line1, line2]
-    labels = [l.get_label() for l in lines]
-    ax1.legend(lines, labels, loc="upper left")
-
-    self.figure.tight_layout()
-    self.canvas.draw()
 
 
 if __name__ == "__main__":

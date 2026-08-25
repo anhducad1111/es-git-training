@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSlider,
     QTextEdit,
@@ -131,7 +132,7 @@ class SensorClientApp(QWidget):
 
     self.log_display = QTextEdit()
     self.log_display.setReadOnly(True)
-    self.log_display.setFixedHeight(120)
+    self.log_display.setFixedHeight(300)
     self.log_display.setStyleSheet("font-family: Consolas; font-size: 9pt;")
     layout.addWidget(self.log_display)
 
@@ -148,8 +149,9 @@ class SensorClientApp(QWidget):
     url_layout.addWidget(self.upload_url_entry)
     layout.addLayout(url_layout)
 
-    self.file_path_label = QLabel("No file selected")
-    self.file_path_label.setStyleSheet("color: gray;")
+    self.file_path_label = QLineEdit("No file selected")
+    self.file_path_label.setReadOnly(True)
+    self.file_path_label.setStyleSheet("color: gray; background-color: #f0f0f0;")
     layout.addWidget(self.file_path_label)
 
     btn_layout = QHBoxLayout()
@@ -164,11 +166,17 @@ class SensorClientApp(QWidget):
         "background-color: #9C27B0; color: white; font-weight: bold; padding: 5px;"
     )
     self.upload_btn.clicked.connect(self.upload_file)
-    self.upload_btn.setEnabled(False)
+    self.upload_btn.setVisible(False)
 
     btn_layout.addWidget(self.select_btn)
     btn_layout.addWidget(self.upload_btn)
     layout.addLayout(btn_layout)
+
+    self.upload_progress = QProgressBar()
+    self.upload_progress.setValue(0)
+    self.upload_progress.setTextVisible(True)
+    self.upload_progress.setFormat("%p%")
+    layout.addWidget(self.upload_progress)
 
     group.setLayout(layout)
     return group
@@ -177,30 +185,38 @@ class SensorClientApp(QWidget):
     file_path, _ = QFileDialog.getOpenFileName(self, "Select File")
     if file_path:
       self._upload_file_path = file_path
-      fname = file_path.split("/")[-1].split("\\")[-1]
-      self.file_path_label.setText(fname)
-      self.file_path_label.setStyleSheet("color: black;")
-      self.upload_btn.setEnabled(True)
+      self.file_path_label.setText(file_path)
+      self.file_path_label.setStyleSheet("color: black; background-color: #f0f0f0;")
+      self.upload_btn.setVisible(True)
 
   def upload_file(self):
     if not hasattr(self, "_upload_file_path"):
       return
     url = self.upload_url_entry.text().strip()
     self.append_log(f"UPLOADING | {self._upload_file_path.split('/')[-1].split(chr(92))[-1]}")
+    self.upload_progress.setValue(0)
 
     self._upload_worker = Worker("upload", url, file_path=self._upload_file_path)
     self._upload_worker.finished.connect(self.on_upload_done)
     self._upload_worker.error.connect(self.on_upload_error)
+    self._upload_worker.progress.connect(self.on_upload_progress)
     self._upload_worker.start()
 
   def on_upload_done(self, task, response):
     fname = self._upload_file_path.split("/")[-1].split("\\")[-1]
     if response.status_code == 200:
+      self.upload_btn.setVisible(False)
+      self.upload_progress.setValue(100)
       self.append_log(f"UPLOAD OK | {fname}")
     else:
+      self.upload_progress.setValue(0)
       self.append_log(f"UPLOAD FAIL | Status {response.status_code}")
 
+  def on_upload_progress(self, percent):
+    self.upload_progress.setValue(percent)
+
   def on_upload_error(self, msg):
+    self.upload_progress.setValue(0)
     self.append_log("ERROR | Upload failed. Disconnected to server.")
     self.show_disconnect_popup()
 

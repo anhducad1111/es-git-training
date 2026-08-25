@@ -1,7 +1,9 @@
 ﻿import sys
+import math
+import random
 import requests
 from datetime import datetime
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QFormLayout,
@@ -12,6 +14,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSlider,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
     QSizePolicy,
@@ -20,10 +23,35 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 
+class Worker(QThread):
+  finished = pyqtSignal(str, object)
+  error = pyqtSignal(str)
+
+  def __init__(self, task, url, payload=None):
+    super().__init__()
+    self.task = task
+    self.url = url
+    self.payload = payload
+
+  def run(self):
+    try:
+      if self.task == "post":
+        response = requests.post(self.url, json=self.payload, timeout=10)
+        self.finished.emit("post", response)
+      elif self.task == "get":
+        response = requests.get(self.url, timeout=10)
+        self.finished.emit("get", response)
+    except requests.exceptions.RequestException as e:
+      self.error.emit(str(e))
+
+
 class SensorClientApp(QWidget):
 
   def __init__(self):
     super().__init__()
+    self.tick = 0
+    self.base_temp = 25.0
+    self.base_humi = 60.0
     self.init_ui()
 
   def init_ui(self):
@@ -95,9 +123,37 @@ class SensorClientApp(QWidget):
     )
     self.send_btn.clicked.connect(self.send_data)
 
+    self.auto_btn = QPushButton("Auto: OFF (5s)")
+    self.auto_btn.setStyleSheet(
+        "background-color: #757575; color: white; font-weight: bold; padding: 5px;"
+    )
+    self.auto_btn.clicked.connect(self.toggle_auto)
+
+    self.send_timer = QTimer()
+    self.send_timer.setInterval(5000)
+    self.send_timer.timeout.connect(self.auto_send)
+
+    self.fetch_timer = QTimer()
+    self.fetch_timer.setInterval(5000)
+    self.fetch_timer.timeout.connect(self.auto_fetch)
+
+    self.drift_timer = QTimer()
+    self.drift_timer.setInterval(1000)
+    self.drift_timer.timeout.connect(self.drift_values)
+
+    self.auto_running = False
+
     layout.addWidget(temp_box)
     layout.addWidget(humi_box)
     layout.addWidget(self.send_btn)
+    layout.addWidget(self.auto_btn)
+
+    self.log_display = QTextEdit()
+    self.log_display.setReadOnly(True)
+    self.log_display.setFixedHeight(120)
+    self.log_display.setStyleSheet("font-family: Consolas; font-size: 9pt;")
+    layout.addWidget(self.log_display)
+
     group.setLayout(layout)
     return group
 
@@ -127,7 +183,65 @@ class SensorClientApp(QWidget):
   def update_humi_label(self, value):
     self.humi_val_label.setText(f"{value}%")
 
-  def send_data(self):
+  def append_log(self, msg):
+    ts = datetime.now().strftime("%H:%M:%S")
+    self.log_display.append(f"[{ts}] {msg}")
+    self.log_display.verticalScrollBar().setValue(
+        self.log_display.verticalScrollBar().maximum()
+    )
+
+  def toggle_auto(self):
+    if self.auto_running:
+      self.send_timer.stop()
+      self.fetch_timer.stop()
+      self.drift_timer.stop()
+      self.auto_running = False
+      self.auto_btn.setText("Auto: OFF (5s)")
+      self.auto_btn.setStyleSheet(
+          "background-color: #757575; color: white; font-weight: bold; padding: 5px;"
+      )
+    else:
+      self.auto_running = True
+      self.auto_btn.setText("Auto: ON (5s)")
+      self.auto_btn.setStyleSheet(
+          "background-color: #F44336; color: white; font-weight: bold; padding: 5px;"
+      )
+      self.drift_timer.start()
+      self.send_timer.start()
+      self.auto_send()
+      self.fetch_timer.singleShot(2500, self.start_fetch_timer)
+
+  def start_fetch_timer(self):
+    if self.auto_running:
+      self.auto_fetch()
+      self.fetch_timer.start()
+
+  def drift_values(self):
+    self.tick += 1
+    self.generate_natural_values()
+
+  def auto_send(self):
+    self.send_data(silent=True)
+
+  def auto_fetch(self):
+    self.fetch_logs(silent=True)
+
+  def generate_natural_values(self):
+    t = self.tick * 0.3
+    temp = self.base_temp + 5 * math.sin(t * 0.7) + 3 * math.sin(t * 1.9) + random.uniform(-0.5, 0.5)
+    humi = self.base_humi + 10 * math.sin(t * 0.5 + 1.0) + 5 * math.sin(t * 1.3) + random.uniform(-1, 1)
+    temp = round(max(-10.0, min(50.0, temp)), 1)
+    humi = round(max(0, min(100, humi)), 0)
+    self.temp_slider.blockSignals(True)
+    self.temp_slider.setValue(int(temp * 10))
+    self.temp_slider.blockSignals(False)
+    self.update_temp_label(self.temp_slider.value())
+    self.humi_slider.blockSignals(True)
+    self.humi_slider.setValue(int(humi))
+    self.humi_slider.blockSignals(False)
+    self.update_humi_label(self.humi_slider.value())
+
+  def send_data(self, silent=False):
     url = self.url_entry.text().strip()
     device = self.device_entry.text().strip()
     try:
@@ -138,38 +252,57 @@ class SensorClientApp(QWidget):
         humidity = 60
 
     payload = {"device": device, "temp": temp, "humidity": humidity}
+    self._send_silent = silent
+    self._send_device = device
+    self._send_temp = temp
+    self._send_humi = humidity
 
-    try:
-      response = requests.post(url, json=payload, timeout=10)
-      if response.status_code == 200:
+    self._send_worker = Worker("post", url, payload)
+    self._send_worker.finished.connect(self.on_send_done)
+    self._send_worker.error.connect(self.on_send_error)
+    self._send_worker.start()
+
+  def on_send_done(self, task, response):
+    if response.status_code == 200:
+      self.append_log(f"POST OK | {self._send_device} T={self._send_temp}C H={self._send_humi}%")
+      if not self._send_silent:
         QMessageBox.information(
             self, "Success", f"Data sent successfully!\nResponse: {response.text}"
         )
-        self.fetch_logs()
-      else:
+    else:
+      self.append_log(f"POST FAIL | Status {response.status_code}")
+      if not self._send_silent:
         QMessageBox.critical(
-            self,
-            "Server Error",
-            f"Status Code: {response.status_code}\n{response.text}",
+            self, "Server Error", f"Status Code: {response.status_code}\n{response.text}"
         )
-    except requests.exceptions.RequestException as e:
-      QMessageBox.critical(
-          self, "Connection Error", f"Failed to connect to server:\n{e}"
-      )
 
-  def fetch_logs(self):
+  def on_send_error(self, msg):
+    self.append_log("ERROR | Disconnected to server. Please wait...")
+    QMessageBox.critical(self, "Connection Error", "Error, disconnected to server. Please wait...")
+
+  def fetch_logs(self, silent=False):
     url = self.url_entry.text().strip()
-    try:
-      response = requests.get(url, timeout=10)
-      if response.status_code == 200:
-        try:
-          result = response.json()
-          data = result.get("data", result) if isinstance(result, dict) else result
-          self.draw_line_chart(data)
-        except ValueError:
-          pass
-    except requests.exceptions.RequestException as e:
-      QMessageBox.critical(self, "Connection Error", f"Failed to connect:\n{e}")
+    self._fetch_silent = silent
+
+    self._fetch_worker = Worker("get", url)
+    self._fetch_worker.finished.connect(self.on_fetch_done)
+    self._fetch_worker.error.connect(self.on_fetch_error)
+    self._fetch_worker.start()
+
+  def on_fetch_done(self, task, response):
+    if response.status_code == 200:
+      try:
+        result = response.json()
+        data = result.get("data", result) if isinstance(result, dict) else result
+        count = len(data) if isinstance(data, list) else 0
+        self.append_log(f"GET OK | {count} records fetched")
+        self.draw_line_chart(data)
+      except ValueError:
+        self.append_log("GET OK | Response not JSON")
+
+  def on_fetch_error(self, msg):
+    self.append_log("ERROR | Disconnected to server. Please wait...")
+    QMessageBox.critical(self, "Connection Error", "Error, disconnected to server. Please wait...")
 
   def draw_line_chart(self, data):
     self.figure.clear()
@@ -185,7 +318,7 @@ class SensorClientApp(QWidget):
     for t in timestamps:
       try:
         dt = datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
-        short_labels.append(dt.strftime("%m/%d %H:%M"))
+        short_labels.append(dt.strftime("%H:%M:%S"))
       except Exception:
         short_labels.append(t)
 
@@ -216,4 +349,5 @@ if __name__ == "__main__":
   app = QApplication(sys.argv)
   client = SensorClientApp()
   client.show()
+  client.toggle_auto()
   sys.exit(app.exec())

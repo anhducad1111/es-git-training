@@ -281,7 +281,7 @@ class SensorClientApp(QWidget):
       return
     self._disconnect_shown = True
     reply = QMessageBox.critical(
-        self, "Error", "Error, disconnected to server. Please wait...",
+        self, "Error", "Error, disconnected to server. Please wait...  if you want to exit, click ok",
         QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
     )
     self._disconnect_shown = False
@@ -289,7 +289,7 @@ class SensorClientApp(QWidget):
       QApplication.quit()
 
   def on_send_error(self, msg):
-    self.append_log("ERROR | Disconnected to server. Please wait...")
+    self.append_log("ERROR | Disconnected to server. Please wait... ")
     self.show_disconnect_popup()
 
   def fetch_logs(self, silent=False):

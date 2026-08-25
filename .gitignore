@@ -11,6 +11,8 @@ Thumbs.db
 # Logs
 *.log
 logs/
+a.txt
+app2.py
 
 # Environment files
 .env

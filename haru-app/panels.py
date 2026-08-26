@@ -17,8 +17,12 @@ from PyQt6.QtWidgets import (
 )
 
 
+GROUP_BOX_STYLE = "QGroupBox { font-weight: bold; }"
+
+
 def create_config_group(app):
   group = QGroupBox("Server Configuration")
+  group.setStyleSheet(GROUP_BOX_STYLE)
   layout = QFormLayout()
   layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
@@ -33,6 +37,7 @@ def create_config_group(app):
 
 def create_input_group(app):
   group = QGroupBox("Sensor Data input")
+  group.setStyleSheet(GROUP_BOX_STYLE)
   layout = QVBoxLayout()
 
   temp_box = QWidget()
@@ -98,6 +103,7 @@ def create_input_group(app):
 
 def create_upload_group(app):
   group = QGroupBox("File Upload (WiFi)")
+  group.setStyleSheet(GROUP_BOX_STYLE)
   layout = QVBoxLayout()
 
   ver_layout = QHBoxLayout()

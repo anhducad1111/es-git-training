@@ -89,6 +89,10 @@ class SensorClientApp(QWidget):
     left_layout.addWidget(create_config_group(self))
     left_layout.addWidget(create_input_group(self))
 
+    log_label = QLabel("Log Screen")
+    log_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+    left_layout.addWidget(log_label)
+
     self.log_display = QTextEdit()
     self.log_display.setReadOnly(True)
     self.log_display.setFixedHeight(300)

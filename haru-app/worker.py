@@ -46,7 +46,10 @@ class Worker(QThread):
   def run(self):
     try:
       if self.task == "post":
-        response = requests.post(self.url, json=self.payload, timeout=10)
+        if self.data:
+          response = requests.post(self.url, data=self.data, headers=self.headers, timeout=10)
+        else:
+          response = requests.post(self.url, json=self.payload, headers=self.headers, timeout=10)
         self.finished.emit("post", response)
       elif self.task == "get":
         response = requests.get(self.url, headers=self.headers, timeout=10)

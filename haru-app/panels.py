@@ -38,8 +38,15 @@ def create_config_group(app):
       "background-color: #757575; color: white; font-weight: bold; padding: 3px; border-radius: 4px;"
   )
   app.version_toggle_btn.clicked.connect(app.toggle_version_fetch)
+  app.unpin_btn = QPushButton("Unpin")
+  app.unpin_btn.setFixedWidth(60)
+  app.unpin_btn.setStyleSheet(
+      "background-color: #FF9800; color: white; font-weight: bold; padding: 3px; border-radius: 4px;"
+  )
+  app.unpin_btn.clicked.connect(app.unpin_version)
   version_layout.addWidget(app.latest_version_label)
   version_layout.addWidget(app.version_toggle_btn)
+  version_layout.addWidget(app.unpin_btn)
 
   layout.addRow(QLabel("API URL:"), app.url_entry)
   layout.addRow(QLabel("Device Name:"), app.device_entry)
@@ -115,7 +122,7 @@ def create_input_group(app):
 
 
 def create_upload_group(app):
-  group = QGroupBox("File Upload (WiFi)")
+  group = QGroupBox("File Upload")
   group.setStyleSheet(GROUP_BOX_STYLE)
   layout = QVBoxLayout()
 

@@ -117,6 +117,26 @@ class SensorClientApp(QWidget):
     main_layout.addLayout(left_layout, stretch=1)
     main_layout.addLayout(right_layout, stretch=2)
 
+  def unpin_version(self):
+    from worker import Worker
+    url = "http://192.168.1.116/es-git-training/esp32-ota/api/target.php"
+    headers = {"X-OTA-Key": "shodai-haru-2026-8-25"}
+    data = {"action": "clear"}
+    self.append_log("UNPIN | Sending clear request...")
+    self._unpin_worker = Worker("post", url, data=data, headers=headers)
+    self._unpin_worker.finished.connect(self.on_unpin_result)
+    self._unpin_worker.error.connect(self.on_unpin_error)
+    self._unpin_worker.start()
+
+  def on_unpin_result(self, task, response):
+    if response.status_code in (200, 201):
+      self.append_log("UNPIN OK | Version unpinned")
+    else:
+      self.append_log(f"UNPIN FAIL | Status {response.status_code}")
+
+  def on_unpin_error(self, msg):
+    self.append_log(f"UNPIN ERROR | {msg}")
+
   def fetch_latest_version(self):
     from worker import Worker
     url = "http://192.168.1.116/es-git-training//esp32-ota/api/latest.php"

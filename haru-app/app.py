@@ -79,17 +79,24 @@ class SensorClientApp(QWidget):
     self.setWindowTitle("Haru - Sensor Logger Client")
     self.resize(1000, 600)
 
-    main_layout = QVBoxLayout(self)
+    main_layout = QHBoxLayout(self)
     main_layout.setContentsMargins(20, 20, 20, 20)
     main_layout.setSpacing(10)
-
-    top_layout = QHBoxLayout()
 
     left_layout = QVBoxLayout()
     left_layout.setSpacing(10)
 
     left_layout.addWidget(create_config_group(self))
     left_layout.addWidget(create_input_group(self))
+
+    self.log_display = QTextEdit()
+    self.log_display.setReadOnly(True)
+    self.log_display.setFixedHeight(300)
+    self.log_display.setStyleSheet(
+        "font-family: Consolas; font-size: 9pt; background-color: #212121; color: #FFFFFF;"
+    )
+    left_layout.addWidget(self.log_display)
+
     left_layout.addStretch()
 
     self.chart_widget = ChartWidget(on_refresh=self.fetch_logs)
@@ -98,18 +105,8 @@ class SensorClientApp(QWidget):
     right_layout.addWidget(self.chart_widget)
     right_layout.addWidget(create_upload_group(self))
 
-    top_layout.addLayout(left_layout, stretch=1)
-    top_layout.addLayout(right_layout, stretch=2)
-
-    self.log_display = QTextEdit()
-    self.log_display.setReadOnly(True)
-    self.log_display.setFixedHeight(150)
-    self.log_display.setStyleSheet(
-        "font-family: Consolas; font-size: 9pt; background-color: #212121; color: #FFFFFF;"
-    )
-
-    main_layout.addLayout(top_layout)
-    main_layout.addWidget(self.log_display)
+    main_layout.addLayout(left_layout, stretch=1)
+    main_layout.addLayout(right_layout, stretch=2)
 
   def select_file(self):
     upload_mod.select_file(self)

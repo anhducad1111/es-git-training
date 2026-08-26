@@ -54,7 +54,7 @@ class Worker(QThread):
         try:
           fname = self.file_path.split("/")[-1].split("\\")[-1]
           files = {"file": (fname, reader)}
-          response = requests.post(self.url, files=files, timeout=60)
+          response = requests.post(self.url, files=files, timeout=10)
           reader.close()
           self.finished.emit("upload", response)
         except Exception:

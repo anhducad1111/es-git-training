@@ -5,22 +5,41 @@ from datetime import datetime
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
-    QFileDialog,
-    QFormLayout,
-    QGroupBox,
+    QDialog,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
-    QProgressBar,
     QPushButton,
-    QSlider,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 from worker import Worker
 from chart import ChartWidget
+from panels import create_config_group, create_input_group, create_upload_group
+import upload as upload_mod
+
+
+class DisconnectDialog(QDialog):
+  def __init__(self, parent=None):
+    super().__init__(parent)
+    self.setModal(False)
+    self.setWindowTitle("Error")
+    self.setFixedSize(320, 120)
+    layout = QVBoxLayout()
+    layout.addWidget(QLabel("Error, disconnected to server. Please wait... if You want to exit, click ok."))
+    btn_layout = QHBoxLayout()
+    ok_btn = QPushButton("Ok")
+    ok_btn.clicked.connect(self.accept)
+    cancel_btn = QPushButton("Cancel")
+    cancel_btn.clicked.connect(self.reject)
+    btn_layout.addWidget(ok_btn)
+    btn_layout.addWidget(cancel_btn)
+    layout.addLayout(btn_layout)
+    self.setLayout(layout)
+
+  def mousePressEvent(self, event):
+    if not self.rect().contains(event.pos()):
+      self.reject()
 
 
 class SensorClientApp(QWidget):
@@ -43,182 +62,24 @@ class SensorClientApp(QWidget):
     left_layout = QVBoxLayout()
     left_layout.setSpacing(10)
 
-    left_layout.addWidget(self.create_config_group())
-    left_layout.addWidget(self.create_input_group())
+    left_layout.addWidget(create_config_group(self))
+    left_layout.addWidget(create_input_group(self))
     left_layout.addStretch()
 
     self.chart_widget = ChartWidget(on_refresh=self.fetch_logs)
 
     right_layout = QVBoxLayout()
     right_layout.addWidget(self.chart_widget)
-    right_layout.addWidget(self.create_upload_group())
+    right_layout.addWidget(create_upload_group(self))
 
     main_layout.addLayout(left_layout, stretch=1)
     main_layout.addLayout(right_layout, stretch=2)
 
-  def create_config_group(self):
-    group = QGroupBox("Server Configuration")
-    layout = QFormLayout()
-    layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-    self.url_entry = QLineEdit("http://192.168.2.68/shodai-api/api/log.php")
-    self.device_entry = QLineEdit("Haru-Client")
-
-    layout.addRow(QLabel("API URL:"), self.url_entry)
-    layout.addRow(QLabel("Device Name:"), self.device_entry)
-    group.setLayout(layout)
-    return group
-
-  def create_input_group(self):
-    group = QGroupBox("Sensor Data input")
-    layout = QVBoxLayout()
-
-    temp_box = QWidget()
-    temp_layout = QHBoxLayout(temp_box)
-    temp_layout.setContentsMargins(0, 0, 0, 0)
-    temp_layout.addWidget(QLabel("Temp (C):"))
-    self.temp_slider = QSlider(Qt.Orientation.Horizontal)
-    self.temp_slider.setRange(-100, 500)
-    self.temp_slider.setValue(250)
-    self.temp_slider.valueChanged.connect(self.update_temp_label)
-    temp_layout.addWidget(self.temp_slider)
-    self.temp_val_label = QLabel("25.0C")
-    self.temp_val_label.setFixedWidth(50)
-    temp_layout.addWidget(self.temp_val_label)
-
-    humi_box = QWidget()
-    humi_layout = QHBoxLayout(humi_box)
-    humi_layout.setContentsMargins(0, 0, 0, 0)
-    humi_layout.addWidget(QLabel("Humidity (%):"))
-    self.humi_slider = QSlider(Qt.Orientation.Horizontal)
-    self.humi_slider.setRange(0, 100)
-    self.humi_slider.setValue(60)
-    self.humi_slider.valueChanged.connect(self.update_humi_label)
-    humi_layout.addWidget(self.humi_slider)
-    self.humi_val_label = QLabel("60%")
-    self.humi_val_label.setFixedWidth(50)
-    humi_layout.addWidget(self.humi_val_label)
-
-    self.send_btn = QPushButton("Send Data (POST)")
-    self.send_btn.setStyleSheet(
-        "background-color: #4CAF50; color: white; font-weight: bold; padding: 5px;"
-    )
-    self.send_btn.clicked.connect(self.send_data)
-
-    self.auto_btn = QPushButton("Auto: OFF (5s)")
-    self.auto_btn.setStyleSheet(
-        "background-color: #757575; color: white; font-weight: bold; padding: 5px;"
-    )
-    self.auto_btn.clicked.connect(self.toggle_auto)
-
-    self.send_timer = QTimer()
-    self.send_timer.setInterval(5000)
-    self.send_timer.timeout.connect(self.auto_send)
-
-    self.fetch_timer = QTimer()
-    self.fetch_timer.setInterval(5000)
-    self.fetch_timer.timeout.connect(self.auto_fetch)
-
-    self.drift_timer = QTimer()
-    self.drift_timer.setInterval(1000)
-    self.drift_timer.timeout.connect(self.drift_values)
-
-    self.auto_running = False
-
-    layout.addWidget(temp_box)
-    layout.addWidget(humi_box)
-    layout.addWidget(self.send_btn)
-    layout.addWidget(self.auto_btn)
-
-    self.log_display = QTextEdit()
-    self.log_display.setReadOnly(True)
-    self.log_display.setFixedHeight(300)
-    self.log_display.setStyleSheet("font-family: Consolas; font-size: 9pt;")
-    layout.addWidget(self.log_display)
-
-    group.setLayout(layout)
-    return group
-
-  def create_upload_group(self):
-    group = QGroupBox("File Upload (WiFi)")
-    layout = QVBoxLayout()
-
-    url_layout = QHBoxLayout()
-    url_layout.addWidget(QLabel("Upload URL:"))
-    self.upload_url_entry = QLineEdit("http://192.168.2.68/shodai-api/api/upload.php")
-    url_layout.addWidget(self.upload_url_entry)
-    layout.addLayout(url_layout)
-
-    self.file_path_label = QLineEdit("No file selected")
-    self.file_path_label.setReadOnly(True)
-    self.file_path_label.setStyleSheet("color: gray; background-color: #f0f0f0;")
-    layout.addWidget(self.file_path_label)
-
-    btn_layout = QHBoxLayout()
-    self.select_btn = QPushButton("Select File")
-    self.select_btn.setStyleSheet(
-        "background-color: #FF9800; color: white; font-weight: bold; padding: 5px;"
-    )
-    self.select_btn.clicked.connect(self.select_file)
-
-    self.upload_btn = QPushButton("Upload")
-    self.upload_btn.setStyleSheet(
-        "background-color: #9C27B0; color: white; font-weight: bold; padding: 5px;"
-    )
-    self.upload_btn.clicked.connect(self.upload_file)
-    self.upload_btn.setVisible(False)
-
-    btn_layout.addWidget(self.select_btn)
-    btn_layout.addWidget(self.upload_btn)
-    layout.addLayout(btn_layout)
-
-    self.upload_progress = QProgressBar()
-    self.upload_progress.setValue(0)
-    self.upload_progress.setTextVisible(True)
-    self.upload_progress.setFormat("%p%")
-    layout.addWidget(self.upload_progress)
-
-    group.setLayout(layout)
-    return group
-
   def select_file(self):
-    file_path, _ = QFileDialog.getOpenFileName(self, "Select File")
-    if file_path:
-      self._upload_file_path = file_path
-      self.file_path_label.setText(file_path)
-      self.file_path_label.setStyleSheet("color: black; background-color: #f0f0f0;")
-      self.upload_btn.setVisible(True)
+    upload_mod.select_file(self)
 
   def upload_file(self):
-    if not hasattr(self, "_upload_file_path"):
-      return
-    url = self.upload_url_entry.text().strip()
-    self.append_log(f"UPLOADING | {self._upload_file_path.split('/')[-1].split(chr(92))[-1]}")
-    self.upload_progress.setValue(0)
-
-    self._upload_worker = Worker("upload", url, file_path=self._upload_file_path)
-    self._upload_worker.finished.connect(self.on_upload_done)
-    self._upload_worker.error.connect(self.on_upload_error)
-    self._upload_worker.progress.connect(self.on_upload_progress)
-    self._upload_worker.start()
-
-  def on_upload_done(self, task, response):
-    fname = self._upload_file_path.split("/")[-1].split("\\")[-1]
-    if response.status_code == 200:
-      self.upload_btn.setVisible(False)
-      self.upload_progress.setValue(100)
-      self.append_log(f"UPLOAD OK | {fname}")
-    else:
-      self.upload_progress.setValue(0)
-      self.append_log(f"UPLOAD FAIL | Status {response.status_code}")
-
-  def on_upload_progress(self, percent):
-    self.upload_progress.setValue(percent)
-
-  def on_upload_error(self, msg):
-    self.upload_progress.setValue(0)
-    self.append_log("ERROR | Upload failed. Disconnected to server.")
-    self.show_disconnect_popup()
+    upload_mod.upload_file(self)
 
   def update_temp_label(self, value):
     actual_value = value / 10.0
@@ -324,8 +185,11 @@ class SensorClientApp(QWidget):
     if hasattr(self, '_disconnect_shown') and self._disconnect_shown:
       return
     self._disconnect_shown = True
+    QTimer.singleShot(100, self._show_popup_now)
+
+  def _show_popup_now(self):
     reply = QMessageBox.critical(
-        self, "Error", "Error, disconnected to server. Please wait...   if you want to exit, click ok",
+        self, "Error", "Error, disconnected to server. Please wait... if You want to exit, click ok.",
         QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
     )
     self._disconnect_shown = False
@@ -333,7 +197,7 @@ class SensorClientApp(QWidget):
       QApplication.quit()
 
   def on_send_error(self, msg):
-    self.append_log("ERROR | Disconnected to server. Please wait... ")
+    self.append_log("ERROR | Disconnected to server. Please wait... if You want to exit, click ok.")
     self.show_disconnect_popup()
 
   def fetch_logs(self, silent=False):
@@ -357,13 +221,5 @@ class SensorClientApp(QWidget):
         self.append_log("GET OK | Response not JSON")
 
   def on_fetch_error(self, msg):
-    self.append_log("ERROR | Disconnected to server. Please wait...")
+    self.append_log("ERROR | Disconnected to server. Please wait... if You want to exit, click ok.")
     self.show_disconnect_popup()
-
-
-if __name__ == "__main__":
-  app = QApplication(sys.argv)
-  client = SensorClientApp()
-  client.show()
-  client.toggle_auto()
-  sys.exit(app.exec())

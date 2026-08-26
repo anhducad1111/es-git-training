@@ -7,6 +7,7 @@ const OTA_ADMIN_KEY = 'shodai-haru-2026-8-25';
 const OTA_DEVICE_KEY = 'ota-device-2026-8-25';
 const OTA_MAX_FIRMWARE_BYTES = 2_000_000;
 const OTA_FIRMWARE_DIRECTORY = __DIR__ . DIRECTORY_SEPARATOR . 'firmware';
+const OTA_TARGET_FILE = __DIR__ . DIRECTORY_SEPARATOR . 'target.json';
 const OTA_KEEP_LATEST = 5;
 
 date_default_timezone_set('Asia/Ho_Chi_Minh');
@@ -81,6 +82,66 @@ function ota_prune_old_files(int $keep = OTA_KEEP_LATEST): array {
         }
     }
     return $removed;
+}
+
+/** Version strings look like "1_0_3"; returns [1,0,3] or null if any segment isn't numeric. */
+function ota_parse_version_parts(string $version): ?array {
+    $parts = explode('_', $version);
+    $numeric = [];
+    foreach ($parts as $part) {
+        if ($part === '' || !ctype_digit($part)) {
+            return null;
+        }
+        $numeric[] = (int) $part;
+    }
+    return $numeric;
+}
+
+/** Compares two "1_0_3"-style versions numerically; returns null if either can't be parsed. */
+function ota_compare_versions(string $a, string $b): ?int {
+    $partsA = ota_parse_version_parts($a);
+    $partsB = ota_parse_version_parts($b);
+    if ($partsA === null || $partsB === null) {
+        return null;
+    }
+    $length = max(count($partsA), count($partsB));
+    for ($i = 0; $i < $length; $i++) {
+        $x = $partsA[$i] ?? 0;
+        $y = $partsB[$i] ?? 0;
+        if ($x !== $y) {
+            return $x <=> $y;
+        }
+    }
+    return 0;
+}
+
+/** Reads the pinned firmware id, or null when following the latest build automatically. */
+function ota_read_target_id(): ?int {
+    if (!is_file(OTA_TARGET_FILE)) {
+        return null;
+    }
+    $data = json_decode((string) file_get_contents(OTA_TARGET_FILE), true);
+    if (!is_array($data) || !isset($data['id']) || !is_int($data['id']) || $data['id'] < 1) {
+        return null;
+    }
+    return $data['id'];
+}
+
+/** Pins a specific firmware id, or pass null to resume auto-following the latest build. */
+function ota_write_target_id(?int $id): void {
+    file_put_contents(OTA_TARGET_FILE, json_encode(['id' => $id]), LOCK_EX);
+}
+
+/** The entry devices should be served: the pinned one if it still exists, else the latest. */
+function ota_resolve_target_entry(): ?array {
+    $pinnedId = ota_read_target_id();
+    if ($pinnedId !== null) {
+        $entry = ota_find_entry($pinnedId);
+        if ($entry !== null) {
+            return $entry;
+        }
+    }
+    return ota_latest_entry();
 }
 
 function send_json(array $data, int $status = 200): never {

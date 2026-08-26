@@ -34,10 +34,11 @@
         <div id="capacityWarning" class="capacity-warning hidden" role="status"></div>
 
         <section class="cards">
-            <div class="card">
-                <div class="card-label">LATEST VERSION</div>
-                <div class="value version-value mono"><span id="latestVersion">--</span></div>
-                <div id="latestVersionFooter" class="card-footer">No builds yet</div>
+            <div class="card" id="deployCard">
+                <div class="card-label">DEPLOY TARGET</div>
+                <div class="value version-value mono"><span id="targetVersion">--</span></div>
+                <div id="targetFooter" class="card-footer">No builds yet</div>
+                <button id="setLatestButton" class="secondary-button hidden" type="button">最新版にする</button>
             </div>
             <div class="card">
                 <div class="card-label">FILES STORED</div>
@@ -111,11 +112,12 @@
                             <th>Client</th>
                             <th>Size</th>
                             <th aria-sort="none"><button type="button" class="sort-button" data-sort-key="timestamp">Published <span class="sort-indicator" aria-hidden="true">&hArr;</span></button></th>
+                            <th>Deploy</th>
                         </tr>
                     </thead>
                     <tbody id="historyBody">
                         <tr>
-                            <td colspan="7" class="empty">Sign in with the administrator key above to load past builds.</td>
+                            <td colspan="8" class="empty">Sign in with the administrator key above to load past builds.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -133,6 +135,7 @@
         let sortKey = 'id';
         let sortDirection = 'desc';
         let adminKey = '';
+        let targetState = { pinned: false, id: null, version: null };
 
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
@@ -205,9 +208,11 @@
             resultBanner.innerHTML = `<p class="banner-title">${esc(title)}</p>${lines.map(l => `<p>${l}</p>`).join('')}${receiptHtml}`;
         }
 
+        function latestEntry() {
+            return entries.length ? entries.reduce((newest, e) => Number(e.id) > Number(newest.id) ? e : newest) : null;
+        }
+
         function renderSummary() {
-            const latestVersionEl = document.getElementById('latestVersion');
-            const latestVersionFooter = document.getElementById('latestVersionFooter');
             const filesStoredEl = document.getElementById('filesStored');
             const latestClientEl = document.getElementById('latestClient');
             const latestClientFooter = document.getElementById('latestClientFooter');
@@ -228,17 +233,13 @@
                 capacityWarning.classList.add('hidden');
             }
 
-            if (!entries.length) {
-                latestVersionEl.textContent = '--';
-                latestVersionFooter.textContent = 'No builds yet';
+            const latest = latestEntry();
+            if (!latest) {
                 latestClientEl.textContent = '--';
                 latestClientFooter.textContent = 'No builds yet';
                 return;
             }
 
-            const latest = entries.reduce((newest, e) => Number(e.id) > Number(newest.id) ? e : newest);
-            latestVersionEl.textContent = latest.version;
-            latestVersionFooter.textContent = `Published ${latest.timestamp}`;
             latestClientEl.textContent = latest.client;
             latestClientFooter.textContent = `File: ${latest.filename}`;
         }
@@ -252,7 +253,12 @@
                 return sortDirection === 'asc' ? comparison : -comparison;
             });
             const newestId = Math.max(...entries.map(e => Number(e.id)));
-            historyBody.innerHTML = sorted.map(row => `
+            historyBody.innerHTML = sorted.map(row => {
+                const isTarget = targetState.pinned && Number(row.id) === Number(targetState.id);
+                const deployCell = isTarget
+                    ? '<span class="newest-badge">Target</span>'
+                    : `<button type="button" class="secondary-button set-target-button" data-id="${esc(row.id)}">Set as target</button>`;
+                return `
                 <tr>
                     <td class="mono">${esc(row.id)}${Number(row.id) === newestId ? '<span class="newest-badge">Newest</span>' : ''}</td>
                     <td>${esc(row.filename)}</td>
@@ -261,9 +267,94 @@
                     <td><span class="client-badge">${esc(row.client)}</span></td>
                     <td>${formatSize(row.size)}</td>
                     <td class="time">${esc(row.timestamp)}</td>
+                    <td>${deployCell}</td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
+            historyBody.querySelectorAll('.set-target-button').forEach(button => {
+                button.addEventListener('click', () => setTarget(Number(button.dataset.id)));
+            });
         }
+
+        function renderTargetCard() {
+            const targetVersionEl = document.getElementById('targetVersion');
+            const targetFooter = document.getElementById('targetFooter');
+            const setLatestButton = document.getElementById('setLatestButton');
+            const deployCard = document.getElementById('deployCard');
+
+            if (!adminKey) {
+                targetVersionEl.textContent = '--';
+                targetFooter.textContent = 'Sign in to check';
+                setLatestButton.classList.add('hidden');
+                deployCard.classList.remove('deploy-outdated');
+                return;
+            }
+
+            const latest = latestEntry();
+            const isOutdated = targetState.pinned && latest !== null && Number(targetState.id) !== Number(latest.id);
+
+            targetVersionEl.textContent = targetState.version ?? '--';
+            if (isOutdated) {
+                targetFooter.textContent = `Pinned to build #${targetState.id} — latest is ${latest.version} (#${latest.id})`;
+            } else if (targetState.pinned) {
+                targetFooter.textContent = `Pinned to build #${targetState.id}`;
+            } else {
+                targetFooter.textContent = entries.length ? 'Following latest automatically' : 'No builds yet';
+            }
+
+            deployCard.classList.toggle('deploy-outdated', isOutdated);
+            setLatestButton.classList.toggle('hidden', !isOutdated);
+        }
+
+        async function loadTarget() {
+            if (!adminKey) return;
+            try {
+                const response = await fetch('api/target.php', { headers: { 'X-OTA-Key': adminKey }, cache: 'no-store' });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || `HTTP ${response.status}`);
+                targetState = { pinned: data.pinned, id: data.id, version: data.version };
+                renderTargetCard();
+                renderTable();
+            } catch (error) {
+                // History load already surfaces auth failures; ignore here.
+            }
+        }
+
+        async function setTarget(id) {
+            try {
+                const response = await fetch('api/target.php', {
+                    method: 'POST',
+                    headers: { 'X-OTA-Key': adminKey, 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `action=set&id=${encodeURIComponent(id)}`,
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || `HTTP ${response.status}`);
+                targetState = { pinned: data.pinned, id: data.id, version: data.version };
+                renderTargetCard();
+                renderTable();
+            } catch (error) {
+                setBanner('error', 'Could not set deploy target', [esc(error.message)]);
+            }
+        }
+
+        async function clearTarget() {
+            try {
+                const response = await fetch('api/target.php', {
+                    method: 'POST',
+                    headers: { 'X-OTA-Key': adminKey, 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'action=clear',
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || `HTTP ${response.status}`);
+                targetState = { pinned: data.pinned, id: data.id, version: data.version };
+                renderTargetCard();
+                renderTable();
+            } catch (error) {
+                setBanner('error', 'Could not clear deploy target', [esc(error.message)]);
+            }
+        }
+
+        document.getElementById('setLatestButton').addEventListener('click', clearTarget);
 
         function updateSortButtons() {
             document.querySelectorAll('.sort-button').forEach(button => {
@@ -287,12 +378,12 @@
             if (!adminKey) {
                 setSignedOutUI();
                 if (!silent) {
-                    historyBody.innerHTML = '<tr><td colspan="7" class="empty">Sign in with the administrator key first.</td></tr>';
+                    historyBody.innerHTML = '<tr><td colspan="8" class="empty">Sign in with the administrator key first.</td></tr>';
                 }
                 return;
             }
             if (!silent) {
-                historyBody.innerHTML = '<tr><td colspan="7" class="loading">Loading...</td></tr>';
+                historyBody.innerHTML = '<tr><td colspan="8" class="loading">Loading...</td></tr>';
             }
             try {
                 const response = await fetch('api/history.php', { headers: { 'X-OTA-Key': adminKey }, cache: 'no-store' });
@@ -300,8 +391,9 @@
                 if (!response.ok || !data.success) throw new Error(data.message || `HTTP ${response.status}`);
                 entries = data.data || [];
                 renderSummary();
+                renderTargetCard();
                 if (!entries.length) {
-                    historyBody.innerHTML = '<tr><td colspan="7" class="empty">No firmware published yet.</td></tr>';
+                    historyBody.innerHTML = '<tr><td colspan="8" class="empty">No firmware published yet.</td></tr>';
                 } else {
                     renderTable();
                     updateSortButtons();
@@ -311,12 +403,12 @@
                 adminKey = '';
                 clearSession();
                 setSignedOutUI('Invalid administrator key');
-                historyBody.innerHTML = `<tr><td colspan="7" class="empty">Could not load history: ${esc(error.message)}</td></tr>`;
+                historyBody.innerHTML = `<tr><td colspan="8" class="empty">Could not load history: ${esc(error.message)}</td></tr>`;
                 return false;
             }
         }
 
-        document.getElementById('refreshButton').addEventListener('click', () => loadHistory());
+        document.getElementById('refreshButton').addEventListener('click', () => { loadHistory(); loadTarget(); });
 
         document.getElementById('signInForm').addEventListener('submit', async event => {
             event.preventDefault();
@@ -331,6 +423,7 @@
                 const session = readSession();
                 setSignedInUI(session ? session.expiresAt : Date.now() + SESSION_DURATION_MS);
                 sessionKeyInput.value = '';
+                await loadTarget();
             }
         });
 
@@ -338,8 +431,10 @@
             adminKey = '';
             clearSession();
             entries = [];
+            targetState = { pinned: false, id: null, version: null };
             renderSummary();
-            historyBody.innerHTML = '<tr><td colspan="7" class="empty">Sign in with the administrator key first.</td></tr>';
+            renderTargetCard();
+            historyBody.innerHTML = '<tr><td colspan="8" class="empty">Sign in with the administrator key first.</td></tr>';
             setSignedOutUI('Signed out');
         });
 
@@ -371,6 +466,7 @@
                 );
                 form.reset();
                 loadHistory();
+                loadTarget();
             } catch (error) {
                 setBanner('error', 'Publish failed', [esc(error.message)]);
             } finally {
@@ -387,7 +483,7 @@
             }
             adminKey = session.key;
             setSignedInUI(session.expiresAt);
-            loadHistory({ silent: true });
+            loadHistory({ silent: true }).then(ok => { if (ok) loadTarget(); });
         })();
     </script>
 </body>

@@ -172,6 +172,19 @@ h1 {
     color: #5271ff
 }
 
+.card.deploy-outdated {
+    border-color: #f3b9b9;
+    background: #fff6f6
+}
+
+.card.deploy-outdated .version-value {
+    color: #e05252
+}
+
+.card.deploy-outdated .card-footer {
+    color: #c23c3c
+}
+
 .card-footer {
     margin-top: 8px;
     color: #98a2b3;

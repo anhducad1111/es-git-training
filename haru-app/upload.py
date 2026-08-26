@@ -2,6 +2,8 @@ import os
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from worker import Worker
 
+OTA_KEY = "shodai-haru-2026-8-25"
+
 
 def select_file(app):
   file_path, _ = QFileDialog.getOpenFileName(app, "Select File")
@@ -29,11 +31,19 @@ def upload_file(app):
     QMessageBox.warning(app, "File Error", f"File exceeds 10 GB limit.\n{fname}")
     return
 
-  url = app.url_entry.text().strip()
+  base_url = app.url_entry.text().strip()
+  ota_url = base_url + "?action=ota"
   app.append_log(f"UPLOADING | {fname} ({size} bytes)")
   app.upload_progress.setValue(0)
 
-  app._upload_worker = Worker("upload", url, file_path=app._upload_file_path)
+  headers = {"X-OTA-Key": OTA_KEY}
+  form_data = {
+      "ver": app.ver_entry.text().strip(),
+      "version_information": app.version_info_entry.text().strip(),
+      "client": app.device_entry.text().strip()
+  }
+
+  app._upload_worker = Worker("upload", ota_url, file_path=app._upload_file_path, headers=headers, data=form_data)
   app._upload_worker.finished.connect(lambda t, r: on_upload_done(app, t, r))
   app._upload_worker.error.connect(lambda m: on_upload_error(app, m))
   app._upload_worker.progress.connect(lambda p: app.upload_progress.setValue(p))
@@ -43,8 +53,9 @@ def upload_file(app):
 def on_upload_done(app, task, response):
   fname = app._upload_file_path.split("/")[-1].split("\\")[-1]
   app.upload_progress.setValue(0)
-  app.append_log(f"UPLOAD RESP | Status {response.status_code} | {response.text[:100]}")
-  if response.status_code == 200:
+  app.append_log(f"UPLOAD RESP | Status {response.status_code}")
+  app.append_log(f"UPLOAD BODY | {response.text}")
+  if response.status_code in (200, 201):
     app.upload_btn.setVisible(False)
     app.upload_progress.setValue(100)
     app.append_log(f"UPLOAD OK | {fname}")

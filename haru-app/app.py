@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -22,19 +23,42 @@ import upload as upload_mod
 class DisconnectDialog(QDialog):
   def __init__(self, parent=None):
     super().__init__(parent)
-    self.setModal(False)
-    self.setWindowTitle("Error")
-    self.setFixedSize(320, 120)
+    self.setModal(True)
+    self.setWindowTitle("Connection Error")
+    self.setFixedSize(400, 160)
+    self.setStyleSheet("""
+      QDialog { background-color: #FFEBEE; }
+      QLabel { color: #B71C1C; font-size: 14px; font-weight: bold; }
+    """)
     layout = QVBoxLayout()
-    layout.addWidget(QLabel("Error, disconnected to server. Please wait... if You want to exit, click ok."))
+    layout.setSpacing(15)
+
+    msg = QLabel("Error: Disconnected to server!\nPlease wait...")
+    msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    layout.addWidget(msg)
+
+    hint = QLabel("Click OK to exit the application")
+    hint.setStyleSheet("color: #555555; font-size: 11px; font-weight: normal;")
+    hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    layout.addWidget(hint)
+
     btn_layout = QHBoxLayout()
-    ok_btn = QPushButton("Ok")
+    ok_btn = QPushButton("OK - Exit")
+    ok_btn.setStyleSheet(
+        "background-color: #D32F2F; color: white; font-weight: bold; padding: 8px 25px;"
+    )
     ok_btn.clicked.connect(self.accept)
-    cancel_btn = QPushButton("Cancel")
+
+    cancel_btn = QPushButton("Cancel - Continue")
+    cancel_btn.setStyleSheet(
+        "background-color: #757575; color: white; font-weight: bold; padding: 8px 15px;"
+    )
     cancel_btn.clicked.connect(self.reject)
+
     btn_layout.addWidget(ok_btn)
     btn_layout.addWidget(cancel_btn)
     layout.addLayout(btn_layout)
+
     self.setLayout(layout)
 
   def mousePressEvent(self, event):
@@ -53,11 +77,13 @@ class SensorClientApp(QWidget):
 
   def init_ui(self):
     self.setWindowTitle("Haru - Sensor Logger Client")
-    self.resize(1000, 500)
+    self.resize(1000, 600)
 
-    main_layout = QHBoxLayout(self)
+    main_layout = QVBoxLayout(self)
     main_layout.setContentsMargins(20, 20, 20, 20)
     main_layout.setSpacing(10)
+
+    top_layout = QHBoxLayout()
 
     left_layout = QVBoxLayout()
     left_layout.setSpacing(10)
@@ -72,8 +98,18 @@ class SensorClientApp(QWidget):
     right_layout.addWidget(self.chart_widget)
     right_layout.addWidget(create_upload_group(self))
 
-    main_layout.addLayout(left_layout, stretch=1)
-    main_layout.addLayout(right_layout, stretch=2)
+    top_layout.addLayout(left_layout, stretch=1)
+    top_layout.addLayout(right_layout, stretch=2)
+
+    self.log_display = QTextEdit()
+    self.log_display.setReadOnly(True)
+    self.log_display.setFixedHeight(150)
+    self.log_display.setStyleSheet(
+        "font-family: Consolas; font-size: 9pt; background-color: #212121; color: #FFFFFF;"
+    )
+
+    main_layout.addLayout(top_layout)
+    main_layout.addWidget(self.log_display)
 
   def select_file(self):
     upload_mod.select_file(self)
@@ -90,7 +126,13 @@ class SensorClientApp(QWidget):
 
   def append_log(self, msg):
     ts = datetime.now().strftime("%H:%M:%S")
-    self.log_display.append(f"[{ts}] {msg}")
+    if "ERROR" in msg or "FAIL" in msg or "BLOCKED" in msg:
+      color = "#FF5252"
+    elif "OK" in msg:
+      color = "#69F0AE"
+    else:
+      color = "#FFFFFF"
+    self.log_display.append(f'<span style="color:{color}">[{ts}] {msg}</span>')
     self.log_display.verticalScrollBar().setValue(
         self.log_display.verticalScrollBar().maximum()
     )
@@ -147,7 +189,7 @@ class SensorClientApp(QWidget):
     self.update_humi_label(self.humi_slider.value())
 
   def send_data(self, silent=False):
-    url = self.url_entry.text().strip()
+    url = self.url_entry.text().strip() + "?action=log"
     device = self.device_entry.text().strip()
     try:
         temp = self.temp_slider.value() / 10.0
@@ -168,7 +210,7 @@ class SensorClientApp(QWidget):
     self._send_worker.start()
 
   def on_send_done(self, task, response):
-    if response.status_code == 200:
+    if response.status_code in (200, 201):
       self.append_log(f"POST OK | {self._send_device} T={self._send_temp}C H={self._send_humi}%")
       if not self._send_silent:
         QMessageBox.information(
@@ -188,12 +230,14 @@ class SensorClientApp(QWidget):
     QTimer.singleShot(100, self._show_popup_now)
 
   def _show_popup_now(self):
-    reply = QMessageBox.critical(
-        self, "Error", "Error, disconnected to server. Please wait... if You want to exit, click ok.",
-        QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
+    dlg = DisconnectDialog(self)
+    dlg.move(
+        self.geometry().x() + (self.width() - dlg.width()) // 2,
+        self.geometry().y() + (self.height() - dlg.height()) // 2
     )
+    result = dlg.exec()
     self._disconnect_shown = False
-    if reply == QMessageBox.StandardButton.Ok:
+    if result == QDialog.DialogCode.Accepted:
       QApplication.quit()
 
   def on_send_error(self, msg):
@@ -201,7 +245,7 @@ class SensorClientApp(QWidget):
     self.show_disconnect_popup()
 
   def fetch_logs(self, silent=False):
-    url = self.url_entry.text().strip()
+    url = self.url_entry.text().strip() + "?action=log"
     self._fetch_silent = silent
 
     self._fetch_worker = Worker("get", url)
@@ -210,7 +254,7 @@ class SensorClientApp(QWidget):
     self._fetch_worker.start()
 
   def on_fetch_done(self, task, response):
-    if response.status_code == 200:
+    if response.status_code in (200, 201):
       try:
         result = response.json()
         data = result.get("data", result) if isinstance(result, dict) else result

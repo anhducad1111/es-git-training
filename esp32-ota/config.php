@@ -7,6 +7,81 @@ const OTA_ADMIN_KEY = 'shodai-haru-2026-8-25';
 const OTA_DEVICE_KEY = 'ota-device-2026-8-25';
 const OTA_MAX_FIRMWARE_BYTES = 2_000_000;
 const OTA_FIRMWARE_DIRECTORY = __DIR__ . DIRECTORY_SEPARATOR . 'firmware';
+const OTA_KEEP_LATEST = 5;
+
+date_default_timezone_set('Asia/Ho_Chi_Minh');
+
+/** Stored firmware filenames look like: {id}-{filename}-{version}-{info}-{client}-{timestamp}.{ext} */
+function ota_firmware_files(): array {
+    if (!is_dir(OTA_FIRMWARE_DIRECTORY)) {
+        return [];
+    }
+    $paths = glob(OTA_FIRMWARE_DIRECTORY . DIRECTORY_SEPARATOR . '*') ?: [];
+    return array_filter($paths, 'is_file');
+}
+
+function ota_parse_stored_file(string $path): ?array {
+    $base = pathinfo($path, PATHINFO_FILENAME);
+    $parts = explode('-', $base);
+    if (count($parts) !== 6 || !ctype_digit($parts[0])) {
+        return null;
+    }
+    [$id, $filename, $version, $info, $client, $timestamp] = $parts;
+    return [
+        'id' => (int) $id,
+        'filename' => $filename,
+        'version' => $version,
+        'info' => $info,
+        'client' => $client,
+        'timestamp' => $timestamp,
+        'path' => $path,
+        'size' => filesize($path),
+    ];
+}
+
+/** All parsed, valid firmware entries, newest (highest id) first. */
+function ota_list_entries(): array {
+    $entries = array_values(array_filter(array_map('ota_parse_stored_file', ota_firmware_files())));
+    usort($entries, fn(array $a, array $b) => $b['id'] <=> $a['id']);
+    return $entries;
+}
+
+function ota_next_id(): int {
+    $maxId = 0;
+    foreach (ota_list_entries() as $entry) {
+        $maxId = max($maxId, $entry['id']);
+    }
+    return $maxId + 1;
+}
+
+function ota_timestamp(): string {
+    return date('YmdHis');
+}
+
+function ota_latest_entry(): ?array {
+    $entries = ota_list_entries();
+    return $entries[0] ?? null;
+}
+
+function ota_find_entry(int $id): ?array {
+    foreach (ota_list_entries() as $entry) {
+        if ($entry['id'] === $id) {
+            return $entry;
+        }
+    }
+    return null;
+}
+
+/** Deletes everything but the newest OTA_KEEP_LATEST files; returns removed filenames. */
+function ota_prune_old_files(int $keep = OTA_KEEP_LATEST): array {
+    $removed = [];
+    foreach (array_slice(ota_list_entries(), $keep) as $entry) {
+        if (@unlink($entry['path'])) {
+            $removed[] = basename($entry['path']);
+        }
+    }
+    return $removed;
+}
 
 function send_json(array $data, int $status = 200): never {
     http_response_code($status);

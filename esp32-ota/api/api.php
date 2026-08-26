@@ -2,8 +2,6 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/config.php';
 
-date_default_timezone_set('Asia/Ho_Chi_Minh');
-
 function get_pdo(): PDO {
     static $pdo = null;
     if ($pdo === null) {
@@ -44,57 +42,56 @@ if ($method === 'POST') {
             send_json(['success' => false, 'message' => 'No valid file was uploaded.'], 400);
         }
 
-        $version = trim((string) ($_POST['ver'] ?? ''));
-        $versionInformation = trim((string) ($_POST['version_information'] ?? ''));
-        $clientName = trim((string) ($_POST['client'] ?? ''));
-        if ($version === '' || mb_strlen($version) > 64 || mb_strlen($versionInformation) > 255 || mb_strlen($clientName) > 64) {
-            send_json(['success' => false, 'message' => 'ver is required (up to 64 characters); version_information is limited to 255 characters; client is limited to 64 characters.'], 400);
-        }
-
         $upload = $_FILES['file'];
-        if ($upload['size'] < 1 || $upload['size'] > 10 * 1024 * 1024) {
-            send_json(['success' => false, 'message' => 'File size must be between 1 byte and 10 MB.'], 400);
+        if ($upload['size'] < 1 || $upload['size'] > OTA_MAX_FIRMWARE_BYTES) {
+            send_json(['success' => false, 'message' => 'Firmware file size is invalid.'], 400);
         }
 
-        $binary = file_get_contents($upload['tmp_name']);
-        if ($binary === false || strlen($binary) !== (int) $upload['size']) {
-            send_json(['success' => false, 'message' => 'Could not read the uploaded file.'], 500);
+        $extension = pathinfo($upload['name'], PATHINFO_EXTENSION);
+        $baseName = pathinfo($upload['name'], PATHINFO_FILENAME);
+        $parts = explode('-', $baseName);
+        if (count($parts) !== 4) {
+            send_json(['success' => false, 'message' => 'File name must be "filename-version-info-client.<ext>".'], 400);
+        }
+        [$filename, $version, $info, $client] = $parts;
+        if (
+            $filename === '' || !preg_match('/^[A-Za-z0-9]+$/', $filename)
+            || $version === '' || !preg_match('/^[A-Za-z0-9_]+$/', $version)
+            || $info === '' || !preg_match('/^[A-Za-z0-9]+$/', $info)
+            || $client === '' || !preg_match('/^[A-Za-z0-9]+$/', $client)
+        ) {
+            send_json(['success' => false, 'message' => 'filename, info, and client must be alphanumeric only; version may also contain underscores (e.g. 1_1_1).'], 400);
         }
 
-        try {
-            $pdo = get_pdo();
-            $pdo->beginTransaction();
-
-            $insert = $pdo->prepare('INSERT INTO storage (ver, `file`, version_information, client) VALUES (:ver, :file, :version_information, :client)');
-            $insert->bindValue(':ver', $version, PDO::PARAM_STR);
-            $insert->bindValue(':file', $binary, PDO::PARAM_LOB);
-            $insert->bindValue(':version_information', $versionInformation === '' ? null : $versionInformation, $versionInformation === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
-            $insert->bindValue(':client', $clientName === '' ? null : $clientName, $clientName === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
-            $insert->execute();
-            $newId = (int) $pdo->lastInsertId();
-
-            $keepIds = $pdo->query('SELECT id FROM storage ORDER BY `timestamp` DESC, id DESC LIMIT 5')->fetchAll(PDO::FETCH_COLUMN);
-            $placeholders = implode(',', array_fill(0, count($keepIds), '?'));
-            $delete = $pdo->prepare("DELETE FROM storage WHERE id NOT IN ($placeholders)");
-            $delete->execute($keepIds);
-            $deletedCount = $delete->rowCount();
-
-            $pdo->commit();
-            send_json([
-                'success' => true,
-                'message' => 'File stored in the database.',
-                'id' => $newId,
-                'version' => $version,
-                'client' => $clientName === '' ? null : $clientName,
-                'size' => (int) $upload['size'],
-                'removed_old_records' => $deletedCount,
-            ], 201);
-        } catch (Throwable $error) {
-            if (isset($pdo) && $pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            send_json(['success' => false, 'message' => 'Database storage failed.'], 500);
+        if (!is_dir(OTA_FIRMWARE_DIRECTORY) && !mkdir(OTA_FIRMWARE_DIRECTORY, 0755, true) && !is_dir(OTA_FIRMWARE_DIRECTORY)) {
+            send_json(['success' => false, 'message' => 'Could not create firmware directory.'], 500);
         }
+
+        $id = ota_next_id();
+        $timestamp = ota_timestamp();
+        $ext = $extension !== '' ? '.' . $extension : '';
+        $storedName = "{$id}-{$filename}-{$version}-{$info}-{$client}-{$timestamp}{$ext}";
+        $destination = OTA_FIRMWARE_DIRECTORY . DIRECTORY_SEPARATOR . $storedName;
+
+        if (!move_uploaded_file($upload['tmp_name'], $destination)) {
+            send_json(['success' => false, 'message' => 'Could not save the firmware file.'], 500);
+        }
+
+        $removedFiles = ota_prune_old_files();
+
+        send_json([
+            'success' => true,
+            'message' => 'Firmware saved.',
+            'id' => $id,
+            'filename' => $filename,
+            'version' => $version,
+            'info' => $info,
+            'client' => $client,
+            'timestamp' => $timestamp,
+            'stored_as' => $storedName,
+            'size' => (int) $upload['size'],
+            'removed_old_files' => $removedFiles,
+        ], 201);
     }
 
     // action === 'log'

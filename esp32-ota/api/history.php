@@ -7,21 +7,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 require_key(OTA_ADMIN_KEY);
 
-try {
-    $pdo = new PDO(
-        'mysql:host=localhost;dbname=mini_db;charset=utf8mb4',
-        'root',
-        '',
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-    );
-    $stmt = $pdo->query(
-        "SELECT id, ver, version_information, client, LENGTH(`file`) AS size, " .
-        "CONVERT_TZ(`timestamp`, @@session.time_zone, '+07:00') AS `timestamp` " .
-        'FROM storage ORDER BY `timestamp` DESC, id DESC'
-    );
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $error) {
-    send_json(['success' => false, 'message' => 'Failed to load firmware history.'], 500);
-}
+$rows = array_map(static function (array $entry): array {
+    $timestamp = DateTime::createFromFormat('YmdHis', $entry['timestamp'], new DateTimeZone('Asia/Ho_Chi_Minh'));
+    return [
+        'id' => $entry['id'],
+        'filename' => $entry['filename'],
+        'version' => $entry['version'],
+        'info' => $entry['info'],
+        'client' => $entry['client'],
+        'size' => $entry['size'],
+        'timestamp' => $timestamp !== false ? $timestamp->format('Y-m-d H:i:s') : $entry['timestamp'],
+    ];
+}, ota_list_entries());
 
 send_json(['success' => true, 'timezone' => 'Asia/Ho_Chi_Minh (UTC+7)', 'data' => $rows]);

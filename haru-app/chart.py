@@ -17,7 +17,7 @@ class ChartWidget(QGroupBox):
 
     self.refresh_btn = QPushButton("Refresh Chart (GET)")
     self.refresh_btn.setStyleSheet(
-        "background-color: #2196F3; color: white; padding: 5px;"
+        "background-color: #64B5F6; color: white; padding: 5px; border-radius: 4px;"
     )
     self.refresh_btn.clicked.connect(self.on_refresh)
 

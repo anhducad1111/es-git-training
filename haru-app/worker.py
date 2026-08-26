@@ -49,7 +49,7 @@ class Worker(QThread):
         response = requests.post(self.url, json=self.payload, timeout=10)
         self.finished.emit("post", response)
       elif self.task == "get":
-        response = requests.get(self.url, timeout=10)
+        response = requests.get(self.url, headers=self.headers, timeout=10)
         self.finished.emit("get", response)
       elif self.task == "upload":
         reader = ProgressFileReader(self.file_path, self._on_progress)

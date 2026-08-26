@@ -45,13 +45,13 @@ class DisconnectDialog(QDialog):
     btn_layout = QHBoxLayout()
     ok_btn = QPushButton("OK - Exit")
     ok_btn.setStyleSheet(
-        "background-color: #D32F2F; color: white; font-weight: bold; padding: 8px 25px;"
+        "background-color: #E53935; color: white; font-weight: bold; padding: 8px 25px; border-radius: 4px;"
     )
     ok_btn.clicked.connect(self.accept)
 
     cancel_btn = QPushButton("Cancel - Continue")
     cancel_btn.setStyleSheet(
-        "background-color: #757575; color: white; font-weight: bold; padding: 8px 15px;"
+        "background-color: #42A5F5; color: white; font-weight: bold; padding: 8px 15px; border-radius: 4px;"
     )
     cancel_btn.clicked.connect(self.reject)
 
@@ -73,7 +73,12 @@ class SensorClientApp(QWidget):
     self.tick = 0
     self.base_temp = 25.0
     self.base_humi = 60.0
+    self.version_auto_running = False
+    self.version_timer = QTimer()
+    self.version_timer.setInterval(5000)
+    self.version_timer.timeout.connect(self.fetch_latest_version)
     self.init_ui()
+    self.fetch_latest_version()
 
   def init_ui(self):
     self.setWindowTitle("Haru - Sensor Logger Client")
@@ -111,6 +116,51 @@ class SensorClientApp(QWidget):
 
     main_layout.addLayout(left_layout, stretch=1)
     main_layout.addLayout(right_layout, stretch=2)
+
+  def fetch_latest_version(self):
+    from worker import Worker
+    url = "http://192.168.1.116/es-git-training//esp32-ota/api/latest.php"
+    headers = {"X-OTA-Key": "ota-device-2026-8-25"}
+    self._version_worker = Worker("get", url, headers=headers)
+    self._version_worker.finished.connect(self.on_version_result)
+    self._version_worker.error.connect(self.on_version_error)
+    self._version_worker.start()
+
+  def on_version_result(self, task, response):
+    if response.status_code in (200, 201):
+      try:
+        result = response.json()
+        version = result.get("version", result.get("latest_version", str(result)))
+        version_display = str(version).replace("_", ".")
+        self.latest_version_label.setText(version_display)
+        self.append_log(f"VERSION OK | Latest: {version_display}")
+      except ValueError:
+        self.latest_version_label.setText(response.text)
+    else:
+      self.latest_version_label.setText("N/A")
+      self.append_log(f"VERSION FAIL | Status {response.status_code}")
+
+  def on_version_error(self, msg):
+    self.latest_version_label.setText("N/A")
+    self.append_log(f"VERSION ERROR | {msg}")
+
+  def toggle_version_fetch(self):
+    if self.version_auto_running:
+      self.version_auto_running = False
+      self.version_timer.stop()
+      self.version_toggle_btn.setText("Auto: OFF")
+      self.version_toggle_btn.setStyleSheet(
+          "background-color: #757575; color: white; font-weight: bold; padding: 3px; border-radius: 4px;"
+      )
+      self.append_log("VERSION AUTO | Stopped")
+    else:
+      self.version_auto_running = True
+      self.version_timer.start()
+      self.version_toggle_btn.setText("Auto: ON")
+      self.version_toggle_btn.setStyleSheet(
+          "background-color: #F44336; color: white; font-weight: bold; padding: 3px; border-radius: 4px;"
+      )
+      self.append_log("VERSION AUTO | Started (every 5s)")
 
   def select_file(self):
     upload_mod.select_file(self)

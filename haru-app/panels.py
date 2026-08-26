@@ -29,8 +29,21 @@ def create_config_group(app):
   app.url_entry = QLineEdit("http://192.168.1.116/es-git-training/esp32-ota/api/api.php")
   app.device_entry = QLineEdit("Haru_Client")
 
+  version_layout = QHBoxLayout()
+  app.latest_version_label = QLabel("Loading...")
+  app.latest_version_label.setStyleSheet("font-weight: bold; color: #1E88E5;")
+  app.version_toggle_btn = QPushButton("Auto: OFF")
+  app.version_toggle_btn.setFixedWidth(80)
+  app.version_toggle_btn.setStyleSheet(
+      "background-color: #757575; color: white; font-weight: bold; padding: 3px; border-radius: 4px;"
+  )
+  app.version_toggle_btn.clicked.connect(app.toggle_version_fetch)
+  version_layout.addWidget(app.latest_version_label)
+  version_layout.addWidget(app.version_toggle_btn)
+
   layout.addRow(QLabel("API URL:"), app.url_entry)
   layout.addRow(QLabel("Device Name:"), app.device_entry)
+  layout.addRow(QLabel("Latest Version:"), version_layout)
   group.setLayout(layout)
   return group
 
@@ -68,13 +81,13 @@ def create_input_group(app):
 
   app.send_btn = QPushButton("Send Data (POST)")
   app.send_btn.setStyleSheet(
-      "background-color: #4CAF50; color: white; font-weight: bold; padding: 5px;"
+      "background-color: #2196F3; color: white; font-weight: bold; padding: 5px; border-radius: 4px;"
   )
   app.send_btn.clicked.connect(app.send_data)
 
   app.auto_btn = QPushButton("Auto: OFF (5s)")
   app.auto_btn.setStyleSheet(
-      "background-color: #757575; color: white; font-weight: bold; padding: 5px;"
+      "background-color: #90CAF9; color: white; font-weight: bold; padding: 5px; border-radius: 4px;"
   )
   app.auto_btn.clicked.connect(app.toggle_auto)
 
@@ -126,13 +139,13 @@ def create_upload_group(app):
   btn_layout = QHBoxLayout()
   app.select_btn = QPushButton("Select File")
   app.select_btn.setStyleSheet(
-      "background-color: #FF9800; color: white; font-weight: bold; padding: 5px;"
+      "background-color: #42A5F5; color: white; font-weight: bold; padding: 5px; border-radius: 4px;"
   )
   app.select_btn.clicked.connect(app.select_file)
 
   app.upload_btn = QPushButton("Upload")
   app.upload_btn.setStyleSheet(
-      "background-color: #9C27B0; color: white; font-weight: bold; padding: 5px;"
+      "background-color: #1E88E5; color: white; font-weight: bold; padding: 5px; border-radius: 4px;"
   )
   app.upload_btn.clicked.connect(app.upload_file)
   app.upload_btn.setVisible(False)

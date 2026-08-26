@@ -17,19 +17,20 @@ if ($upload['size'] < 1 || $upload['size'] > OTA_MAX_FIRMWARE_BYTES) {
 }
 
 $extension = pathinfo($upload['name'], PATHINFO_EXTENSION);
-$baseName = pathinfo($upload['name'], PATHINFO_FILENAME);
-$parts = explode('-', $baseName);
-if (count($parts) !== 4) {
-    send_json(['success' => false, 'message' => 'File name must be "filename-version-info-client.<ext>".'], 400);
+$filename = preg_replace('/[^A-Za-z0-9]/', '', pathinfo($upload['name'], PATHINFO_FILENAME));
+if ($filename === '') {
+    $filename = 'file';
 }
-[$filename, $version, $info, $client] = $parts;
+
+$version = trim((string) ($_POST['version'] ?? ''));
+$info = trim((string) ($_POST['info'] ?? ''));
+$client = trim((string) ($_POST['client'] ?? ''));
 if (
-    $filename === '' || !preg_match('/^[A-Za-z0-9]+$/', $filename)
-    || $version === '' || !preg_match('/^[A-Za-z0-9_]+$/', $version)
+    $version === '' || !preg_match('/^[A-Za-z0-9_]+$/', $version)
     || $info === '' || !preg_match('/^[A-Za-z0-9]+$/', $info)
     || $client === '' || !preg_match('/^[A-Za-z0-9]+$/', $client)
 ) {
-    send_json(['success' => false, 'message' => 'filename, info, and client must be alphanumeric only; version may also contain underscores (e.g. 1_1_1).'], 400);
+    send_json(['success' => false, 'message' => 'version, info, and client are required; info and client must be alphanumeric only, version may also contain underscores (e.g. 1_1_1).'], 400);
 }
 
 if (!is_dir(OTA_FIRMWARE_DIRECTORY) && !mkdir(OTA_FIRMWARE_DIRECTORY, 0755, true) && !is_dir(OTA_FIRMWARE_DIRECTORY)) {

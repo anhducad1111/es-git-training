@@ -38,7 +38,7 @@
                 <div class="card-label">DEPLOY TARGET</div>
                 <div class="value version-value mono"><span id="targetVersion">--</span></div>
                 <div id="targetFooter" class="card-footer">No builds yet</div>
-                <button id="setLatestButton" class="secondary-button hidden" type="button">最新版にする</button>
+                <button id="setLatestButton" class="secondary-button hidden" type="button">Reset to latest</button>
             </div>
             <div class="card">
                 <div class="card-label">FILES STORED</div>
@@ -64,7 +64,11 @@
                     <div class="form-grid">
                         <div class="field wide">
                             <label for="firmware">Firmware file</label>
-                            <input id="firmware" name="firmware" type="file" required>
+                            <div class="file-picker">
+                                <input id="firmware" name="firmware" type="file" required class="sr-only-file">
+                                <label for="firmware" class="secondary-button file-picker-button">Choose file</label>
+                                <span id="firmwareFileName" class="file-picker-name">No file selected</span>
+                            </div>
                         </div>
                         <div class="field">
                             <label for="version">Version</label>
@@ -136,6 +140,23 @@
         let sortDirection = 'desc';
         let adminKey = '';
         let targetState = { pinned: false, id: null, version: null };
+        let autoRefreshTimer = null;
+        const AUTO_REFRESH_INTERVAL_MS = 5000;
+
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            autoRefreshTimer = setInterval(() => {
+                loadHistory({ silent: true });
+                loadTarget();
+            }, AUTO_REFRESH_INTERVAL_MS);
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+                autoRefreshTimer = null;
+            }
+        }
 
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
@@ -144,6 +165,12 @@
         const sessionStatus = document.getElementById('sessionStatus');
         const sessionKeyInput = document.getElementById('sessionKey');
         const signOutButton = document.getElementById('signOutButton');
+        const firmwareInput = document.getElementById('firmware');
+        const firmwareFileName = document.getElementById('firmwareFileName');
+
+        firmwareInput.addEventListener('change', () => {
+            firmwareFileName.textContent = firmwareInput.files[0]?.name || 'No file selected';
+        });
 
         function readSession() {
             try {
@@ -402,6 +429,7 @@
             } catch (error) {
                 adminKey = '';
                 clearSession();
+                stopAutoRefresh();
                 setSignedOutUI('Invalid administrator key');
                 historyBody.innerHTML = `<tr><td colspan="8" class="empty">Could not load history: ${esc(error.message)}</td></tr>`;
                 return false;
@@ -424,12 +452,14 @@
                 setSignedInUI(session ? session.expiresAt : Date.now() + SESSION_DURATION_MS);
                 sessionKeyInput.value = '';
                 await loadTarget();
+                startAutoRefresh();
             }
         });
 
         signOutButton.addEventListener('click', () => {
             adminKey = '';
             clearSession();
+            stopAutoRefresh();
             entries = [];
             targetState = { pinned: false, id: null, version: null };
             renderSummary();
@@ -465,6 +495,7 @@
                     `<span>Stored as:</span> <strong class="mono">${esc(data.stored_as)}</strong><span>Size:</span> <strong>${formatSize(data.size)}</strong>${removed}`
                 );
                 form.reset();
+                firmwareFileName.textContent = 'No file selected';
                 loadHistory();
                 loadTarget();
             } catch (error) {
@@ -483,7 +514,12 @@
             }
             adminKey = session.key;
             setSignedInUI(session.expiresAt);
-            loadHistory({ silent: true }).then(ok => { if (ok) loadTarget(); });
+            loadHistory({ silent: true }).then(ok => {
+                if (ok) {
+                    loadTarget();
+                    startAutoRefresh();
+                }
+            });
         })();
     </script>
 </body>

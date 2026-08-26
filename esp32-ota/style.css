@@ -302,6 +302,37 @@ input[type="file"] {
     padding: 8px 10px
 }
 
+.sr-only-file {
+    position: absolute;
+    width: 0.1px;
+    height: 0.1px;
+    opacity: 0;
+    overflow: hidden;
+    z-index: -1
+}
+
+.file-picker {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    border: 1px dashed #d7deea;
+    border-radius: 10px;
+    background: #f9fafc
+}
+
+.file-picker-button {
+    display: inline-flex;
+    cursor: pointer
+}
+
+.file-picker-name {
+    color: #44516a;
+    font-size: 14px;
+    overflow-wrap: anywhere
+}
+
 .form-actions {
     grid-column: 1 / -1;
     display: flex;

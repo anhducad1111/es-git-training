@@ -34,12 +34,14 @@ class Worker(QThread):
   error = pyqtSignal(str)
   progress = pyqtSignal(int)
 
-  def __init__(self, task, url, payload=None, file_path=None):
+  def __init__(self, task, url, payload=None, file_path=None, headers=None, data=None):
     super().__init__()
     self.task = task
     self.url = url
     self.payload = payload
     self.file_path = file_path
+    self.headers = headers or {}
+    self.data = data or {}
 
   def run(self):
     try:
@@ -54,7 +56,7 @@ class Worker(QThread):
         try:
           fname = self.file_path.split("/")[-1].split("\\")[-1]
           files = {"file": (fname, reader)}
-          response = requests.post(self.url, files=files, timeout=10)
+          response = requests.post(self.url, files=files, data=self.data, headers=self.headers, timeout=10)
           reader.close()
           self.finished.emit("upload", response)
         except Exception:

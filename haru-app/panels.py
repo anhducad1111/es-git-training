@@ -22,7 +22,7 @@ def create_config_group(app):
   layout = QFormLayout()
   layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-  app.url_entry = QLineEdit("http://192.168.1.116/es-git-training/shodai-api/api/log.php")
+  app.url_entry = QLineEdit("http://192.168.1.116/es-git-training/esp32-ota/api/api.php")
   app.device_entry = QLineEdit("Haru-Client")
 
   layout.addRow(QLabel("API URL:"), app.url_entry)
@@ -92,12 +92,6 @@ def create_input_group(app):
   layout.addWidget(app.send_btn)
   layout.addWidget(app.auto_btn)
 
-  app.log_display = QTextEdit()
-  app.log_display.setReadOnly(True)
-  app.log_display.setFixedHeight(300)
-  app.log_display.setStyleSheet("font-family: Consolas; font-size: 9pt;")
-  layout.addWidget(app.log_display)
-
   group.setLayout(layout)
   return group
 
@@ -105,6 +99,18 @@ def create_input_group(app):
 def create_upload_group(app):
   group = QGroupBox("File Upload (WiFi)")
   layout = QVBoxLayout()
+
+  ver_layout = QHBoxLayout()
+  ver_layout.addWidget(QLabel("Version:"))
+  app.ver_entry = QLineEdit("1.0.0")
+  ver_layout.addWidget(app.ver_entry)
+  layout.addLayout(ver_layout)
+
+  info_layout = QHBoxLayout()
+  info_layout.addWidget(QLabel("Info:"))
+  app.version_info_entry = QLineEdit("Initial Release")
+  info_layout.addWidget(app.version_info_entry)
+  layout.addLayout(info_layout)
 
   app.file_path_label = QLineEdit("No file selected")
   app.file_path_label.setReadOnly(True)

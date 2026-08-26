@@ -1,4 +1,4 @@
-PS C:\xampp\htdocs\es-git-training> git status
+""PS C:\xampp\htdocs\es-git-training> git status""
 On branch feat/ota-server
 Changes not staged for commit:
   (use "git add <file>..." to update what will be committed)
@@ -8,14 +8,14 @@ Changes not staged for commit:
         modified:   shodai-api/style.css
 
 no changes added to commit (use "git add" and/or "git commit -a")
-PS C:\xampp\htdocs\es-git-training> git add .
+""PS C:\xampp\htdocs\es-git-training> git add .""
 warning: in the working copy of 'shodai-api/api/log.php', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of 'shodai-api/index.php', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of 'shodai-api/style.css', LF will be replaced by CRLF the next time Git touches it
-PS C:\xampp\htdocs\es-git-training> git commit -m "feat/add-height"
+""PS C:\xampp\htdocs\es-git-training> git commit -m "feat/add-height"""
 [feat/ota-server 7d35526] feat/add-height
  1 file changed, 3 insertions(+), 2 deletions(-)
-PS C:\xampp\htdocs\es-git-training> git status
+""PS C:\xampp\htdocs\es-git-training> git status""
 On branch feat/ota-server
 Changes not staged for commit:
   (use "git add <file>..." to update what will be committed)
@@ -23,12 +23,12 @@ Changes not staged for commit:
         modified:   shodai-api/style.css
 
 no changes added to commit (use "git add" and/or "git commit -a")
-PS C:\xampp\htdocs\es-git-training> git add .
+""PS C:\xampp\htdocs\es-git-training> git add .""
 warning: in the working copy of 'shodai-api/style.css', LF will be replaced by CRLF the next time Git touches it
 PS C:\xampp\htdocs\es-git-training> git commit -m "feat/delete-height"
 [feat/ota-server 8c94641] feat/delete-height
  1 file changed, 1 insertion(+), 1 deletion(-)
-PS C:\xampp\htdocs\es-git-training> git push origin feat/ota-server
+""PS C:\xampp\htdocs\es-git-training> git push origin feat/ota-server""
 Enumerating objects: 11, done.
 Counting objects: 100% (11/11), done.
 Delta compression using up to 16 threads
@@ -42,7 +42,7 @@ remote:      https://github.com/shodai1216/es-git-training/pull/new/feat/ota-ser
 remote: 
 To https://github.com/shodai1216/es-git-training.git
  * [new branch]      feat/ota-server -> feat/ota-server
-PS C:\xampp\htdocs\es-git-training> git remote -v
+""PS C:\xampp\htdocs\es-git-training> git remote -v""
 origin  https://github.com/shodai1216/es-git-training.git (fetch)
 origin  https://github.com/shodai1216/es-git-training.git (push)
 upstream        https://github.com/anhducad1111/es-git-training.git (fetch)

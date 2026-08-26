@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // Change all values below before using this outside a trusted local network.
-const OTA_PUBLIC_BASE_URL = 'http://192.168.1.116/esp32-ota';
+const OTA_PUBLIC_BASE_URL = 'http://192.168.1.116/es-git-training/esp32-ota';
 const OTA_ADMIN_KEY = 'shodai-haru-2026-8-25';
 const OTA_DEVICE_KEY = 'ota-device-2026-8-25';
 const OTA_MAX_FIRMWARE_BYTES = 2_000_000;

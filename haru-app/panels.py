@@ -23,7 +23,7 @@ def create_config_group(app):
   layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
   app.url_entry = QLineEdit("http://192.168.1.116/es-git-training/esp32-ota/api/api.php")
-  app.device_entry = QLineEdit("Haru-Client")
+  app.device_entry = QLineEdit("Haru_Client")
 
   layout.addRow(QLabel("API URL:"), app.url_entry)
   layout.addRow(QLabel("Device Name:"), app.device_entry)

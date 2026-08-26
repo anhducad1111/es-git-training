@@ -40,14 +40,15 @@ if ($method === 'POST') {
     if ($action === 'ota') {
         require_key(OTA_ADMIN_KEY);
 
-        if (!is_array($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+        if (!isset($_FILES['file']) || !is_array($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
             send_json(['success' => false, 'message' => 'No valid file was uploaded.'], 400);
         }
 
         $version = trim((string) ($_POST['ver'] ?? ''));
         $versionInformation = trim((string) ($_POST['version_information'] ?? ''));
-        if ($version === '' || mb_strlen($version) > 64 || mb_strlen($versionInformation) > 255) {
-            send_json(['success' => false, 'message' => 'ver is required (up to 64 characters); version_information is limited to 255 characters.'], 400);
+        $clientName = trim((string) ($_POST['client'] ?? ''));
+        if ($version === '' || mb_strlen($version) > 64 || mb_strlen($versionInformation) > 255 || mb_strlen($clientName) > 64) {
+            send_json(['success' => false, 'message' => 'ver is required (up to 64 characters); version_information is limited to 255 characters; client is limited to 64 characters.'], 400);
         }
 
         $upload = $_FILES['file'];
@@ -64,10 +65,11 @@ if ($method === 'POST') {
             $pdo = get_pdo();
             $pdo->beginTransaction();
 
-            $insert = $pdo->prepare('INSERT INTO storage (ver, `file`, version_information) VALUES (:ver, :file, :version_information)');
+            $insert = $pdo->prepare('INSERT INTO storage (ver, `file`, version_information, client) VALUES (:ver, :file, :version_information, :client)');
             $insert->bindValue(':ver', $version, PDO::PARAM_STR);
             $insert->bindValue(':file', $binary, PDO::PARAM_LOB);
             $insert->bindValue(':version_information', $versionInformation === '' ? null : $versionInformation, $versionInformation === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
+            $insert->bindValue(':client', $clientName === '' ? null : $clientName, $clientName === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
             $insert->execute();
             $newId = (int) $pdo->lastInsertId();
 
@@ -83,6 +85,7 @@ if ($method === 'POST') {
                 'message' => 'File stored in the database.',
                 'id' => $newId,
                 'version' => $version,
+                'client' => $clientName === '' ? null : $clientName,
                 'size' => (int) $upload['size'],
                 'removed_old_records' => $deletedCount,
             ], 201);

@@ -27,9 +27,59 @@ pip install PyQt6 requests matplotlib
 
 ---
 
-## `main.py`
+## How to Use
 
-Entry point. Creates `QApplication`, instantiates `SensorClientApp`, shows window, and runs event loop.
+### 1. Server Configuration
+
+| Field | Description |
+|-------|-------------|
+| API URL | Server endpoint (default: `http://192.168.1.116/es-git-training/esp32-ota/api/api.php`) |
+| Device Name | Your device identifier |
+| Latest Version | Shows current version from server (auto-updates when Auto is ON) |
+
+### 2. Sensor Data Input
+
+- **Temperature/Humidity Sliders** - Adjust values manually or let Auto mode generate natural values
+- **Send Data (POST)** - Send sensor data to server
+- **Auto: OFF/ON** - Toggle auto mode (sends every 5s, fetches every 5s with 2.5s offset)
+
+### 3. File Upload 
+
+1. Enter **Version** (e.g., `1.0.3`)
+2. Enter **Version Information** (e.g., `initial`)
+3. Click **Select File** (only `.bin` files allowed)
+4. Click **Upload**
+
+**File is automatically renamed to:** `filename-version-info-client.bin`
+- Example: `firmware-1_0_3-initial-Haru_Client.bin`
+
+### 4. Version Management
+
+#### Auto Version Check
+- **Auto: OFF/ON** button next to Latest Version
+- When ON, fetches latest version every 5 seconds
+- Logs when version changes
+
+#### Unpin Version
+- **Unpin** button (orange) clears pinned version on server
+- Use when you want device to use newly uploaded version
+
+#### After Upload Version Check
+- After successful upload, app automatically checks if uploaded version matches current version
+- If **mismatch**, popup appears:
+  - **Unpin Now** - Clears pin and allows device to update
+  - **Close** - Dismisses popup
+
+---
+
+## API Endpoints
+
+| Action | Method | Header | Field | Purpose |
+|--------|--------|--------|-------|---------|
+| `?action=log` | POST | - | JSON | Send sensor data |
+| `?action=ota` | POST | `X-OTA-Key: shodai-haru-2026-8-25` | `file` | Upload firmware |
+| `latest.php` | GET | `X-OTA-Key: ota-device-2026-8-25` | - | Get latest version |
+| `target.php` | POST | `X-OTA-Key: shodai-haru-2026-8-25` | `action=clear` | Unpin version |
 
 ---
 
@@ -42,15 +92,20 @@ Main class `SensorClientApp(QWidget)`. Handles:
 - **Sensor data generation** - Sine waves + random noise for realistic temperature/humidity
 - **Send data** - POST to `?action=log` via background thread
 - **Fetch logs** - GET from API, update chart
+- **Version management** - Fetch latest, check after upload, unpin
 - **Disconnect popup** - Custom `DisconnectDialog` (click outside to dismiss)
 
 Key methods:
 | Method | Description |
 |--------|-------------|
-| `toggle_auto()` | Start/stop auto mode |
+| `toggle_auto()` | Start/stop auto mode for sensor data |
 | `send_data()` | POST sensor data |
 | `fetch_logs()` | GET data and refresh chart |
-| `append_log(msg)` | Add color-coded log entry (red=error, green=ok, white=info) |
+| `append_log(msg)` | Add color-coded log entry |
+| `toggle_version_fetch()` | Start/stop auto version check (5s) |
+| `fetch_latest_version()` | GET latest version from server |
+| `unpin_version()` | POST to clear pinned version |
+| `check_version_after_upload()` | Check if uploaded version matches current |
 | `show_disconnect_popup()` | Display error dialog |
 
 ---
@@ -61,11 +116,9 @@ UI panel creation functions. Each returns a `QGroupBox` with bold title:
 
 | Function | Creates |
 |----------|---------|
-| `create_config_group()` | Server URL and device name inputs |
+| `create_config_group()` | Server URL, device name, latest version with Auto/Unpin buttons |
 | `create_input_group()` | Temp/humidity sliders, send/auto buttons |
 | `create_upload_group()` | File selector, version/info inputs, upload button, progress bar |
-
-Log display (`QTextEdit`) is positioned below the input group.
 
 ---
 
@@ -78,7 +131,7 @@ File upload with automatic rename.
 | `select_file()` | Open file dialog (`.bin` only) |
 | `upload_file()` | Rename file and upload |
 | `build_ota_filename()` | Generate `filename-version-info-client.bin` |
-| `on_upload_done()` | Handle response, clear form on success |
+| `on_upload_done()` | Handle response, check version after success |
 | `on_upload_error()` | Handle connection failure |
 
 **File rules:**
@@ -90,12 +143,6 @@ File upload with automatic rename.
 - version: alphanumeric + underscores (e.g., `1.1.1` → `1_1_1`)
 - Example: `firmware-1_1_1-hotfix-taro.bin`
 
-**Upload details:**
-- Endpoint: `{base_url}?action=ota`
-- Header: `X-OTA-Key: shodai-haru-2026-8-25`
-- Field name: `file`
-- Only file is sent (no extra form data)
-
 ---
 
 ## `worker.py`
@@ -104,11 +151,9 @@ Background thread worker `Worker(QThread)` for non-blocking network requests.
 
 | Task | Description |
 |------|-------------|
-| `post` | Send JSON payload via POST |
+| `post` | Send JSON or form data via POST |
 | `get` | Fetch data via GET |
 | `upload` | Upload file with progress tracking (8KB chunks) |
-
-`ProgressFileReader` reads files in chunks and emits progress signals.
 
 Signals:
 | Signal | Description |
@@ -129,17 +174,10 @@ Signals:
 
 ---
 
-## API Endpoints
-
-| Action | Method | Field | Purpose |
-|--------|--------|-------|---------|
-| `?action=log` | POST | JSON | Send sensor data |
-| `?action=ota` | POST | `file` | Upload firmware |
-
 ## Log Color Coding
 
 | Color | Meaning |
 |-------|---------|
-| 🔴 Red | ERROR, FAIL, BLOCKED |
-| 🟢 Green | OK |
-| ⚪ White | Other messages |
+| Red | ERROR, FAIL, BLOCKED |
+| Green | OK, Match |
+| White | Other messages |

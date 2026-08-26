@@ -50,7 +50,7 @@ def create_config_group(app):
 
   layout.addRow(QLabel("API URL:"), app.url_entry)
   layout.addRow(QLabel("Device Name:"), app.device_entry)
-  layout.addRow(QLabel("Latest Version:"), version_layout)
+  layout.addRow(QLabel("Current Version:"), version_layout)
   group.setLayout(layout)
   return group
 

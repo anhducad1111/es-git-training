@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -16,7 +17,7 @@ from PyQt6.QtWidgets import (
 )
 from worker import Worker
 from chart import ChartWidget
-from panels import create_config_group, create_input_group, create_upload_group
+from panels import create_config_group, create_input_group, create_upload_group, GROUP_BOX_STYLE
 import upload as upload_mod
 
 
@@ -79,6 +80,7 @@ class SensorClientApp(QWidget):
     self.version_timer.timeout.connect(self.fetch_latest_version)
     self.init_ui()
     self.fetch_latest_version()
+    self.toggle_version_fetch()
 
   def init_ui(self):
     self.setWindowTitle("Haru - Sensor Logger Client")
@@ -94,17 +96,18 @@ class SensorClientApp(QWidget):
     left_layout.addWidget(create_config_group(self))
     left_layout.addWidget(create_input_group(self))
 
-    log_label = QLabel("Log Screen")
-    log_label.setStyleSheet("font-weight: bold; font-size: 12px;")
-    left_layout.addWidget(log_label)
-
+    log_group = QGroupBox("Log Screen")
+    log_group.setStyleSheet(GROUP_BOX_STYLE)
+    log_layout = QVBoxLayout()
     self.log_display = QTextEdit()
     self.log_display.setReadOnly(True)
-    self.log_display.setFixedHeight(300)
+    self.log_display.setFixedHeight(250)
     self.log_display.setStyleSheet(
         "font-family: Consolas; font-size: 9pt; background-color: #212121; color: #FFFFFF;"
     )
-    left_layout.addWidget(self.log_display)
+    log_layout.addWidget(self.log_display)
+    log_group.setLayout(log_layout)
+    left_layout.addWidget(log_group)
 
     left_layout.addStretch()
 
@@ -163,6 +166,60 @@ class SensorClientApp(QWidget):
   def on_version_error(self, msg):
     self.latest_version_label.setText("N/A")
     self.append_log(f"VERSION ERROR | {msg}")
+
+  def check_version_after_upload(self):
+    ver = self.ver_entry.text().strip()
+    uploaded_version = ver.replace(".", "_")
+    url = "http://192.168.1.116/es-git-training//esp32-ota/api/latest.php"
+    headers = {"X-OTA-Key": "ota-device-2026-8-25"}
+    self._check_worker = Worker("get", url, headers=headers)
+    self._check_worker.finished.connect(lambda t, r: self.on_check_version_result(r, uploaded_version))
+    self._check_worker.error.connect(lambda m: self.append_log(f"VERSION CHECK ERROR | {m}"))
+    self._check_worker.start()
+
+  def on_check_version_result(self, response, uploaded_version):
+    if response.status_code in (200, 201):
+      try:
+        result = response.json()
+        current_version = str(result.get("version", result.get("latest_version", "")))
+        current_display = current_version.replace("_", ".")
+        uploaded_display = uploaded_version.replace("_", ".")
+        self.latest_version_label.setText(current_display)
+        self.append_log(f"VERSION CHECK | Uploaded: {uploaded_display} | Current: {current_display}")
+        if uploaded_version == current_version:
+          self.append_log("VERSION CHECK | Match - using uploaded version")
+        else:
+          self.show_version_mismatch_popup(uploaded_display, current_display)
+      except ValueError:
+        self.append_log("VERSION CHECK | Invalid response")
+    else:
+      self.append_log(f"VERSION CHECK FAIL | Status {response.status_code}")
+
+  def show_version_mismatch_popup(self, uploaded_ver, current_ver):
+    dlg = QDialog(self)
+    dlg.setWindowTitle("Version Mismatch")
+    dlg.setFixedSize(400, 180)
+    layout = QVBoxLayout()
+    msg = QLabel(f"Uploaded version: {uploaded_ver}\nCurrent version: {current_ver}\n\nPlease unpin to use the uploaded version.")
+    msg.setStyleSheet("font-size: 13px;")
+    msg.setWordWrap(True)
+    layout.addWidget(msg)
+    btn_layout = QHBoxLayout()
+    unpin_btn = QPushButton("Unpin Now")
+    unpin_btn.setStyleSheet(
+        "background-color: #FF9800; color: white; font-weight: bold; padding: 8px 20px; border-radius: 4px;"
+    )
+    unpin_btn.clicked.connect(lambda: (self.unpin_version(), dlg.accept()))
+    close_btn = QPushButton("Close")
+    close_btn.setStyleSheet(
+        "background-color: #757575; color: white; font-weight: bold; padding: 8px 20px; border-radius: 4px;"
+    )
+    close_btn.clicked.connect(dlg.reject)
+    btn_layout.addWidget(unpin_btn)
+    btn_layout.addWidget(close_btn)
+    layout.addLayout(btn_layout)
+    dlg.setLayout(layout)
+    dlg.exec()
 
   def toggle_version_fetch(self):
     if self.version_auto_running:

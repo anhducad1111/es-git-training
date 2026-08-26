@@ -79,6 +79,7 @@ def on_upload_done(app, task, response, tmp_dir):
     app.file_path_label.setStyleSheet("color: gray; background-color: #f0f0f0;")
     if hasattr(app, "_upload_file_path"):
       del app._upload_file_path
+    app.check_version_after_upload()
   else:
     app.append_log(f"UPLOAD FAIL | Status {response.status_code}")
     app.show_disconnect_popup()

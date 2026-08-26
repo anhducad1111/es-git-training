@@ -8,6 +8,7 @@ class ChartWidget(QGroupBox):
 
   def __init__(self, on_refresh):
     super().__init__("Temperature & Humidity History")
+    self.setStyleSheet("QGroupBox { font-weight: bold; }")
     self.on_refresh = on_refresh
     self._init_ui()
 

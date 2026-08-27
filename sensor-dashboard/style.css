@@ -215,18 +215,42 @@ h1 {
     padding: 16px 18px 8px
 }
 
+.chart-crosshair {
+    position: absolute;
+    width: 1px;
+    background: rgba(23, 32, 51, .18);
+    pointer-events: none;
+    z-index: 4
+}
+
 .chart-tooltip {
     position: absolute;
-    transform: translate(-50%, -130%);
-    padding: 6px 10px;
-    border-radius: 7px;
+    transform: translate(-50%, -100%);
+    margin-top: -10px;
+    padding: 8px 12px;
+    border-radius: 8px;
     background: #172033;
     color: #fff;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
     white-space: nowrap;
     pointer-events: none;
     z-index: 10
+}
+
+.chart-tooltip-time {
+    margin-bottom: 6px;
+    color: #98a2b3;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .3px
+}
+
+.chart-tooltip-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0
 }
 
 .chart-wrap svg {

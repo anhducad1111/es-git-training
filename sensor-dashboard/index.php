@@ -27,13 +27,14 @@
             <div class="panel-header">
                 <div>
                     <h2 id="chartTitle">Sensor History</h2>
-                    <p>Each series normalized to 0-100%. Hover a point for the real value.</p>
+                    <p>Each series normalized to 0-100%. Move over the chart to see all values at a time.</p>
                 </div>
             </div>
             <div id="chartCheckboxes" class="chart-checkboxes"></div>
             <div class="chart-canvas">
                 <div id="chartEmpty" class="chart-empty">Loading chart...</div>
                 <div id="sensorChart" class="chart-wrap hidden" role="img" aria-label="Sensor history trend chart"></div>
+                <div id="chartCrosshair" class="chart-crosshair hidden"></div>
                 <div id="chartTooltip" class="chart-tooltip hidden"></div>
             </div>
         </section>
@@ -156,25 +157,33 @@
             });
         }
 
+        const CHART_VIEW = { width: 900, height: 360, left: 20, right: 20, top: 20, bottom: 24 };
+        let chartAllTimes = [];
+
+        function timeLabel(t) {
+            return t.slice(11, 16);
+        }
+
         function renderChart(history) {
             const labels = Object.keys(history);
             renderCheckboxes(labels);
             const chart = document.getElementById("sensorChart");
             const empty = document.getElementById("chartEmpty");
+            chartAllTimes = [...new Set(labels.flatMap(l => history[l].map(p => p.reading_time)))].sort();
             const activeLabels = labels.filter(l => visibleLabels.has(l) && history[l].length > 0);
-            if (activeLabels.length === 0) {
+            if (activeLabels.length === 0 || chartAllTimes.length === 0) {
                 chart.innerHTML = "";
                 chart.classList.add("hidden");
                 empty.textContent = labels.length === 0 ? "No sensor data yet." : "No labels selected.";
                 empty.classList.remove("hidden");
+                hideChartHover();
                 return;
             }
-            const width = 900, height = 360, left = 20, right = 20, top = 20, bottom = 20;
+            const { width, height, left, right, top, bottom } = CHART_VIEW;
             const plotWidth = width - left - right, plotHeight = height - top - bottom;
-            const allTimes = [...new Set(activeLabels.flatMap(l => history[l].map(p => p.reading_time)))].sort();
             const x = time => {
-                const idx = allTimes.indexOf(time);
-                return left + (allTimes.length <= 1 ? plotWidth / 2 : idx * plotWidth / (allTimes.length - 1));
+                const idx = chartAllTimes.indexOf(time);
+                return left + (chartAllTimes.length <= 1 ? plotWidth / 2 : idx * plotWidth / (chartAllTimes.length - 1));
             };
             const normalize = values => {
                 const min = Math.min(...values), max = Math.max(...values);
@@ -187,23 +196,82 @@
                 const values = points.map(p => p.data);
                 const normalized = normalize(values);
                 const color = colorForLabel(label);
-                const unit = UNIT_MAP[label] || "";
                 const coords = points.map((p, idx) => `${x(p.reading_time).toFixed(1)},${(top + plotHeight - normalized[idx] * plotHeight / 100).toFixed(1)}`).join(" ");
                 seriesSvg += `<polyline points="${coords}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
                 points.forEach((p, idx) => {
                     const cx = x(p.reading_time).toFixed(1);
                     const cy = (top + plotHeight - normalized[idx] * plotHeight / 100).toFixed(1);
-                    const tooltip = `${label}: ${p.data}${unit ? " " + unit : ""}`;
-                    dotsSvg += `<circle cx="${cx}" cy="${cy}" r="8" fill="transparent" data-tooltip="${esc(tooltip)}"/><circle cx="${cx}" cy="${cy}" r="3" fill="${color}" stroke="#fff" stroke-width="1.5" style="pointer-events:none"/>`;
+                    dotsSvg += `<circle cx="${cx}" cy="${cy}" r="3" fill="${color}" stroke="#fff" stroke-width="1.5" style="pointer-events:none"/>`;
                 });
             });
             const gridLines = [0, 25, 50, 75, 100].map(pct => {
                 const gy = top + plotHeight - pct * plotHeight / 100;
                 return `<line x1="${left}" y1="${gy}" x2="${width - right}" y2="${gy}" class="chart-grid"/><text x="${left}" y="${gy - 4}" class="chart-axis">${pct}%</text>`;
             }).join("");
-            chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${gridLines}${seriesSvg}${dotsSvg}</svg>`;
+            const tickCount = Math.min(6, chartAllTimes.length);
+            const tickIndices = [...new Set(tickCount <= 1 ? [0] : Array.from({ length: tickCount }, (_, i) => Math.round(i * (chartAllTimes.length - 1) / (tickCount - 1))))];
+            const xAxisSvg = tickIndices.map(idx => {
+                const time = chartAllTimes[idx];
+                const tx = x(time).toFixed(1);
+                return `<line x1="${tx}" y1="${top}" x2="${tx}" y2="${top + plotHeight}" class="chart-grid"/><text x="${tx}" y="${height - 6}" text-anchor="middle" class="chart-axis">${esc(timeLabel(time))}</text>`;
+            }).join("");
+            chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${gridLines}${xAxisSvg}${seriesSvg}${dotsSvg}</svg>`;
             chart.classList.remove("hidden");
             empty.classList.add("hidden");
+        }
+
+        function hideChartHover() {
+            chartTooltip.classList.add("hidden");
+            chartCrosshair.classList.add("hidden");
+        }
+
+        function handleChartHover(clientX, clientY) {
+            const svg = document.querySelector("#sensorChart svg");
+            if (!svg || chartAllTimes.length === 0) {
+                hideChartHover();
+                return;
+            }
+            const svgRect = svg.getBoundingClientRect();
+            if (clientX < svgRect.left || clientX > svgRect.right || clientY < svgRect.top || clientY > svgRect.bottom) {
+                hideChartHover();
+                return;
+            }
+            const { width, left, right } = CHART_VIEW;
+            const plotWidth = width - left - right;
+            const viewBoxX = (clientX - svgRect.left) / svgRect.width * width;
+            if (viewBoxX < left || viewBoxX > width - right) {
+                hideChartHover();
+                return;
+            }
+            const relative = (viewBoxX - left) / plotWidth;
+            const idx = Math.max(0, Math.min(chartAllTimes.length - 1, Math.round(relative * (chartAllTimes.length - 1))));
+            const time = chartAllTimes[idx];
+            const tx = left + (chartAllTimes.length <= 1 ? plotWidth / 2 : idx * plotWidth / (chartAllTimes.length - 1));
+            const canvasRect = chartCanvas.getBoundingClientRect();
+            const crosshairPx = (svgRect.left - canvasRect.left) + (tx / width) * svgRect.width;
+
+            const rows = Object.keys(lastHistory)
+                .map(label => {
+                    const point = lastHistory[label].find(p => p.reading_time === time);
+                    if (!point) return null;
+                    const unit = UNIT_MAP[label] || "";
+                    return { label, value: `${point.data}${unit ? " " + unit : ""}`, color: colorForLabel(label) };
+                })
+                .filter(Boolean);
+            if (rows.length === 0) {
+                hideChartHover();
+                return;
+            }
+
+            chartCrosshair.style.left = crosshairPx + "px";
+            chartCrosshair.style.top = (svgRect.top - canvasRect.top) + "px";
+            chartCrosshair.style.height = svgRect.height + "px";
+            chartCrosshair.classList.remove("hidden");
+
+            chartTooltip.innerHTML = `<div class="chart-tooltip-time">${esc(time)}</div>` + rows.map(r => `<div class="chart-tooltip-row"><span class="color-dot" style="background:${r.color}"></span>${esc(r.label)}: ${esc(r.value)}</div>`).join("");
+            chartTooltip.style.left = crosshairPx + "px";
+            chartTooltip.style.top = (svgRect.top - canvasRect.top) + "px";
+            chartTooltip.classList.remove("hidden");
         }
 
         function mdInline(raw) {
@@ -331,19 +399,9 @@
 
         const chartCanvas = document.querySelector(".chart-canvas");
         const chartTooltip = document.getElementById("chartTooltip");
-        chartCanvas.addEventListener("pointermove", e => {
-            const target = e.target.closest("circle[data-tooltip]");
-            if (!target) {
-                chartTooltip.classList.add("hidden");
-                return;
-            }
-            const rect = chartCanvas.getBoundingClientRect();
-            chartTooltip.textContent = target.dataset.tooltip;
-            chartTooltip.style.left = (e.clientX - rect.left) + "px";
-            chartTooltip.style.top = (e.clientY - rect.top) + "px";
-            chartTooltip.classList.remove("hidden");
-        });
-        chartCanvas.addEventListener("pointerleave", () => chartTooltip.classList.add("hidden"));
+        const chartCrosshair = document.getElementById("chartCrosshair");
+        chartCanvas.addEventListener("pointermove", e => handleChartHover(e.clientX, e.clientY));
+        chartCanvas.addEventListener("pointerleave", hideChartHover);
 
         loadData();
         loadAnalysis();

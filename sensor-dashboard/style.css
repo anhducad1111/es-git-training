@@ -261,6 +261,109 @@ h1 {
     grid-column: 1 / -1
 }
 
+.analysis-panel {
+    margin-bottom: 24px
+}
+
+.analysis-list {
+    padding: 8px 24px 24px
+}
+
+.analysis-entry {
+    padding: 20px 0;
+    border-bottom: 1px solid #edf0f5
+}
+
+.analysis-entry:last-child {
+    border-bottom: 0
+}
+
+.analysis-time {
+    margin-bottom: 10px;
+    color: #98a2b3;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .4px
+}
+
+.analysis-content {
+    color: #2b3549;
+    font-size: 14px;
+    line-height: 1.65
+}
+
+.analysis-content h4,
+.analysis-content h5,
+.analysis-content h6 {
+    margin: 16px 0 8px;
+    color: #172033;
+    font-weight: 800
+}
+
+.analysis-content h4 {
+    font-size: 17px
+}
+
+.analysis-content h5 {
+    font-size: 15px
+}
+
+.analysis-content h6 {
+    font-size: 14px
+}
+
+.analysis-content h4:first-child,
+.analysis-content h5:first-child,
+.analysis-content h6:first-child {
+    margin-top: 0
+}
+
+.analysis-content p {
+    margin: 0 0 10px
+}
+
+.analysis-content ul,
+.analysis-content ol {
+    margin: 0 0 10px;
+    padding-left: 22px
+}
+
+.analysis-content li {
+    margin: 4px 0
+}
+
+.analysis-content strong {
+    color: #172033
+}
+
+.analysis-content code {
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: #f1f3f8;
+    color: #b4325a;
+    font-size: 13px
+}
+
+.analysis-content pre {
+    margin: 0 0 10px;
+    padding: 14px;
+    border-radius: 10px;
+    background: #172033;
+    color: #e8ecf5;
+    font-size: 13px;
+    overflow-x: auto
+}
+
+.analysis-content pre code {
+    padding: 0;
+    background: transparent;
+    color: inherit
+}
+
+.analysis-content a {
+    color: #5271ff
+}
+
 footer {
     padding: 22px 0 0;
     color: #9aa4b5;

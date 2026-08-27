@@ -37,10 +37,22 @@
                 <div id="chartTooltip" class="chart-tooltip hidden"></div>
             </div>
         </section>
+        <section class="panel analysis-panel" aria-labelledby="analysisTitle">
+            <div class="panel-header">
+                <div>
+                    <h2 id="analysisTitle">AI Analysis</h2>
+                    <p>Gemini analysis results received in the last 30 minutes.</p>
+                </div>
+            </div>
+            <div id="analysisList" class="analysis-list">
+                <div class="loading">Loading...</div>
+            </div>
+        </section>
         <footer>Auto refresh: every 5 seconds &middot; Apache / PHP / MySQL</footer>
     </main>
     <script>
         const API_URL = "api/get-data.php";
+        const ANALYSIS_API_URL = "api/get-analysis.php";
 
         const CARD_GROUPS = [
             { title: "CO2 & Gas", labels: ["co2", "gas"] },
@@ -194,6 +206,104 @@
             empty.classList.add("hidden");
         }
 
+        function mdInline(raw) {
+            let s = esc(raw);
+            s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+            s = s.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>");
+            s = s.replace(/`([^`]+?)`/g, "<code>$1</code>");
+            s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, label, url) => {
+                const safeUrl = /^https?:\/\//.test(url) ? esc(url) : "#";
+                return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+            });
+            return s;
+        }
+
+        function mdBlock(text) {
+            const lines = text.split("\n");
+            let html = "", listType = null, paragraph = [];
+            const flushParagraph = () => {
+                if (paragraph.length) {
+                    html += `<p>${paragraph.join(" ")}</p>`;
+                    paragraph = [];
+                }
+            };
+            const closeList = () => {
+                if (listType) {
+                    html += `</${listType}>`;
+                    listType = null;
+                }
+            };
+            lines.forEach(rawLine => {
+                const line = rawLine.trim();
+                if (line === "") {
+                    flushParagraph();
+                    closeList();
+                    return;
+                }
+                const heading = line.match(/^(#{1,6})\s+(.*)$/);
+                if (heading) {
+                    flushParagraph();
+                    closeList();
+                    const level = Math.min(heading[1].length + 3, 6);
+                    html += `<h${level}>${mdInline(heading[2])}</h${level}>`;
+                    return;
+                }
+                const ul = line.match(/^[-*]\s+(.*)$/);
+                if (ul) {
+                    flushParagraph();
+                    if (listType !== "ul") { closeList(); html += "<ul>"; listType = "ul"; }
+                    html += `<li>${mdInline(ul[1])}</li>`;
+                    return;
+                }
+                const ol = line.match(/^\d+\.\s+(.*)$/);
+                if (ol) {
+                    flushParagraph();
+                    if (listType !== "ol") { closeList(); html += "<ol>"; listType = "ol"; }
+                    html += `<li>${mdInline(ol[1])}</li>`;
+                    return;
+                }
+                closeList();
+                paragraph.push(mdInline(line));
+            });
+            flushParagraph();
+            closeList();
+            return html;
+        }
+
+        function renderMarkdown(text) {
+            const parts = String(text).split(/```/);
+            return parts.map((part, i) => {
+                if (i % 2 === 1) {
+                    const lines = part.replace(/^\n/, "").split("\n");
+                    if (lines[0] && !lines[0].includes(" ") && lines[0].trim() !== "") lines.shift();
+                    return `<pre><code>${esc(lines.join("\n"))}</code></pre>`;
+                }
+                return mdBlock(part);
+            }).join("");
+        }
+
+        function renderAnalysis(logs) {
+            const container = document.getElementById("analysisList");
+            if (!logs || logs.length === 0) {
+                container.innerHTML = '<div class="empty">No analysis received in the last 30 minutes.</div>';
+                return;
+            }
+            const log = logs[0];
+            container.innerHTML = `<article class="analysis-entry"><div class="analysis-time">${esc(log.created_at)}</div><div class="analysis-content">${renderMarkdown(log.content)}</div></article>`;
+        }
+
+        async function loadAnalysis() {
+            try {
+                const response = await fetch(ANALYSIS_API_URL, { method: "GET", cache: "no-store" });
+                if (!response.ok) throw new Error("HTTP " + response.status);
+                const result = await response.json();
+                if (!result.success) throw new Error(result.message || "API error");
+                renderAnalysis(result.logs);
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
         async function loadData() {
             const statusDot = document.getElementById("statusDot");
             const statusText = document.getElementById("statusText");
@@ -236,7 +346,11 @@
         chartCanvas.addEventListener("pointerleave", () => chartTooltip.classList.add("hidden"));
 
         loadData();
-        setInterval(loadData, 5000);
+        loadAnalysis();
+        setInterval(() => {
+            loadData();
+            loadAnalysis();
+        }, 5000);
     </script>
 </body>
 

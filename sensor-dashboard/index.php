@@ -194,7 +194,7 @@
             activeLabels.forEach(label => {
                 const points = history[label];
                 const values = points.map(p => p.data);
-                const normalized = normalize(values);
+                const normalized = label === "battery" ? values.map(v => Math.max(0, Math.min(100, v))) : normalize(values);
                 const color = colorForLabel(label);
                 const coords = points.map((p, idx) => `${x(p.reading_time).toFixed(1)},${(top + plotHeight - normalized[idx] * plotHeight / 100).toFixed(1)}`).join(" ");
                 seriesSvg += `<polyline points="${coords}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;

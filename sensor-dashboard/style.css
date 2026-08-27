@@ -43,12 +43,6 @@ h1 {
     color: #748096
 }
 
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: 12px
-}
-
 .server-status {
     display: flex;
     align-items: center;
@@ -61,23 +55,6 @@ h1 {
     font-size: 14px;
     font-weight: 600;
     white-space: nowrap
-}
-
-.battery-status {
-    padding: 10px 14px;
-    border: 1px solid #dce3ee;
-    border-radius: 999px;
-    background: #fff;
-    color: #44516a;
-    font-size: 14px;
-    font-weight: 700;
-    white-space: nowrap
-}
-
-.battery-status small {
-    margin-left: 2px;
-    color: #7b879b;
-    font-weight: 600
 }
 
 .status-dot {
@@ -222,9 +199,34 @@ h1 {
     cursor: pointer
 }
 
+.color-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%
+}
+
+.chart-canvas {
+    position: relative
+}
+
 .chart-wrap {
     height: 400px;
     padding: 16px 18px 8px
+}
+
+.chart-tooltip {
+    position: absolute;
+    transform: translate(-50%, -130%);
+    padding: 6px 10px;
+    border-radius: 7px;
+    background: #172033;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 10
 }
 
 .chart-wrap svg {

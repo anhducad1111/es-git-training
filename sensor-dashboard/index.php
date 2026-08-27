@@ -16,10 +16,7 @@
                 <h1>Sensor Dashboard</h1>
                 <p class="subtitle">Live data from MySQL</p>
             </div>
-            <div class="header-right">
-                <div class="battery-status"><span id="batteryValue">--</span><small>%</small></div>
-                <div class="server-status"><span id="statusDot" class="status-dot"></span><span id="statusText">Connecting...</span></div>
-            </div>
+            <div class="server-status"><span id="statusDot" class="status-dot"></span><span id="statusText">Connecting...</span></div>
         </header>
         <div id="staleWarning" class="stale-warning top-warning hidden" role="alert"></div>
         <div id="errorBox" class="error-box hidden"></div>
@@ -34,8 +31,11 @@
                 </div>
             </div>
             <div id="chartCheckboxes" class="chart-checkboxes"></div>
-            <div id="chartEmpty" class="chart-empty">Loading chart...</div>
-            <div id="sensorChart" class="chart-wrap hidden" role="img" aria-label="Sensor history trend chart"></div>
+            <div class="chart-canvas">
+                <div id="chartEmpty" class="chart-empty">Loading chart...</div>
+                <div id="sensorChart" class="chart-wrap hidden" role="img" aria-label="Sensor history trend chart"></div>
+                <div id="chartTooltip" class="chart-tooltip hidden"></div>
+            </div>
         </section>
         <footer>Auto refresh: every 5 seconds &middot; Apache / PHP / MySQL</footer>
     </main>
@@ -46,6 +46,7 @@
             { title: "CO2 & Gas", labels: ["co2", "gas"] },
             { title: "Temperature, Humidity & Pressure", labels: ["temperature", "humidity", "pressure"] },
             { title: "Particulate Matter", labels: ["pm1.0", "pm2.5", "pm10"] },
+            { title: "Battery", labels: ["battery"] },
         ];
 
         const UNIT_MAP = {
@@ -59,9 +60,19 @@
             "battery": "%",
         };
 
+        const COLOR_PALETTE = ["#e56a54", "#3d7ee8", "#20b26b", "#a35de0", "#e0a72a", "#2ac1c1", "#e05299", "#7d889b", "#4560c9"];
+
         let lastHistory = {};
         let visibleLabels = new Set();
         let seenLabels = new Set();
+        let labelColors = {};
+
+        function colorForLabel(label) {
+            if (!(label in labelColors)) {
+                labelColors[label] = COLOR_PALETTE[Object.keys(labelColors).length % COLOR_PALETTE.length];
+            }
+            return labelColors[label];
+        }
 
         function esc(v) {
             return String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -89,15 +100,10 @@
                 const footerTime = present.reduce((max, l) => latest[l].reading_time > max ? latest[l].reading_time : max, latest[present[0]].reading_time);
                 cards.push(`<div class="card"><div class="card-label">${esc(group.title.toUpperCase())}</div>${rows}<div class="card-footer">Updated: ${esc(footerTime)}</div></div>`);
             });
-            labels.filter(l => !grouped.has(l) && l !== "battery").forEach(l => {
+            labels.filter(l => !grouped.has(l)).forEach(l => {
                 cards.push(`<div class="card"><div class="card-label">${esc(l.toUpperCase())}</div>${rowHtml(l, latest[l])}<div class="card-footer">Updated: ${esc(latest[l].reading_time)}</div></div>`);
             });
             container.innerHTML = cards.join("");
-        }
-
-        function renderBattery(latest) {
-            const valueEl = document.getElementById("batteryValue");
-            valueEl.textContent = latest.battery ? Number(latest.battery.data).toFixed(0) : "--";
         }
 
         function updateStaleWarning(latest, serverTime) {
@@ -125,9 +131,10 @@
                     seenLabels.add(l);
                     visibleLabels.add(l);
                 }
+                colorForLabel(l);
             });
             const box = document.getElementById("chartCheckboxes");
-            box.innerHTML = labels.map(l => `<label class="chart-checkbox"><input type="checkbox" data-label="${esc(l)}" ${visibleLabels.has(l) ? "checked" : ""}> ${esc(l)}</label>`).join("");
+            box.innerHTML = labels.map(l => `<label class="chart-checkbox"><input type="checkbox" data-label="${esc(l)}" ${visibleLabels.has(l) ? "checked" : ""}><span class="color-dot" style="background:${colorForLabel(l)}"></span>${esc(l)}</label>`).join("");
             box.querySelectorAll("input[type=checkbox]").forEach(input => {
                 input.addEventListener("change", () => {
                     const label = input.dataset.label;
@@ -152,7 +159,6 @@
             }
             const width = 900, height = 360, left = 20, right = 20, top = 20, bottom = 20;
             const plotWidth = width - left - right, plotHeight = height - top - bottom;
-            const colors = ["#e56a54", "#3d7ee8", "#20b26b", "#a35de0", "#e0a72a", "#2ac1c1", "#e05299", "#7d889b", "#4560c9"];
             const allTimes = [...new Set(activeLabels.flatMap(l => history[l].map(p => p.reading_time)))].sort();
             const x = time => {
                 const idx = allTimes.indexOf(time);
@@ -164,18 +170,19 @@
                 return values.map(v => (v - min) / range * 100);
             };
             let seriesSvg = "", dotsSvg = "";
-            activeLabels.forEach((label, i) => {
+            activeLabels.forEach(label => {
                 const points = history[label];
                 const values = points.map(p => p.data);
                 const normalized = normalize(values);
-                const color = colors[i % colors.length];
+                const color = colorForLabel(label);
                 const unit = UNIT_MAP[label] || "";
                 const coords = points.map((p, idx) => `${x(p.reading_time).toFixed(1)},${(top + plotHeight - normalized[idx] * plotHeight / 100).toFixed(1)}`).join(" ");
                 seriesSvg += `<polyline points="${coords}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
                 points.forEach((p, idx) => {
                     const cx = x(p.reading_time).toFixed(1);
                     const cy = (top + plotHeight - normalized[idx] * plotHeight / 100).toFixed(1);
-                    dotsSvg += `<circle cx="${cx}" cy="${cy}" r="8" fill="transparent"><title>${esc(label)}: ${esc(String(p.data))}${unit ? " " + esc(unit) : ""}</title></circle><circle cx="${cx}" cy="${cy}" r="3" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;
+                    const tooltip = `${label}: ${p.data}${unit ? " " + unit : ""}`;
+                    dotsSvg += `<circle cx="${cx}" cy="${cy}" r="8" fill="transparent" data-tooltip="${esc(tooltip)}"/><circle cx="${cx}" cy="${cy}" r="3" fill="${color}" stroke="#fff" stroke-width="1.5" style="pointer-events:none"/>`;
                 });
             });
             const gridLines = [0, 25, 50, 75, 100].map(pct => {
@@ -197,7 +204,6 @@
                 const result = await response.json();
                 if (!result.success) throw new Error(result.message || "API error");
                 renderCards(result.latest);
-                renderBattery(result.latest);
                 updateStaleWarning(result.latest, result.server_time);
                 lastHistory = result.history;
                 renderChart(result.history);
@@ -212,6 +218,22 @@
                 errorBox.classList.remove("hidden");
             }
         }
+
+        const chartCanvas = document.querySelector(".chart-canvas");
+        const chartTooltip = document.getElementById("chartTooltip");
+        chartCanvas.addEventListener("pointermove", e => {
+            const target = e.target.closest("circle[data-tooltip]");
+            if (!target) {
+                chartTooltip.classList.add("hidden");
+                return;
+            }
+            const rect = chartCanvas.getBoundingClientRect();
+            chartTooltip.textContent = target.dataset.tooltip;
+            chartTooltip.style.left = (e.clientX - rect.left) + "px";
+            chartTooltip.style.top = (e.clientY - rect.top) + "px";
+            chartTooltip.classList.remove("hidden");
+        });
+        chartCanvas.addEventListener("pointerleave", () => chartTooltip.classList.add("hidden"));
 
         loadData();
         setInterval(loadData, 5000);

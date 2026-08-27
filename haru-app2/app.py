@@ -176,7 +176,6 @@ class SensorDashboardApp(QWidget):
     self.cards_layout = QVBoxLayout()
     self.cards_layout.setSpacing(8)
     self.card_labels = {}
-    self._previous_latest = {}
     self._hidden_charts = set()
     self._create_cards()
     cards_group.setLayout(self.cards_layout)
@@ -416,13 +415,19 @@ class SensorDashboardApp(QWidget):
       for label in labels:
         row = QHBoxLayout()
         name_label = QLabel(f"{label}:")
-        name_label.setFixedWidth(100)
+        name_label.setFixedWidth(120)
+        name_label.setStyleSheet("font-size: 12pt; font-weight: bold;")
         value_label = QLabel("N/A")
-        value_label.setStyleSheet("font-weight: bold; color: #1E88E5;")
+        value_label.setFixedWidth(100)
+        value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        arrow_label = QLabel("")
+        arrow_label.setFixedWidth(40)
+        arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         row.addWidget(name_label)
         row.addWidget(value_label)
+        row.addWidget(arrow_label)
         card_layout.addLayout(row)
-        self.card_labels[label] = value_label
+        self.card_labels[label] = {"value": value_label, "arrow": arrow_label}
       card.setLayout(card_layout)
       self.cards_layout.addWidget(card)
     self.cards_layout.addStretch()
@@ -555,29 +560,43 @@ class SensorDashboardApp(QWidget):
     self.append_log(f"FETCH ERROR | {msg}")
 
   def update_cards(self, latest):
-    for label, value_label in self.card_labels.items():
+    history = self._last_data.get("history", {}) if self._last_data else {}
+    for label, card in self.card_labels.items():
+      value_label = card["value"]
+      arrow_label = card["arrow"]
       if label in latest:
         info = latest[label]
         value = info.get("data", "N/A")
         unit = UNITS.get(label, "")
-        prev = self._previous_latest.get(label, {}).get("data")
-        arrow = ""
-        if prev is not None and value != "N/A":
+        arrow_text = ""
+        color = "#1E88E5"
+        if value != "N/A":
           try:
             cur = float(value)
-            prv = float(prev)
-            if cur > prv:
-              arrow = '<span style="color: #2196F3; font-weight: bold;"> ↑</span>'
-            elif cur < prv:
-              arrow = '<span style="color: #FF5252; font-weight: bold;"> ↓</span>'
+            prev_list = history.get(label, [])
+            if len(prev_list) >= 2:
+              prv = float(prev_list[-2].get("data", cur))
             else:
-              arrow = '<span style="color: #4CAF50; font-weight: bold;"> →</span>'
+              prv = cur
+            if cur > prv:
+              arrow_text = "↑"
+              color = "#2196F3"
+            elif cur < prv:
+              arrow_text = "↓"
+              color = "#FF5252"
+            else:
+              arrow_text = "→"
+              color = "#4CAF50"
           except (ValueError, TypeError):
             pass
-        value_label.setText(f"{value} {unit}{arrow}")
+        value_label.setText(f"{value} {unit}")
+        value_label.setStyleSheet(f"font-weight: bold; font-size: 14pt; color: {color};")
+        arrow_label.setText(arrow_text)
+        arrow_label.setStyleSheet(f"font-weight: bold; font-size: 14pt; color: {color};")
       else:
         value_label.setText("N/A")
-    self._previous_latest = dict(latest)
+        value_label.setStyleSheet("font-weight: bold; font-size: 14pt; color: #1E88E5;")
+        arrow_label.setText("")
 
   def check_staleness(self, data):
     server_time = data.get("server_time")

@@ -1,6 +1,7 @@
 <?php
 date_default_timezone_set('Asia/Ho_Chi_Minh');
 header("Content-Type: application/json; charset=UTF-8");
+require __DIR__ . "/../config.php";
 $host = "localhost";
 $dbname = "sensor_dashboard_db";
 $username = "root";
@@ -15,6 +16,12 @@ try {
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
   http_response_code(405);
   echo json_encode(["success" => false, "message" => "Only POST is allowed"]);
+  exit;
+}
+$providedKey = $_SERVER["HTTP_X_API_KEY"] ?? "";
+if (!hash_equals(API_KEY, $providedKey)) {
+  http_response_code(401);
+  echo json_encode(["success" => false, "message" => "Invalid or missing API key"]);
   exit;
 }
 

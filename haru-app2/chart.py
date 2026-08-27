@@ -107,15 +107,21 @@ class ChartWidget(QWidget):
   chart_added = pyqtSignal(str)
   chart_toggled = pyqtSignal()
 
-  def __init__(self, is_custom=False):
+  def __init__(self, is_custom=False, num_columns=1):
     super().__init__()
     self.charts = {}
     self.is_custom = is_custom
     self.current_groups = {}
     self.normalize_flags = {}
-    self.main_layout = QVBoxLayout()
+    self.main_layout = QHBoxLayout()
     self.main_layout.setContentsMargins(0, 0, 0, 0)
     self.main_layout.setSpacing(5)
+    self.col_layouts = []
+    for _ in range(num_columns):
+      col = QVBoxLayout()
+      col.setAlignment(Qt.AlignmentFlag.AlignTop)
+      self.main_layout.addLayout(col)
+      self.col_layouts.append(col)
     self.setLayout(self.main_layout)
     self.setAcceptDrops(True)
     if not is_custom:
@@ -190,14 +196,14 @@ class ChartWidget(QWidget):
     container.setLayout(container_layout)
     container.setCursor(Qt.CursorShape.OpenHandCursor)
 
-    self.main_layout.addWidget(container)
-
     self.charts[group_name] = {
         "fig": fig,
         "canvas": canvas,
         "labels": labels,
         "container": container,
     }
+    target_col = min(self.col_layouts, key=lambda l: l.count())
+    target_col.addWidget(container)
 
   def _build_charts(self):
     for group_name, labels in self.current_groups.items():
@@ -251,8 +257,6 @@ class ChartWidget(QWidget):
     container.setLayout(container_layout)
     container.setCursor(Qt.CursorShape.OpenHandCursor)
 
-    self.main_layout.addWidget(container)
-
     self.charts[group_name] = {
         "fig": fig,
         "canvas": canvas,
@@ -260,6 +264,8 @@ class ChartWidget(QWidget):
         "container": container,
         "close_btn": close_btn,
     }
+    target_col = min(self.col_layouts, key=lambda l: l.count())
+    target_col.addWidget(container)
 
   def _toggle_chart(self, group_name, btn):
     if group_name in self.charts:
@@ -315,10 +321,6 @@ class ChartWidget(QWidget):
       info["fig"].clear()
     self.charts.clear()
     self.normalize_flags.clear()
-    while self.main_layout.count():
-      item = self.main_layout.takeAt(0)
-      if item.widget():
-        item.widget().setParent(None)
 
   def rebuild_charts(self, groups, normalize_flags=None, normalize=False):
     self.current_groups = groups

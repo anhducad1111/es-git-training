@@ -1,108 +1,188 @@
 # Haru App 2 - Sensor Dashboard
 
+A PyQt6 desktop application for real-time IoT sensor monitoring with AI-powered analysis, interactive charts, and persistent layout customization.
+
 ## Overview
 
-A PyQt6 desktop application that displays real-time sensor data (9 types from ESP32) via cloud API, with AI-powered analysis using Gemini, custom chart generation, drag-and-drop functionality, and persistent layout state.
+Haru App 2 connects to your ESP32 sensor array via a cloud API, displaying live readings for 9 sensor types. The app features:
+
+- Real-time sensor data display with value change indicators
+- Interactive line charts with drag-and-drop functionality
+- Gemini AI chat for natural language data analysis
+- Custom chart creation via AI or slash commands
+- Persistent layout that remembers your configuration across restarts
+
+## Quick Start
+
+### Installation
+
+```bash
+cd haru-app2
+pip install PyQt6 requests matplotlib google-genai
+```
+
+### Running the App
+
+```bash
+python main.py
+```
+
+### Initial Setup
+
+1. **Configure Server Connection**
+   - Enter your API URL in the "API URL" field
+   - Default: `https://iotdigi.io.vn/es-git-training/sensor-dashboard/api/get-data.php`
+   - Click **Test** to verify the connection works
+   - Click **Start Polling** to begin receiving live data
+
+2. **Set Up Gemini AI** (Optional)
+   - The Gemini API key is configured in `config.py`
+   - Leave `gemini_api_key = ""` to use environment variable or set it directly
+   - The AI chat enables natural language questions about your sensor data
 
 ## Features
 
 ### Real-Time Sensor Monitoring
-- **9 Sensor Types**: co2, pm1.0, pm2.5, pm10, temperature, humidity, pressure, gas, battery
-- **6 Grouped Cards**: Air Quality, Particulate Matter, Temperature & Humidity, Pressure, Gas, Battery
-- **Value Change Indicators**: Arrows (↑↓→) with color coding show sensor trends
-  - ↑ Blue (#2196F3): value increased
-  - ↓ Red (#FF5252): value decreased
-  - → Green (#4CAF50): value unchanged
-- **Large Font Display**: 14pt values, 12pt labels for dashboard readability
-- **3 Line Charts**: Air Quality, Environment, Other
-- **5-Second Polling**: Auto-refresh data from server
-- **Stale Data Warning**: Alerts when data is 3+ minutes old
+
+**9 Sensor Types Supported:**
+- CO2 (carbon dioxide)
+- PM1.0, PM2.5, PM10 (particulate matter)
+- Temperature
+- Humidity
+- Pressure
+- Gas (analog gas sensor)
+- Battery level
+
+**6 Sensor Categories (Grouped Cards):**
+1. **Air Quality**: CO2 readings
+2. **Particulate Matter**: PM1.0, PM2.5, PM10 readings
+3. **Temperature & Humidity**: Temperature and humidity readings
+4. **Pressure**: Atmospheric pressure
+5. **Gas**: Gas sensor readings
+6. **Battery**: Battery level
+
+**Value Change Indicators:**
+- ↑ Blue arrow (#2196F3): Value increased from previous reading
+- ↓ Red arrow (#FF5252): Value decreased from previous reading
+- → Green arrow (#4CAF50): Value unchanged
+
+**Display Features:**
+- Large 14pt font for sensor values
+- 12pt font for sensor names
+- Right-aligned values with left-aligned labels
+- Centered arrow indicators
+- 5-second auto-refresh polling interval
+
+### Line Charts
+
+**3 Default Charts:**
+1. **Air Quality**: CO2 data over time
+2. **Environment**: Temperature, humidity, and pressure trends
+3. **Other**: PM1.0, PM2.5, PM10, gas, and battery levels
+
+**Chart Features:**
+- Matplotlib-based interactive charts
+- Hover tooltips showing exact values with dynamic positioning
+- X-axis shows time (HH:MM format)
+- Y-axis auto-scales with MaxNLocator (6 bins)
+- Dark theme matching the dashboard style
 
 ### Gemini AI Chat
-- Ask questions about your sensor data
-- Get real-time analysis and insights
+
+**Chat Features:**
+- Natural language questions about your sensor data
 - Responses limited to ~100 words for quick reading
-- Tab completion for sensor names after `/chart`
+- System context includes current sensor readings
+- Chat history maintained during session
+- Purple 💭 toggle button to show/hide AI panel
+
+**Tab Completion:**
+- Type `/chart` followed by partial sensor name
+- Press Tab to auto-complete available sensors
+- Example: `/chart tem` + Tab → `/chart temperature`
 
 ### AI Custom Charts
-- Create custom charts via natural language (e.g., "Show temperature and CO2 together")
-- **Persistent**: Custom charts are saved and restored on app restart
-- Normalize option for sensors with different scales (`-n` flag)
-- Separate charts option (`-d` flag)
-- Toggle visibility with X/O button
-- Hover tooltips with dynamic positioning (top/bottom based on value)
 
-### Center Charts
-- **Persistent**: Layout and hidden state saved across restarts
-- Drag-and-drop between center and AI Custom Charts
-- **Move to Charts**: Button to move all AI custom charts to center (with auto-rename on conflicts)
-- Charts moved from custom to center are visible and saved correctly
+**Creation Methods:**
 
-### Slash Commands
-- `/chart co2 temperature` - Create chart with both sensors
-- `/chart gas co2 -n` - Create chart with normalization
-- `/chart pm1.0 pm2.5 pm10 -d` - Create separate charts
-- Tab completion for sensor names
+1. **Natural Language**
+   - Type: "Show me temperature and humidity together"
+   - Gemini creates the chart automatically
+   - Chart appears in the AI Custom Charts area
+
+2. **Slash Commands**
+   - `/chart co2 temperature` - Combined chart
+   - `/chart gas co2 -n` - Normalized (0-1 scale)
+   - `/chart pm1.0 pm2.5 pm10 -d` - Separate charts
+
+3. **Drag and Drop**
+   - Drag any chart from Main Charts to AI Custom Charts
+   - Drag any chart from AI Custom Charts to Main Charts
+
+4. **Move to Charts Button**
+   - Click "Move to Charts" to move all AI custom charts to center
+   - Auto-rename on conflicts (e.g., "Other (2)")
+
+**Chart Options:**
+- `-n` flag: Normalize data to 0-1 range (Min-Max scaling)
+- `-d` flag: Display each sensor in separate charts
+- Toggle visibility with X/O button on each chart
+- Hover tooltips with dynamic positioning
+
+### Layout Persistence
+
+**Saved Settings:**
+- Chart arrangement in Main Charts area
+- Chart arrangement in AI Custom Charts area
+- Hidden chart states (X/O button positions)
+- Normalization settings for custom charts
+- API URL configuration
+- Gemini API key
+
+**Configuration File:**
+- Saved to `config.json` (gitignored)
+- Auto-saves on layout changes
+- Restores on app restart
+
+### Drag and Drop System
+
+**How It Works:**
+1. Hover over any chart title to grab it (cursor changes to hand)
+2. Drag to target area (dashed border appears when hovering)
+3. Drop to copy or move the chart
+
+**Movement Rules:**
+- Main Charts → AI Custom Charts: **Copies** the chart
+- AI Custom Charts → Main Charts: **Moves** the chart (removes from custom)
+- Auto-rename when moving to avoid duplicate names
+
+**Visual Feedback:**
+- Blue dashed border when dragging over valid drop zone
+- Charts maintain their data and settings during transfer
 
 ### Data Analysis
-- Click "Analyze Data" to get Gemini insights
-- Analysis is automatically sent to server via `api/post-analysis.php`
 
-## How to Use
+**Analyze Data Button:**
+- Click "Analyze Data (Gemini)" in left panel
+- Sends current sensor data to Gemini for analysis
+- Analysis text is automatically sent to your server via POST request
+- Response appears in chat as a system message
 
-### 1. Start the Application
-```bash
-cd haru-app2
-python main.py
-```
-
-### 2. Configure Server Connection
-1. Enter your API URL in the "API URL" field (default: `https://iotdigi.io.vn/es-git-training/sensor-dashboard/api/get-data.php`)
-2. Click "Test" to verify connection
-3. Click "Start Polling" to begin receiving data
-
-### 3. View Sensor Data
-- **Left Column**: Sensor cards show current values with change arrows
-- **Center Column**: Line charts show historical trends
-- **Right Column**: Gemini chat and AI Custom Charts
-
-### 4. Use Gemini Chat
-1. Type a question about your sensors
-2. Press Enter to send
-3. Press Tab to auto-complete sensor names
-4. Get AI-powered insights
-
-### 5. Create Custom Charts
-**Option A: Natural Language**
-- Type: "Show me temperature and humidity together"
-- Gemini creates the chart automatically
-
-**Option B: Slash Command**
-- `/chart co2 temperature` - Combined chart
-- `/chart gas co2 -n` - Normalized (0-1 scale)
-- `/chart pm1.0 pm2.5 pm10 -d` - Separate charts
-
-**Option C: Drag and Drop**
-- Drag any chart from center to AI Custom Charts area
-- Drag any chart from AI Custom Charts to center
-
-**Option D: Move to Charts Button**
-- Click "Move to Charts" to move all AI custom charts to center
-- Auto-rename on conflicts (e.g., "Other (2)")
-
-### 6. Analyze Data
-1. Click "Analyze Data (Gemini)" button
-2. Wait for Gemini response
-3. Analysis is sent to server automatically
+**Server Integration:**
+- Analysis sent to `/api/post-analysis.php`
+- JSON format: `{"content": "Analysis text from Gemini..."}`
+- Useful for logging or further processing
 
 ## Layout
 
+### Main Dashboard Layout
+
 ```
 +-------------------+-------------------+-------------------+-------------------+
-|  Config Panel     |  Sensor Cards     |  Main Charts      |  Gemini Chat      |
+|  Server Config    |  Sensor Cards     |  Main Charts      |  Gemini Chat      |
 |  [API URL]        |  +-------------+  |  Air Quality      |  [Input field]    |
-|  [Test] [Poll]    |  | CO2         |  |  +-----------+    |  [Send button]    |
-+-------------------+  | 2164 ppm →  |  |  | co2, pm   |    |                   |
+|  [Test] [Poll]    |  | Air Quality |  |  +-----------+    |  [Send button]    |
++-------------------+  | CO2: 2164 → |  |  | co2, pm   |    |                   |
                        | +-------------+  |  | /\  /\    |    |                   |
                        | | Particulate |  |  +-----------+    |                   |
                        | | PM1.0: 1 ↑ |  |                   |                   |
@@ -111,23 +191,85 @@ python main.py
                        | | Temp & Hum  |  |  | temp, hum |    |  | User      |    |
                        | | 29.0 C →    |  |  | /\  /\    |    |  | created   |    |
                        | +-------------+  |  +-----------+    |  | charts    |    |
-                       | | ...         |  |                   |  +-----------+    |
-                       +-------------------+-------------------+-------------------+
-|  [Log]  <-- click to expand                                                       |
-+-----------------------------------------------------------------------------------+
+                       | | Pressure    |  |                   |  +-----------+    |
+                       | | 1013 hPa →  |  |  Other            |                   |
+                       | +-------------+  |  +-----------+    |  [Move to Charts] |
+                       | | Gas         |  |  | pm, gas   |    |                   |
+                       | | 150 →       |  |  | /\  /\    |    |                   |
+                       | +-------------+  |  +-----------+    |                   |
+                       | | Battery     |  |                   |                   |
+                       | | 85% →       |  |                   |                   |
+                       | +-------------+  |                   |                   |
++-------------------+-------------------+-------------------+-------------------+
+| 💭 Toggle AI Panel (bottom right corner)                                      |
++---------------------------------------------------------------------------+
+| [Log]  <-- click to expand                                                   |
++---------------------------------------------------------------------------+
 ```
+
+### Column Breakdown
+
+**Left Column (Server Config + Sensor Cards):**
+- API URL input field
+- Test Connection button
+- Start/Stop Polling button
+- Connection status indicator
+- 6 sensor category cards with live values
+
+**Center Column (Main Charts):**
+- 3 line charts showing historical data
+- Drag-and-drop enabled
+- Reset Layout button
+- Scrollable area for many charts
+
+**Right Column (AI Panel):**
+- Gemini chat interface (left side)
+- AI Custom Charts area (right side)
+- Move to Charts button
+- Purple 💭 toggle button at bottom
 
 ## API Endpoints
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/get-data.php` | GET | Fetch sensor data (latest + history) |
-| `/api/post-analysis.php` | POST | Send analysis results |
+### GET /api/get-data.php
 
-### POST Request Body
+Fetches sensor data from the server.
+
+**Response Format:**
+```json
+{
+  "success": true,
+  "server_time": "2026-08-27 12:00:00",
+  "latest": {
+    "co2": {"data": 2164, "reading_time": "2026-08-27 11:59:00"},
+    "temperature": {"data": 29.03, "reading_time": "2026-08-27 11:59:00"},
+    "humidity": {"data": 65.2, "reading_time": "2026-08-27 11:59:00"}
+  },
+  "history": {
+    "co2": [
+      {"reading_time": "2026-08-27 11:55:00", "data": 2100},
+      {"reading_time": "2026-08-27 11:56:00", "data": 2120}
+    ],
+    "temperature": [
+      {"reading_time": "2026-08-27 11:55:00", "data": 28.5},
+      {"reading_time": "2026-08-27 11:56:00", "data": 28.8}
+    ]
+  }
+}
+```
+
+### POST /api/post-analysis.php
+
+Sends analysis results to the server.
+
+**Request Body:**
 ```json
 {"content": "Analysis text from Gemini..."}
 ```
+
+**Purpose:**
+- Log AI analysis for later review
+- Integrate with external systems
+- Store insights for dashboarding
 
 ## File Structure
 
@@ -140,8 +282,10 @@ python main.py
 | `gemini_worker.py` | `GeminiWorker` class - Gemini AI integration with function calling |
 | `config.py` | Save/load settings to `config.json` |
 | `config.json` | Runtime configuration (gitignored) |
+| `README.md` | This documentation file |
 
 ### app.py - Key Methods
+
 | Method | Description |
 |--------|-------------|
 | `init_ui()` | Creates the 4-column layout |
@@ -153,15 +297,21 @@ python main.py
 | `_on_chart_moved_to_center()` | Handles drag-and-drop from custom to center |
 | `fetch_data()` | Polls API for sensor data |
 | `on_fetch_result()` | Processes fetched data, updates cards and charts |
+| `send_chat()` | Sends message to Gemini and displays response |
+| `analyze_data()` | Sends sensor data to Gemini for analysis |
 
 ### chart.py - Key Methods
+
 | Method | Description |
 |--------|-------------|
 | `_build_charts()` | Creates all chart widgets from `current_groups` |
 | `_build_draggable_chart()` | Creates a single draggable chart widget |
+| `_build_single_chart()` | Creates a chart for the custom area |
 | `update_charts()` | Updates all charts with new data, reconnects hover events |
 | `remove_chart()` | Removes a chart from the widget |
 | `_on_drop()` | Handles drop events for drag-and-drop |
+| `_toggle_chart()` | Shows/hides a chart with X/O button |
+| `_on_hover()` | Handles mouse hover for tooltips |
 
 ## Dependencies
 
@@ -169,81 +319,104 @@ python main.py
 pip install PyQt6 requests matplotlib google-genai
 ```
 
-## Sensor Data Format
-
-```json
-{
-  "success": true,
-  "server_time": "2026-08-27 12:00:00",
-  "latest": {
-    "co2": {"data": 2164, "reading_time": "2026-08-27 11:59:00"},
-    "temperature": {"data": 29.03, "reading_time": "2026-08-27 11:59:00"}
-  },
-  "history": {
-    "co2": [{"reading_time": "2026-08-27 11:55:00", "data": 2100}, ...],
-    "temperature": [{"reading_time": "2026-08-27 11:55:00", "data": 28.5}, ...]
-  }
-}
-```
-
-## Slash Command Options
-
-| Flag | Description |
-|------|-------------|
-| `-n` | Normalize data to 0-1 range (Min-Max scaling) |
-| `-d` | Display each sensor in separate charts |
-
-### Examples
-```
-/chart co2                    # Single sensor
-/chart co2 temperature       # Multiple sensors combined
-/chart gas co2 -n            # Normalized for comparison
-/chart pm1.0 pm2.5 pm10 -d  # Separate charts
-/chart temperature -n -d     # Normalized and separate
-```
-
-## Drag and Drop
-
-1. Hover over any chart title to grab it
-2. Drag to AI Custom Charts area (right) to copy
-3. Drag from AI Custom Charts to center to move
-4. Use "Move to Charts" button to move all custom charts to center
-5. Use X button to hide, O button to show
+**Package Purposes:**
+- `PyQt6`: Desktop GUI framework
+- `requests`: HTTP requests for API calls
+- `matplotlib`: Chart rendering
+- `google-genai`: Gemini AI integration
 
 ## Configuration
 
-Settings are saved to `config.json` (gitignored):
+### config.json Structure
 
 ```json
 {
   "api_url": "https://iotdigi.io.vn/es-git-training/sensor-dashboard/api/get-data.php",
   "gemini_api_key": "",
-  "center_charts": {"Air Quality": ["co2", "pm1.0", "pm2.5"]},
+  "center_charts": {
+    "Air Quality": ["co2", "pm1.0", "pm2.5"],
+    "Environment": ["temperature", "humidity", "pressure"],
+    "Other": ["pm1.0", "pm2.5", "pm10", "gas", "battery"]
+  },
   "center_charts_hidden": ["Other"],
-  "custom_charts": {"My Chart": ["temperature", "humidity"]},
-  "custom_charts_normalize": {"My Chart": true}
+  "custom_charts": {
+    "My Chart": ["temperature", "humidity"]
+  },
+  "custom_charts_normalize": {
+    "My Chart": true
+  }
 }
 ```
 
+### Configuration Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `api_url` | string | Server endpoint for sensor data |
+| `gemini_api_key` | string | Gemini API key (leave empty for env var) |
+| `center_charts` | object | Chart names and their sensor labels |
+| `center_charts_hidden` | array | List of hidden chart names |
+| `custom_charts` | object | User-created chart configurations |
+| `custom_charts_normalize` | object | Normalization settings per chart |
+
 ## Troubleshooting
 
-### "Disconnected" Status
-- Check API URL is correct
-- Click "Test" to verify connection
-- Ensure server is running
+### Connection Issues
 
-### Charts Not Updating
-- Click "Start Polling"
-- Check log for errors
-- Verify API returns data
+**"Disconnected" Status**
+- Verify API URL is correct
+- Click Test to check connection
+- Ensure server is running and accessible
+- Check firewall/proxy settings
 
-### Gemini Not Responding
-- Check internet connection
-- Verify API key is set (hidden in config)
-- Check log for Gemini errors
+**Polling Not Starting**
+- Verify API URL returns valid JSON
+- Check server response format
+- Look for errors in log panel
 
-### Charts Disappearing on Restart
-- Center charts and AI custom charts are now saved automatically
+### Chart Issues
+
+**Charts Not Updating**
+- Ensure polling is started (button shows "Stop Polling")
+- Check log for HTTP errors
+- Verify API returns `success: true`
+- Ensure sensor data exists in response
+
+**Charts Disappearing on Restart**
 - Check `config.json` for saved state
+- Verify file permissions allow writing
+- Look for JSON syntax errors in config
 
-![alt text](image.png)
+**Drag and Drop Not Working**
+- Hover over chart title (cursor changes to hand)
+- Drag to valid drop zone (dashed border appears)
+- Release mouse button to drop
+
+### AI Issues
+
+**Gemini Not Responding**
+- Check internet connection
+- Verify API key is set correctly
+- Check log for Gemini API errors
+- Ensure `google-genai` package is installed
+
+**Chat Not Sending**
+- Press Enter to send (not just clicking Send button)
+- Check if Gemini panel is visible (click 💭 button)
+- Verify API key in config
+
+### Layout Issues
+
+**Sensor Cards Overlapping**
+- Resize window to see if layout adjusts
+- Check minimum window size (1400x750)
+- Restart app to reset layout
+
+**Charts Not Saving**
+- Verify `config.json` is writable
+- Check log for save errors
+- Ensure no JSON syntax errors
+
+## License
+
+This project is for educational purposes.

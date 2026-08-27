@@ -18,7 +18,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
   echo json_encode(["success" => false, "message" => "Only POST is allowed"]);
   exit;
 }
-$providedKey = $_SERVER["HTTP_X_API_KEY"] ?? "";
+$providedKey = $_SERVER["HTTP_X_API_KEY"] ?? $_GET['apiKey'] ?? "";
 if (!hash_equals(API_KEY, $providedKey)) {
   http_response_code(401);
   echo json_encode(["success" => false, "message" => "Invalid or missing API key"]);

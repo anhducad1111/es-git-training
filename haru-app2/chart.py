@@ -1,10 +1,12 @@
 from datetime import datetime
 from PyQt6.QtCore import Qt, QMimeData, QByteArray, pyqtSignal
 from PyQt6.QtGui import QDrag, QMouseEvent
-from PyQt6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (QGroupBox, QHBoxLayout, QLabel, QPushButton,
+                              QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
+import matplotlib.pyplot as plt
 
 
 CHART_GROUPS = {
@@ -18,6 +20,55 @@ ALL_LABELS = ["co2", "pm1.0", "pm2.5", "pm10", "temperature", "humidity", "press
 COLORS = ["#E53935", "#1E88E5", "#43A047", "#FB8C00", "#8E24AA", "#00ACC1", "#F4511E", "#3949AB", "#C0CA33"]
 
 DRAG_MIME_TYPE = "application/x-chart-group"
+
+DROP_ZONE_STYLE = """
+    QFrame#dropZone {
+        border: 2px dashed #2196F3;
+        border-radius: 4px;
+        background-color: rgba(33, 150, 243, 0.08);
+    }
+"""
+
+DROP_ZONE_IDLE = """
+    QFrame#dropZone {
+        border: 1px solid transparent;
+        background-color: transparent;
+    }
+"""
+
+
+class DropZone(QWidget):
+  """Wrapper that accepts drops across its entire area and forwards to the inner ChartWidget."""
+
+  def __init__(self, chart_widget, parent=None):
+    super().__init__(parent)
+    self.chart_widget = chart_widget
+    self.setObjectName("dropZone")
+    layout = QVBoxLayout()
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
+    layout.addWidget(self.chart_widget)
+    self.setLayout(layout)
+    self.setAcceptDrops(True)
+    self.setStyleSheet(DROP_ZONE_IDLE)
+
+  def dragEnterEvent(self, event):
+    if event.mimeData().hasFormat(DRAG_MIME_TYPE):
+      event.acceptProposedAction()
+      self.setStyleSheet(DROP_ZONE_STYLE)
+
+  def dragMoveEvent(self, event):
+    if event.mimeData().hasFormat(DRAG_MIME_TYPE):
+      event.acceptProposedAction()
+
+  def dragLeaveEvent(self, event):
+    self.setStyleSheet(DROP_ZONE_IDLE)
+
+  def dropEvent(self, event):
+    self.setStyleSheet(DROP_ZONE_IDLE)
+    if event.mimeData().hasFormat(DRAG_MIME_TYPE):
+      event.acceptProposedAction()
+      self.chart_widget.dropEvent(event)
 
 
 class DraggableContainer(QWidget):
@@ -54,6 +105,7 @@ class DraggableContainer(QWidget):
 
 class ChartWidget(QWidget):
   chart_added = pyqtSignal(str)
+  chart_toggled = pyqtSignal()
 
   def __init__(self, is_custom=False):
     super().__init__()
@@ -206,6 +258,7 @@ class ChartWidget(QWidget):
         "canvas": canvas,
         "labels": labels,
         "container": container,
+        "close_btn": close_btn,
     }
 
   def _toggle_chart(self, group_name, btn):
@@ -244,6 +297,7 @@ class ChartWidget(QWidget):
                 background-color: #D32F2F;
             }
         """)
+      self.chart_toggled.emit()
 
   def remove_chart(self, group_name):
     if group_name in self.charts:
@@ -284,10 +338,15 @@ class ChartWidget(QWidget):
       labels = chart_info["labels"]
       is_normalized = self.normalize_flags.get(group_name, False)
 
+      if "hover_cid" in chart_info:
+        canvas.mpl_disconnect(chart_info["hover_cid"])
+        chart_info.pop("hover_cid", None)
+
       fig.clear()
       ax = fig.add_subplot(111)
 
       has_data = False
+      plot_data = []
       for i, label in enumerate(labels):
         if label in history and history[label]:
           has_data = True
@@ -315,12 +374,45 @@ class ChartWidget(QWidget):
             legend_label = label
 
           color = COLORS[i % len(COLORS)]
-          ax.plot(times, values, "o-", color=color, label=legend_label, markersize=2)
+          line, = ax.plot(times, values, "o-", color=color, label=legend_label, markersize=2)
+          plot_data.append((line, times, values, label))
 
       if has_data:
         ax.legend(loc="upper left", fontsize="small")
         ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
         ax.tick_params(axis="x", rotation=45)
+
+        annotation = ax.annotate("", xy=(0, 0), xytext=(10, 10),
+                                 textcoords="offset points",
+                                 bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.9),
+                                 fontsize=8)
+        annotation.set_visible(False)
+
+        def on_hover(event, ax=ax, plot_data=plot_data, annotation=annotation, canvas=canvas):
+          if event.inaxes == ax:
+            for line, times, values, label in plot_data:
+              contains, ind = line.contains(event)
+              if contains:
+                idx = ind["ind"][0]
+                if idx < len(times) and idx < len(values):
+                  x = times[idx]
+                  y = values[idx]
+                  ymin, ymax = ax.get_ylim()
+                  y_mid = (ymin + ymax) / 2
+                  if y > y_mid:
+                    annotation.set_position((10, -20))
+                  else:
+                    annotation.set_position((10, 10))
+                  annotation.xy = (x, y)
+                  annotation.set_text(f"{label}: {y}")
+                  annotation.set_visible(True)
+                  canvas.draw_idle()
+                  return
+            annotation.set_visible(False)
+            canvas.draw_idle()
+
+        chart_info["hover_cid"] = canvas.mpl_connect("motion_notify_event", on_hover)
+
       else:
         ax.text(0.5, 0.5, "No data", ha="center", va="center", fontsize=12, transform=ax.transAxes)
 

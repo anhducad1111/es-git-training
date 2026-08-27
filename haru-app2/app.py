@@ -13,12 +13,41 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from worker import Worker
-from chart import ChartWidget, CHART_GROUPS, ALL_LABELS
+from chart import ChartWidget, DropZone, CHART_GROUPS, ALL_LABELS
 from gemini_worker import GeminiWorker
 from config import load_config, save_config
 
 
 GROUP_BOX_STYLE = "QGroupBox { font-weight: bold; }"
+
+
+class DropGroupBox(QGroupBox):
+  """QGroupBox that accepts drops anywhere on its frame and forwards to a target widget."""
+
+  def __init__(self, title, drop_target, parent=None):
+    super().__init__(title, parent)
+    self._drop_target = drop_target
+    self.setAcceptDrops(True)
+
+  def dragEnterEvent(self, event):
+    if event.mimeData().hasFormat("application/x-chart-group"):
+      event.acceptProposedAction()
+      self.setStyleSheet(GROUP_BOX_STYLE + """
+          QGroupBox { border: 2px dashed #2196F3; background-color: rgba(33, 150, 243, 0.05); }
+      """)
+
+  def dragMoveEvent(self, event):
+    if event.mimeData().hasFormat("application/x-chart-group"):
+      event.acceptProposedAction()
+
+  def dragLeaveEvent(self, event):
+    self.setStyleSheet(GROUP_BOX_STYLE)
+
+  def dropEvent(self, event):
+    self.setStyleSheet(GROUP_BOX_STYLE)
+    if event.mimeData().hasFormat("application/x-chart-group"):
+      event.acceptProposedAction()
+      self._drop_target.dropEvent(event)
 
 
 class ChatInput(QTextEdit):
@@ -98,6 +127,7 @@ class SensorDashboardApp(QWidget):
     self._is_analyzing = False
     self.init_ui()
     self.load_saved_config()
+    self._start_polling_on_launch()
 
   def init_ui(self):
     self.setWindowTitle("Haru App 2 - Sensor Dashboard")
@@ -121,26 +151,19 @@ class SensorDashboardApp(QWidget):
     gemini_label = QLabel("Gemini Key:")
     gemini_label.setVisible(False)
 
-    self.test_btn = QPushButton("Test")
-    self.test_btn.setStyleSheet(
-        "background-color: #2196F3; color: white; font-weight: bold; padding: 5px 15px; border-radius: 4px;"
-    )
-    self.test_btn.clicked.connect(self.test_connection)
-
-    self.poll_btn = QPushButton("Start Polling")
+    self.poll_btn = QPushButton("Stop Polling")
     self.poll_btn.setStyleSheet(
-        "background-color: #757575; color: white; font-weight: bold; padding: 5px 15px; border-radius: 4px;"
+        "background-color: #F44336; color: white; font-weight: bold; padding: 5px 15px; border-radius: 4px;"
     )
     self.poll_btn.clicked.connect(self.toggle_polling)
 
-    self.status_label = QLabel("Disconnected")
-    self.status_label.setStyleSheet("color: #FF5252; font-weight: bold;")
+    self.status_label = QLabel("Connected")
+    self.status_label.setStyleSheet("color: #69F0AE; font-weight: bold;")
 
     config_layout.addWidget(QLabel("API URL:"))
     config_layout.addWidget(self.url_entry)
     config_layout.addWidget(gemini_label)
     config_layout.addWidget(self.api_key_entry)
-    config_layout.addWidget(self.test_btn)
     config_layout.addWidget(self.poll_btn)
     config_layout.addWidget(self.status_label)
     config_group.setLayout(config_layout)
@@ -153,6 +176,8 @@ class SensorDashboardApp(QWidget):
     self.cards_layout = QVBoxLayout()
     self.cards_layout.setSpacing(8)
     self.card_labels = {}
+    self._previous_latest = {}
+    self._hidden_charts = set()
     self._create_cards()
     cards_group.setLayout(self.cards_layout)
 
@@ -167,12 +192,21 @@ class SensorDashboardApp(QWidget):
     left_layout.addStretch()
 
     center_layout = QVBoxLayout()
-    charts_group = QGroupBox("Charts")
-    charts_group.setStyleSheet(GROUP_BOX_STYLE)
-    charts_layout = QVBoxLayout()
     self.chart_widget = ChartWidget()
     self.chart_widget.chart_added.connect(self._on_chart_moved_to_center)
-    charts_layout.addWidget(self.chart_widget)
+    self.chart_widget.chart_toggled.connect(self.save_current_config)
+    self.chart_drop_zone = DropZone(self.chart_widget)
+    charts_group = DropGroupBox("Charts", self.chart_drop_zone)
+    charts_layout = QVBoxLayout()
+
+    reset_charts_btn = QPushButton("Reset Layout")
+    reset_charts_btn.setStyleSheet(
+        "background-color: #FF9800; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px; font-size: 9pt;"
+    )
+    reset_charts_btn.clicked.connect(self._reset_center_charts)
+    charts_layout.addWidget(reset_charts_btn)
+
+    charts_layout.addWidget(self.chart_drop_zone)
     charts_group.setLayout(charts_layout)
     center_layout.addWidget(charts_group)
 
@@ -246,14 +280,22 @@ class SensorDashboardApp(QWidget):
     top_layout.addLayout(right_layout, stretch=3)
 
     far_right_layout = QVBoxLayout()
-    custom_charts_group = QGroupBox("AI Custom Charts")
-    custom_charts_group.setStyleSheet(GROUP_BOX_STYLE)
-    custom_charts_layout = QVBoxLayout()
     self.custom_chart_widget = ChartWidget(is_custom=True)
     self.custom_chart_widget.chart_added.connect(self._on_custom_chart_added)
+    self.custom_drop_zone = DropZone(self.custom_chart_widget)
+    custom_charts_group = DropGroupBox("AI Custom Charts", self.custom_drop_zone)
+    custom_charts_layout = QVBoxLayout()
+
+    move_btn = QPushButton("Move to Charts")
+    move_btn.setStyleSheet(
+        "background-color: #2196F3; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px; font-size: 9pt;"
+    )
+    move_btn.clicked.connect(self._move_custom_to_center)
+    custom_charts_layout.addWidget(move_btn)
+
     self.custom_chart_scroll = QScrollArea()
     self.custom_chart_scroll.setWidgetResizable(True)
-    self.custom_chart_scroll.setWidget(self.custom_chart_widget)
+    self.custom_chart_scroll.setWidget(self.custom_drop_zone)
     self.custom_chart_scroll.setStyleSheet("""
         QScrollArea {
             background-color: #191A1E;
@@ -307,11 +349,64 @@ class SensorDashboardApp(QWidget):
   def load_saved_config(self):
     self.url_entry.setText(self._config.get("api_url", ""))
     self.api_key_entry.setText(self._config.get("gemini_api_key", ""))
+    saved_charts = self._config.get("center_charts", {})
+    saved_hidden = self._config.get("center_charts_hidden", [])
+    self._hidden_charts = set(saved_hidden)
+    if saved_charts:
+      self.chart_widget.current_groups = saved_charts
+      self.chart_widget._clear_charts()
+      self.chart_widget._build_charts()
+      for name in saved_hidden:
+        if name in self.chart_widget.charts:
+          info = self.chart_widget.charts[name]
+          info["container"].setVisible(False)
+          if "close_btn" in info:
+            info["close_btn"].setText("O")
+            info["close_btn"].setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    border-radius: 10px;
+                    font-weight: bold;
+                    font-size: 10px;
+                }
+                QPushButton:hover {
+                    background-color: #388E3C;
+                }
+            """)
+      self.append_log(f"Restored {len(saved_charts)} center chart(s)")
+    saved_custom = self._config.get("custom_charts", {})
+    saved_custom_norm = self._config.get("custom_charts_normalize", {})
+    if saved_custom:
+      self.custom_chart_widget.current_groups = saved_custom
+      self.custom_chart_widget.normalize_flags = saved_custom_norm
+      self.custom_chart_widget._clear_charts()
+      self.custom_chart_widget._build_charts()
+      if self._last_data:
+        history = self._last_data.get("history", {})
+        self.custom_chart_widget.update_charts(history)
+      self.append_log(f"Restored {len(saved_custom)} custom chart(s)")
 
   def save_current_config(self):
     self._config["api_url"] = self.url_entry.text().strip()
     self._config["gemini_api_key"] = self.api_key_entry.text().strip()
+    self._config["center_charts"] = {k: list(v) for k, v in self.chart_widget.current_groups.items()}
+    self._hidden_charts = {
+        name for name, info in self.chart_widget.charts.items()
+        if not info["container"].isVisible()
+    }
+    self._config["center_charts_hidden"] = list(self._hidden_charts)
+    self._config["custom_charts"] = {k: list(v) for k, v in self.custom_chart_widget.current_groups.items()}
+    self._config["custom_charts_normalize"] = dict(self.custom_chart_widget.normalize_flags)
     save_config(self._config)
+
+  def _start_polling_on_launch(self):
+    if self.url_entry.text().strip():
+      self._poll_running = True
+      self.poll_timer.start()
+      self.fetch_data()
+      self.append_log("Polling started automatically")
 
   def _create_cards(self):
     for group_name, labels in SENSOR_GROUPS.items():
@@ -324,12 +419,8 @@ class SensorDashboardApp(QWidget):
         name_label.setFixedWidth(100)
         value_label = QLabel("N/A")
         value_label.setStyleSheet("font-weight: bold; color: #1E88E5;")
-        unit = UNITS.get(label, "")
-        unit_label = QLabel(unit)
-        unit_label.setFixedWidth(50)
         row.addWidget(name_label)
         row.addWidget(value_label)
-        row.addWidget(unit_label)
         card_layout.addLayout(row)
         self.card_labels[label] = value_label
       card.setLayout(card_layout)
@@ -352,6 +443,8 @@ class SensorDashboardApp(QWidget):
       self.poll_btn.setStyleSheet(
           "background-color: #757575; color: white; font-weight: bold; padding: 5px 15px; border-radius: 4px;"
       )
+      self.status_label.setText("Disconnected")
+      self.status_label.setStyleSheet("color: #FF5252; font-weight: bold;")
       self.append_log("Polling stopped")
     else:
       self._poll_running = True
@@ -360,37 +453,10 @@ class SensorDashboardApp(QWidget):
       self.poll_btn.setStyleSheet(
           "background-color: #F44336; color: white; font-weight: bold; padding: 5px 15px; border-radius: 4px;"
       )
-      self.append_log("Polling started (every 5s)")
-      self.fetch_data()
-
-  def test_connection(self):
-    self.save_current_config()
-    url = self.url_entry.text().strip()
-    self.append_log(f"Testing connection to: {url}")
-    self._worker = Worker("get", url)
-    self._worker.finished.connect(self.on_test_result)
-    self._worker.error.connect(self.on_test_error)
-    self._worker.start()
-
-  def on_test_result(self, task, response):
-    if response.status_code in (200, 201):
       self.status_label.setText("Connected")
       self.status_label.setStyleSheet("color: #69F0AE; font-weight: bold;")
-      self.append_log(f"OK | Status {response.status_code}")
-      try:
-        data = response.json()
-        self.append_log(f"Response: {str(data)[:200]}")
-      except ValueError:
-        self.append_log(f"Response: {response.text[:200]}")
-    else:
-      self.status_label.setText("Failed")
-      self.status_label.setStyleSheet("color: #FF5252; font-weight: bold;")
-      self.append_log(f"FAIL | Status {response.status_code}")
-
-  def on_test_error(self, msg):
-    self.status_label.setText("Error")
-    self.status_label.setStyleSheet("color: #FF5252; font-weight: bold;")
-    self.append_log(f"ERROR | {msg}")
+      self.append_log("Polling started (every 5s)")
+      self.fetch_data()
 
   def fetch_data(self):
     url = self.url_entry.text().strip()
@@ -399,19 +465,72 @@ class SensorDashboardApp(QWidget):
     self._worker.error.connect(self.on_fetch_error)
     self._worker.start()
 
+  def _reset_custom_charts(self):
+    self.custom_chart_widget._clear_charts()
+    self.custom_chart_widget.current_groups = {}
+    self.custom_chart_widget.normalize_flags = {}
+    self.add_chat_bubble("System: Custom charts cleared.", is_system=True)
+    self.append_log("RESET | Custom charts cleared")
+
+  def _move_custom_to_center(self):
+    custom_groups = dict(self.custom_chart_widget.current_groups)
+    if not custom_groups:
+      self.add_chat_bubble("System: No custom charts to move.", is_system=True)
+      return
+    moved = []
+    for group_name, labels in custom_groups.items():
+      name = group_name
+      if name in self.chart_widget.current_groups:
+        i = 2
+        while f"{name} ({i})" in self.chart_widget.current_groups:
+          i += 1
+        name = f"{name} ({i})"
+      self.chart_widget.current_groups[name] = labels
+      self.chart_widget._build_draggable_chart(name, labels)
+      if name in self.chart_widget.charts:
+        self.chart_widget.charts[name]["container"].setVisible(True)
+      moved.append(name)
+    self.custom_chart_widget._clear_charts()
+    self.custom_chart_widget.current_groups = {}
+    self.custom_chart_widget.normalize_flags = {}
+    if self._last_data:
+      history = self._last_data.get("history", {})
+      self.chart_widget.update_charts(history)
+    self.save_current_config()
+    self.add_chat_bubble(f"System: Moved {len(moved)} chart(s) to Charts.", is_system=True)
+    self.append_log(f"MOVE | {moved} moved to center charts")
+
+  def _reset_center_charts(self):
+    from chart import CHART_GROUPS
+    self.chart_widget.current_groups = CHART_GROUPS.copy()
+    self.chart_widget._clear_charts()
+    self.chart_widget._build_charts()
+    self._config["center_charts"] = {}
+    self._config["center_charts_hidden"] = []
+    save_config(self._config)
+    self.add_chat_bubble("System: Charts layout reset to default.", is_system=True)
+    self.append_log("RESET | Center charts restored to default")
+    if self._last_data:
+      history = self._last_data.get("history", {})
+      self.chart_widget.update_charts(history)
+
   def _on_custom_chart_added(self, group_name):
     if group_name in self.chart_widget.charts:
       self.chart_widget.remove_chart(group_name)
     if self._last_data:
       history = self._last_data.get("history", {})
       self.custom_chart_widget.update_charts(history)
+    self.save_current_config()
 
   def _on_chart_moved_to_center(self, group_name):
     if group_name in self.custom_chart_widget.charts:
       self.custom_chart_widget.remove_chart(group_name)
+    if group_name in self.chart_widget.charts:
+      self.chart_widget.charts[group_name]["container"].setVisible(True)
     if self._last_data:
       history = self._last_data.get("history", {})
       self.chart_widget.update_charts(history)
+    self.save_current_config()
 
   def on_fetch_result(self, task, response):
     if response.status_code in (200, 201):
@@ -441,9 +560,24 @@ class SensorDashboardApp(QWidget):
         info = latest[label]
         value = info.get("data", "N/A")
         unit = UNITS.get(label, "")
-        value_label.setText(f"{value} {unit}")
+        prev = self._previous_latest.get(label, {}).get("data")
+        arrow = ""
+        if prev is not None and value != "N/A":
+          try:
+            cur = float(value)
+            prv = float(prev)
+            if cur > prv:
+              arrow = '<span style="color: #2196F3; font-weight: bold;"> ↑</span>'
+            elif cur < prv:
+              arrow = '<span style="color: #FF5252; font-weight: bold;"> ↓</span>'
+            else:
+              arrow = '<span style="color: #4CAF50; font-weight: bold;"> →</span>'
+          except (ValueError, TypeError):
+            pass
+        value_label.setText(f"{value} {unit}{arrow}")
       else:
         value_label.setText("N/A")
+    self._previous_latest = dict(latest)
 
   def check_staleness(self, data):
     server_time = data.get("server_time")
@@ -521,7 +655,7 @@ Keep the response concise and helpful."""
       self.append_log("ERROR | No API URL set")
       return
 
-    api_url = "http://192.168.1.116/es-git-training/sensor-dashboard/api/post-analysis.php"
+    api_url = "https://iotdigi.io.vn/es-git-training/sensor-dashboard/api/post-analysis.php"
     payload = {"content": text}
 
     self.append_log(f"Sending to: {api_url}")
@@ -642,13 +776,12 @@ Keep the response concise and helpful."""
     if self._last_data:
       history = self._last_data.get("history", {})
       self.custom_chart_widget.update_charts(history)
+    self.save_current_config()
     norm_text = " (normalized)" if normalize else ""
     name_text = f" as '{chart_name}'" if chart_name else ""
-    self.add_chat_bubble(f"System: Chart created: {', '.join(sensors)}{name_text}{norm_text}", is_system=True)
-    self.append_log(f"CHART COMMAND | {', '.join(sensors)} name={chart_name} normalize={normalize} separate={separate_charts}")
     sep_text = " (separated)" if separate_charts else ""
-    self.add_chat_bubble(f"System: Chart created: {', '.join(sensors)}{norm_text}{sep_text}", is_system=True)
-    self.append_log(f"CHART COMMAND | {', '.join(sensors)} normalize={normalize} separate={separate_charts}")
+    self.add_chat_bubble(f"System: Chart created: {', '.join(sensors)}{name_text}{norm_text}{sep_text}", is_system=True)
+    self.append_log(f"CHART COMMAND | {', '.join(sensors)} name={chart_name} normalize={normalize} separate={separate_charts}")
 
   def on_chat_result(self, text):
     self._chat_history.append(text)
@@ -677,6 +810,7 @@ Keep the response concise and helpful."""
       if self._last_data:
         history = self._last_data.get("history", {})
         self.custom_chart_widget.update_charts(history)
+      self.save_current_config()
       norm_text = " (normalized)" if normalize else ""
       self.add_chat_bubble(f"System: Custom charts created: {', '.join(valid_groups.keys())}{norm_text}", is_system=True)
       self.append_log(f"GEMINI TOOL | create_custom_charts: {list(valid_groups.keys())} normalize={normalize}")

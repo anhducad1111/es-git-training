@@ -1,5 +1,10 @@
 esp32-ota/firmware/
 sensor-dashboard/config.php
+.agents/
+*.pyc
+__pycache__/
+config.json
+
 # Operating system files
 .DS_Store
 Thumbs.db

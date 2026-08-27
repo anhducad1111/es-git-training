@@ -225,8 +225,7 @@ h1 {
 
 .chart-tooltip {
     position: absolute;
-    transform: translate(-50%, -100%);
-    margin-top: -10px;
+    transform: translate(-50%, 0);
     padding: 8px 12px;
     border-radius: 8px;
     background: #172033;

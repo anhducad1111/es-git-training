@@ -251,6 +251,7 @@
             const crosshairPx = (svgRect.left - canvasRect.left) + (tx / width) * svgRect.width;
 
             const rows = Object.keys(lastHistory)
+                .filter(label => visibleLabels.has(label))
                 .map(label => {
                     const point = lastHistory[label].find(p => p.reading_time === time);
                     if (!point) return null;
@@ -269,9 +270,17 @@
             chartCrosshair.classList.remove("hidden");
 
             chartTooltip.innerHTML = `<div class="chart-tooltip-time">${esc(time)}</div>` + rows.map(r => `<div class="chart-tooltip-row"><span class="color-dot" style="background:${r.color}"></span>${esc(r.label)}: ${esc(r.value)}</div>`).join("");
-            chartTooltip.style.left = crosshairPx + "px";
-            chartTooltip.style.top = (svgRect.top - canvasRect.top) + "px";
+            chartTooltip.style.left = "0px";
+            chartTooltip.style.top = "0px";
             chartTooltip.classList.remove("hidden");
+
+            const tooltipRect = chartTooltip.getBoundingClientRect();
+            const margin = 8;
+            const halfWidth = tooltipRect.width / 2;
+            const tooltipLeft = Math.max(halfWidth + margin, Math.min(canvasRect.width - halfWidth - margin, crosshairPx));
+            const tooltipTop = Math.max(margin, Math.min(canvasRect.height - tooltipRect.height - margin, svgRect.top - canvasRect.top));
+            chartTooltip.style.left = tooltipLeft + "px";
+            chartTooltip.style.top = tooltipTop + "px";
         }
 
         function mdInline(raw) {

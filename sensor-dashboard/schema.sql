@@ -11,3 +11,10 @@ CREATE TABLE IF NOT EXISTS sensor_readings (
   reading_time DATETIME NOT NULL,
   INDEX idx_label_time (label, reading_time)
 );
+
+CREATE TABLE IF NOT EXISTS analysis_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  content TEXT NOT NULL,
+  created_at DATETIME NOT NULL,
+  INDEX idx_created_at (created_at)
+);

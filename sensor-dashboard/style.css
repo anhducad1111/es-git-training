@@ -43,6 +43,12 @@ h1 {
     color: #748096
 }
 
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px
+}
+
 .server-status {
     display: flex;
     align-items: center;
@@ -55,6 +61,23 @@ h1 {
     font-size: 14px;
     font-weight: 600;
     white-space: nowrap
+}
+
+.battery-status {
+    padding: 10px 14px;
+    border: 1px solid #dce3ee;
+    border-radius: 999px;
+    background: #fff;
+    color: #44516a;
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap
+}
+
+.battery-status small {
+    margin-left: 2px;
+    color: #7b879b;
+    font-weight: 600
 }
 
 .status-dot {

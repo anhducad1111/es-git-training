@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -131,7 +132,7 @@ class SensorDashboardApp(QWidget):
 
   def init_ui(self):
     self.setWindowTitle("Haru App 2 - Sensor Dashboard")
-    self.resize(1400, 700)
+    self.setMinimumSize(1400, 750)
 
     main_layout = QVBoxLayout(self)
     main_layout.setContentsMargins(20, 20, 20, 20)
@@ -139,7 +140,7 @@ class SensorDashboardApp(QWidget):
 
     config_group = QGroupBox("Server Configuration")
     config_group.setStyleSheet(GROUP_BOX_STYLE)
-    config_layout = QHBoxLayout()
+    config_layout = QVBoxLayout()
 
     self.url_entry = QLineEdit()
     self.api_key_entry = QLineEdit()
@@ -164,17 +165,25 @@ class SensorDashboardApp(QWidget):
     config_layout.addWidget(self.url_entry)
     config_layout.addWidget(gemini_label)
     config_layout.addWidget(self.api_key_entry)
-    config_layout.addWidget(self.poll_btn)
-    config_layout.addWidget(self.status_label)
+
+    poll_row = QHBoxLayout()
+    poll_row.addWidget(self.poll_btn)
+    poll_row.addWidget(self.status_label)
+    config_layout.addLayout(poll_row)
+
     config_group.setLayout(config_layout)
 
-    top_layout = QHBoxLayout()
+    self.top_layout = QHBoxLayout()
 
     left_layout = QVBoxLayout()
+    left_layout.addWidget(config_group)
+
     cards_group = QGroupBox("Sensor Cards")
     cards_group.setStyleSheet(GROUP_BOX_STYLE)
+    cards_group.setMinimumWidth(260)
     self.cards_layout = QVBoxLayout()
     self.cards_layout.setSpacing(8)
+    self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     self.card_labels = {}
     self._hidden_charts = set()
     self._create_cards()
@@ -188,26 +197,44 @@ class SensorDashboardApp(QWidget):
 
     left_layout.addWidget(cards_group)
     left_layout.addWidget(self.analyze_btn)
-    left_layout.addStretch()
 
-    center_layout = QVBoxLayout()
-    self.chart_widget = ChartWidget()
+    self.center_layout = QVBoxLayout()
+    self.chart_widget = ChartWidget(num_columns=2)
     self.chart_widget.chart_added.connect(self._on_chart_moved_to_center)
     self.chart_widget.chart_toggled.connect(self.save_current_config)
     self.chart_drop_zone = DropZone(self.chart_widget)
-    charts_group = DropGroupBox("Charts", self.chart_drop_zone)
+    self.charts_group = DropGroupBox("Charts", self.chart_drop_zone)
     charts_layout = QVBoxLayout()
 
     reset_charts_btn = QPushButton("Reset Layout")
     reset_charts_btn.setStyleSheet(
-        "background-color: #FF9800; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px; font-size: 9pt;"
+        "background-color: #03A9F4; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px; font-size: 9pt;"
     )
     reset_charts_btn.clicked.connect(self._reset_center_charts)
     charts_layout.addWidget(reset_charts_btn)
 
-    charts_layout.addWidget(self.chart_drop_zone)
-    charts_group.setLayout(charts_layout)
-    center_layout.addWidget(charts_group)
+    center_chart_scroll = QScrollArea()
+    center_chart_scroll.setWidgetResizable(True)
+    center_chart_scroll.setWidget(self.chart_drop_zone)
+    center_chart_scroll.setStyleSheet("""
+        QScrollArea {
+            background-color: #191A1E;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+        QScrollBar:vertical {
+            background: #191A1E;
+            width: 8px;
+        }
+        QScrollBar::handle:vertical {
+            background: #444;
+            border-radius: 4px;
+            min-height: 20px;
+        }
+    """)
+    charts_layout.addWidget(center_chart_scroll)
+    self.charts_group.setLayout(charts_layout)
+    self.center_layout.addWidget(self.charts_group)
 
     right_layout = QVBoxLayout()
     chat_group = QGroupBox("Gemini Chat")
@@ -216,6 +243,8 @@ class SensorDashboardApp(QWidget):
 
     self.chat_scroll = QScrollArea()
     self.chat_scroll.setWidgetResizable(True)
+    self.chat_scroll.setMinimumHeight(400)
+    self.chat_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     self.chat_scroll.setStyleSheet("""
         QScrollArea {
             background-color: #191A1E;
@@ -272,11 +301,8 @@ class SensorDashboardApp(QWidget):
     chat_layout.addWidget(self.chat_scroll)
     chat_layout.addLayout(chat_input_layout)
     chat_group.setLayout(chat_layout)
-    right_layout.addWidget(chat_group)
-
-    top_layout.addLayout(left_layout, stretch=1)
-    top_layout.addLayout(center_layout, stretch=4)
-    top_layout.addLayout(right_layout, stretch=3)
+    chat_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    right_layout.addWidget(chat_group, stretch=1)
 
     far_right_layout = QVBoxLayout()
     self.custom_chart_widget = ChartWidget(is_custom=True)
@@ -294,6 +320,8 @@ class SensorDashboardApp(QWidget):
 
     self.custom_chart_scroll = QScrollArea()
     self.custom_chart_scroll.setWidgetResizable(True)
+    self.custom_chart_scroll.setMinimumHeight(400)
+    self.custom_chart_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     self.custom_chart_scroll.setWidget(self.custom_drop_zone)
     self.custom_chart_scroll.setStyleSheet("""
         QScrollArea {
@@ -313,8 +341,47 @@ class SensorDashboardApp(QWidget):
     """)
     custom_charts_layout.addWidget(self.custom_chart_scroll)
     custom_charts_group.setLayout(custom_charts_layout)
-    far_right_layout.addWidget(custom_charts_group)
-    top_layout.addLayout(far_right_layout, stretch=2)
+    custom_charts_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    far_right_layout.addWidget(custom_charts_group, stretch=2)
+
+    self.ai_side_panel = QWidget()
+    self.ai_side_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    ai_panel_layout = QHBoxLayout()
+    ai_panel_layout.setContentsMargins(0, 0, 0, 0)
+    ai_panel_layout.setSpacing(10)
+    ai_panel_layout.addLayout(right_layout, stretch=2)
+    ai_panel_layout.addLayout(far_right_layout, stretch=1)
+    self.ai_side_panel.setLayout(ai_panel_layout)
+    self.ai_side_panel.setVisible(False)
+
+    right_container = QVBoxLayout()
+    right_container.setContentsMargins(0, 0, 0, 0)
+    right_container.addWidget(self.ai_side_panel, stretch=1)
+
+    self.chatbot_toggle_btn = QPushButton("\U0001F4AC")
+    self.chatbot_toggle_btn.setFixedSize(50, 50)
+    self.chatbot_toggle_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #9C27B0;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: #7B1FA2;
+        }
+    """)
+    self.chatbot_toggle_btn.clicked.connect(self.toggle_ai_panel)
+
+    self.top_layout.addLayout(left_layout, stretch=1)
+    self.top_layout.addLayout(self.center_layout, stretch=10)
+    self.top_layout.addLayout(right_container, stretch=0)
+
+    btn_row = QHBoxLayout()
+    btn_row.addStretch()
+    btn_row.addWidget(self.chatbot_toggle_btn)
 
     self.log_tab = QPushButton("[Log] Click to expand")
     self.log_tab.setStyleSheet(
@@ -336,8 +403,8 @@ class SensorDashboardApp(QWidget):
     self.log_group.setLayout(log_layout)
     self.log_group.setVisible(False)
 
-    main_layout.addWidget(config_group)
-    main_layout.addLayout(top_layout)
+    main_layout.addLayout(self.top_layout, stretch=1)
+    main_layout.addLayout(btn_row)
     main_layout.addWidget(self.log_tab)
     main_layout.addWidget(self.log_group)
 
@@ -416,21 +483,39 @@ class SensorDashboardApp(QWidget):
         row = QHBoxLayout()
         name_label = QLabel(f"{label}:")
         name_label.setFixedWidth(120)
+        name_label.setMinimumHeight(24)
         name_label.setStyleSheet("font-size: 12pt; font-weight: bold;")
         value_label = QLabel("N/A")
         value_label.setFixedWidth(100)
+        value_label.setMinimumHeight(24)
         value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         arrow_label = QLabel("")
         arrow_label.setFixedWidth(40)
+        arrow_label.setMinimumHeight(24)
         arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         row.addWidget(name_label)
         row.addWidget(value_label)
         row.addWidget(arrow_label)
         card_layout.addLayout(row)
         self.card_labels[label] = {"value": value_label, "arrow": arrow_label}
+      card_layout.addStretch()
       card.setLayout(card_layout)
       self.cards_layout.addWidget(card)
     self.cards_layout.addStretch()
+
+  def toggle_ai_panel(self):
+    if self.ai_side_panel.isVisible():
+      self.ai_side_panel.setVisible(False)
+      self.chatbot_toggle_btn.setText("\U0001F4AC")
+      self.charts_group.setVisible(True)
+      self.top_layout.setStretch(1, 10)
+      self.top_layout.setStretch(2, 0)
+    else:
+      self.ai_side_panel.setVisible(True)
+      self.chatbot_toggle_btn.setText("\u2716")
+      self.charts_group.setVisible(False)
+      self.top_layout.setStretch(1, 0)
+      self.top_layout.setStretch(2, 10)
 
   def toggle_log(self):
     if self.log_group.isVisible():
@@ -627,6 +712,9 @@ class SensorDashboardApp(QWidget):
     if not self._last_data:
       self.append_log("ERROR | No sensor data to analyze")
       return
+
+    if not self.ai_side_panel.isVisible():
+      self.toggle_ai_panel()
 
     latest = self._last_data.get("latest", {})
     data_text = "\n".join([

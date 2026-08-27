@@ -130,8 +130,8 @@
             const latestDate = new Date(latestTime.replace(" ", "T"));
             const referenceDate = serverTime ? new Date(serverTime.replace(" ", "T")) : new Date();
             const ageMinutes = (referenceDate.getTime() - latestDate.getTime()) / 60000;
-            if (Number.isFinite(ageMinutes) && ageMinutes >= 3) {
-                warning.textContent = "No sensor update has been received for 3 minutes or more. Last update: " + latestTime;
+            if (Number.isFinite(ageMinutes) && ageMinutes >= 2) {
+                warning.textContent = "No sensor update has been received for 2 minutes or more. Last update: " + latestTime;
                 warning.classList.remove("hidden");
             } else {
                 warning.classList.add("hidden");

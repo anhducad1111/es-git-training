@@ -16,7 +16,11 @@
                 <h1>Sensor Dashboard</h1>
                 <p class="subtitle">Live data from MySQL</p>
             </div>
-            <div class="server-status"><span id="statusDot" class="status-dot"></span><span id="statusText">Connecting...</span></div>
+            <div class="status-group">
+                <div class="server-status"><span id="statusDot" class="status-dot"></span><span id="statusText">Connecting...</span></div>
+                <div class="server-status"><span id="esp32StatusDot" class="status-dot"></span><span id="esp32StatusText">ESP32: -</span></div>
+                <div class="server-status"><span id="selfTestText">Self-test: -</span></div>
+            </div>
         </header>
         <div id="staleWarning" class="stale-warning top-warning hidden" role="alert"></div>
         <div id="errorBox" class="error-box hidden"></div>
@@ -75,6 +79,8 @@
 
         const COLOR_PALETTE = ["#e56a54", "#3d7ee8", "#20b26b", "#a35de0", "#e0a72a", "#2ac1c1", "#e05299", "#7d889b", "#4560c9"];
 
+        const SELFTEST_LABEL = "selftest";
+
         let lastHistory = {};
         let visibleLabels = new Set();
         let seenLabels = new Set();
@@ -111,7 +117,7 @@
 
         function renderCards(latest, history) {
             const container = document.getElementById("cardsContainer");
-            const labels = Object.keys(latest);
+            const labels = Object.keys(latest).filter(l => l !== SELFTEST_LABEL);
             if (labels.length === 0) {
                 container.innerHTML = '<div class="empty">No data yet.</div>';
                 return;
@@ -134,7 +140,7 @@
 
         function updateStaleWarning(latest, serverTime) {
             const warning = document.getElementById("staleWarning");
-            const labels = Object.keys(latest);
+            const labels = Object.keys(latest).filter(l => l !== SELFTEST_LABEL);
             if (labels.length === 0) {
                 warning.classList.add("hidden");
                 return;
@@ -148,6 +154,33 @@
                 warning.classList.remove("hidden");
             } else {
                 warning.classList.add("hidden");
+            }
+        }
+
+        function updateEsp32Status(latest, serverTime) {
+            const dot = document.getElementById("esp32StatusDot");
+            const text = document.getElementById("esp32StatusText");
+            const selfTestText = document.getElementById("selfTestText");
+
+            const selftest = latest[SELFTEST_LABEL];
+            selfTestText.textContent = "Self-test: " + (selftest ? selftest.reading_time : "-");
+
+            const labels = Object.keys(latest).filter(l => l !== SELFTEST_LABEL);
+            if (labels.length === 0) {
+                dot.classList.remove("offline");
+                text.textContent = "ESP32: -";
+                return;
+            }
+            const latestTime = labels.reduce((max, l) => latest[l].reading_time > max ? latest[l].reading_time : max, latest[labels[0]].reading_time);
+            const latestDate = new Date(latestTime.replace(" ", "T"));
+            const referenceDate = serverTime ? new Date(serverTime.replace(" ", "T")) : new Date();
+            const ageMinutes = (referenceDate.getTime() - latestDate.getTime()) / 60000;
+            if (Number.isFinite(ageMinutes) && ageMinutes < 2) {
+                dot.classList.remove("offline");
+                text.textContent = "ESP32: Online";
+            } else {
+                dot.classList.add("offline");
+                text.textContent = "ESP32: Offline";
             }
         }
 
@@ -178,7 +211,7 @@
         }
 
         function renderChart(history) {
-            const labels = Object.keys(history);
+            const labels = Object.keys(history).filter(l => l !== SELFTEST_LABEL);
             renderCheckboxes(labels);
             const chart = document.getElementById("sensorChart");
             const empty = document.getElementById("chartEmpty");
@@ -406,6 +439,7 @@
                 lastHistory = result.history;
                 renderCards(result.latest, result.history);
                 updateStaleWarning(result.latest, result.server_time);
+                updateEsp32Status(result.latest, result.server_time);
                 renderChart(result.history);
                 statusText.textContent = "Server Online";
                 statusDot.classList.remove("offline");

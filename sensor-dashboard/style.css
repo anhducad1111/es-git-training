@@ -43,6 +43,14 @@ h1 {
     color: #748096
 }
 
+.status-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px
+}
+
 .server-status {
     display: flex;
     align-items: center;

@@ -1,6 +1,7 @@
 # Haru App 2 - Sensor Dashboard
 
 A PyQt6 desktop application for real-time IoT sensor monitoring with AI-powered analysis, interactive charts, and persistent layout customization.
+if you want to see Technical document, README_app2.md is what you want.
 
 ## Overview
 
@@ -114,6 +115,8 @@ python main.py
    - `/chart co2 temperature` - Combined chart
    - `/chart gas co2 -n` - Normalized (0-1 scale)
    - `/chart pm1.0 pm2.5 pm10 -d` - Separate charts
+   - `/chart co2 temperature -m My Chart` - Custom name
+   - `/chart co2 temperature -n -m My Chart` - Normalized with custom name
 
 3. **Drag and Drop**
    - Drag any chart from Main Charts to AI Custom Charts
@@ -125,6 +128,7 @@ python main.py
 
 **Chart Options:**
 - `-n` flag: Normalize data to 0-1 range (Min-Max scaling)
+- `-m` flag: Set custom chart name (next token is the name)
 - `-d` flag: Display each sensor in separate charts
 - Toggle visibility with X/O button on each chart
 - Hover tooltips with dynamic positioning
@@ -173,6 +177,67 @@ python main.py
 - JSON format: `{"content": "Analysis text from Gemini..."}`
 - Useful for logging or further processing
 
+### RC Car Control
+
+**Blue 🚙 Button (Bottom Right):**
+- Toggle RC control panel on/off
+- Exclusive with AI panel (opening one closes the other)
+- Sends automatic STOP command when panel is closed (fail-safe)
+- All keyboard controls disabled when panel is closed
+
+**RC Panel Layout:**
+```
++------------------------------------------+
+|        🚙 RC Car Control                 |
+|        Status: Disconnected              |
++----------+-------------------------------+
+|  D-Pad   |                               |
+|  [⬆]     |      Live Video Feed          |
+| [⬅][⏹][➡] |     (Widescreen 16:9)        |
+|  [⬇]     |                               |
+|          |                               |
++----------+-------------------------------+
+|        [ Reset Camera ]                  |
+|        Speed: 50%                        |
++------------------------------------------+
+```
+
+**D-Pad Controls (Touch/Mouse):**
+- ⬆ Forward
+- ⬇ Backward
+- ⬅ Left
+- ➡ Right
+- ⏹ STOP button (red, center)
+- Press and hold to move — car stops on release
+
+**Keyboard Controls (WASD):**
+- W → Forward
+- S → Backward
+- A → Left
+- D → Right
+- Release any key → Stop
+- Keys ignored when typing in text fields
+- Keys disabled when RC panel is closed
+
+**Camera Controls (Hold E + Mouse):**
+- Hold E key to activate camera mode
+- Move mouse to pan camera view
+- Sends `CAMERA:{dx}:{dy}` via UDP
+- Works simultaneously with WASD driving
+- Camera mode disabled when RC panel is closed
+
+**Reset Camera Button:**
+- Click "Reset Camera" to return view to default position
+- Sends `CAMERA_RESET` command via UDP
+- Located below the video feed
+
+**Video Feed:**
+- Receives JPEG stream from Unity on UDP port 5006
+- Displays in widescreen format (16:9 aspect ratio)
+- Auto-scales to fill available space
+- Uses `VideoReceiverThread` for non-blocking reception
+- Shows "No Signal" when no stream is active
+
 ## Layout
 
 ### Main Dashboard Layout
@@ -201,7 +266,7 @@ python main.py
                        | | 85% →       |  |                   |                   |
                        | +-------------+  |                   |                   |
 +-------------------+-------------------+-------------------+-------------------+
-| 💭 Toggle AI Panel (bottom right corner)                                      |
+| 💭 Toggle AI Panel / 🚙 Toggle RC Panel (bottom right corner)                |
 +---------------------------------------------------------------------------+
 | [Log]  <-- click to expand                                                   |
 +---------------------------------------------------------------------------+
@@ -217,7 +282,8 @@ python main.py
 - 6 sensor category cards with live values
 
 **Center Column (Main Charts):**
-- 3 line charts showing historical data
+- 2-column masonry layout for charts
+- Line charts showing historical data
 - Drag-and-drop enabled
 - Reset Layout button
 - Scrollable area for many charts
@@ -271,12 +337,67 @@ Sends analysis results to the server.
 - Integrate with external systems
 - Store insights for dashboarding
 
+### UDP Communication (RC Car)
+
+**Port 5005 — Car Commands (Python → Unity):**
+| Command | Description |
+|---------|-------------|
+| `FORWARD` | Move forward |
+| `BACKWARD` | Move backward |
+| `LEFT` | Turn left |
+| `RIGHT` | Turn right |
+| `STOP` | Stop all movement |
+| `CAMERA:{dx}:{dy}` | Pan camera by delta pixels |
+| `CAMERA_RESET` | Reset camera to default position |
+
+**Port 5006 — Video Stream (Unity → Python):**
+- Continuous JPEG frame stream
+- Received by `VideoReceiverThread` (QThread)
+- Displayed in RC panel camera feed
+- Socket timeout: 1 second (for clean shutdown)
+
+### Unity Integration
+
+**Architecture:**
+```
+Python (PyQt6)                    Unity (RC Car)
++----------------+               +----------------+
+|  RC Panel UI   |  UDP 5005     |  Car Controller |
+|  D-Pad Buttons | ------------> |  Movement       |
+|  WASD Keys     |  Commands     |  Rigidbody      |
++----------------+               +----------------+
+|  Camera Feed   |  UDP 5006     |  Camera         |
+|  QLabel        | <------------ |  RenderTexture  |
+|  VideoThread   |  JPEG Stream  |  JPEG Encoder   |
++----------------+               +----------------+
+```
+
+**Unity Setup Required:**
+1. **Car Controller Script** — Listen on UDP port 5005 for commands
+2. **Camera Capture Script** — Encode camera view as JPEG, send on port 5006
+3. **Network Manager** — Handle UDP sockets on both ports
+
+**Command Flow:**
+1. User presses button/key in Python app
+2. `send_rc_command()` encodes command as UTF-8
+3. UDP packet sent to `127.0.0.1:5005`
+4. Unity receives and applies command to car Rigidbody
+5. Car moves/turns accordingly
+
+**Video Flow:**
+1. Unity camera renders to RenderTexture
+2. Encode RenderTexture as JPEG (quality ~75)
+3. Send JPEG bytes via UDP to `127.0.0.1:5006`
+4. Python `VideoReceiverThread` receives packet
+5. Emit `frame_received` signal with bytes
+6. `update_camera_feed()` converts to QPixmap and displays
+
 ## File Structure
 
 | File | Purpose |
 |------|---------|
 | `main.py` | Entry point - initializes QApplication and shows the dashboard |
-| `app.py` | Main UI class (`SensorDashboardApp`) - layout, cards, charts, chat, polling, drag-and-drop, persistence |
+| `app.py` | Main UI class (`SensorDashboardApp`) - layout, cards, charts, chat, polling, drag-and-drop, persistence, RC car control |
 | `chart.py` | `ChartWidget` class - matplotlib charts with drag-and-drop, normalization, hover tooltips |
 | `worker.py` | `Worker` class - background HTTP GET/POST requests using QThread |
 | `gemini_worker.py` | `GeminiWorker` class - Gemini AI integration with function calling |
@@ -299,6 +420,13 @@ Sends analysis results to the server.
 | `on_fetch_result()` | Processes fetched data, updates cards and charts |
 | `send_chat()` | Sends message to Gemini and displays response |
 | `analyze_data()` | Sends sensor data to Gemini for analysis |
+| `_handle_chart_command()` | Parses `/chart` commands with `-n`, `-m`, `-d` flags |
+| `toggle_rc_panel()` | Toggles RC control panel visibility |
+| `send_rc_command()` | Sends UDP command to RC car (port 5005) |
+| `update_camera_feed()` | Displays JPEG frame from video stream |
+| `keyPressEvent()` | Handles WASD and E key press for car/camera control |
+| `keyReleaseEvent()` | Sends STOP command on key release |
+| `eventFilter()` | Captures mouse movement for camera control when E held |
 
 ### chart.py - Key Methods
 
@@ -312,6 +440,7 @@ Sends analysis results to the server.
 | `_on_drop()` | Handles drop events for drag-and-drop |
 | `_toggle_chart()` | Shows/hides a chart with X/O button |
 | `_on_hover()` | Handles mouse hover for tooltips |
+| `_clear_charts()` | Clears charts while preserving column layouts |
 
 ## Dependencies
 
@@ -359,6 +488,21 @@ pip install PyQt6 requests matplotlib google-genai
 | `custom_charts` | object | User-created chart configurations |
 | `custom_charts_normalize` | object | Normalization settings per chart |
 
+## Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/chart co2 temperature` | Create chart with both sensors |
+| `/chart gas co2 -n` | Normalized (0-1 scale) for comparison |
+| `/chart pm1.0 pm2.5 pm10 -d` | Separate charts for each sensor |
+| `/chart co2 temperature -m My Chart` | Custom chart name |
+| `/chart co2 temperature -n -m My Chart` | Normalized with custom name |
+
+**Flags:**
+- `-n`: Normalize data to 0-1 range (Min-Max scaling)
+- `-m`: Set custom chart name (next token is the name)
+- `-d`: Display each sensor in separate charts
+
 ## Troubleshooting
 
 ### Connection Issues
@@ -405,6 +549,23 @@ pip install PyQt6 requests matplotlib google-genai
 - Check if Gemini panel is visible (click 💭 button)
 - Verify API key in config
 
+### RC Car Issues
+
+**Car Not Moving**
+- Verify Unity app is listening on UDP port 5005
+- Check log panel for "RC | Sent:" messages
+- Ensure car commands are being sent (press WASD or click D-pad)
+
+**Video Feed Not Showing**
+- Verify Unity app is streaming JPEG on UDP port 5006
+- Check log for connection errors
+- Ensure firewall allows localhost UDP traffic
+
+**Keyboard Controls Not Working**
+- Click on the main app window first (not a text field)
+- Text fields (chat input, URL) disable WASD temporarily
+- Press E + move mouse for camera control
+
 ### Layout Issues
 
 **Sensor Cards Overlapping**
@@ -420,3 +581,7 @@ pip install PyQt6 requests matplotlib google-genai
 ## License
 
 This project is for educational purposes.
+
+## about Unity 
+https://github.com/haru452/es.git
+this is folder.

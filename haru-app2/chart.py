@@ -7,6 +7,17 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 import matplotlib.pyplot as plt
+# --- Add this for Dark Mode Charts ---
+plt.style.use("dark_background")
+plt.rcParams.update({
+    "figure.facecolor": "#191A1E",  # Matches the app's scroll area background
+    "axes.facecolor": "#191A1E",
+    "axes.edgecolor": "#555555",
+    "text.color": "#F0F0F0",
+    "xtick.color": "#CCCCCC",
+    "ytick.color": "#CCCCCC"
+})
+# -------------------------------------
 
 
 CHART_GROUPS = {
@@ -268,47 +279,14 @@ class ChartWidget(QWidget):
     target_col.addWidget(container)
 
   def _toggle_chart(self, group_name, btn):
-    if group_name in self.charts:
-      info = self.charts[group_name]
-      container = info["container"]
-      if container.isVisible():
-        container.setVisible(False)
-        btn.setText("O")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                font-weight: bold;
-                font-size: 10px;
-            }
-            QPushButton:hover {
-                background-color: #388E3C;
-            }
-        """)
-      else:
-        container.setVisible(True)
-        btn.setText("X")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #F44336;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                font-weight: bold;
-                font-size: 10px;
-            }
-            QPushButton:hover {
-                background-color: #D32F2F;
-            }
-        """)
-      self.chart_toggled.emit()
+    self.remove_chart(group_name)
+    self.chart_toggled.emit()
 
   def remove_chart(self, group_name):
     if group_name in self.charts:
       info = self.charts[group_name]
       info["container"].setParent(None)
+      info["container"].deleteLater()
       info["fig"].clear()
       del self.charts[group_name]
       del self.current_groups[group_name]
@@ -317,10 +295,15 @@ class ChartWidget(QWidget):
 
   def _clear_charts(self):
     for name, info in self.charts.items():
-      info["container"].setParent(None)
-      info["fig"].clear()
+      if "container" in info and info["container"]:
+        info["container"].setParent(None)
+        info["container"].deleteLater()
+      if "fig" in info and info["fig"]:
+        info["fig"].clear()
     self.charts.clear()
     self.normalize_flags.clear()
+    # STRICT RULE: Do NOT loop through self.main_layout to remove items here.
+    # The col_layouts (QVBoxLayouts) MUST remain attached to main_layout.
 
   def rebuild_charts(self, groups, normalize_flags=None, normalize=False):
     self.current_groups = groups
@@ -353,6 +336,7 @@ class ChartWidget(QWidget):
         if label in history and history[label]:
           has_data = True
           points = history[label]
+          points = sorted(points, key=lambda x: x.get("reading_time", ""))
           times = []
           values = []
           for p in points:
@@ -386,7 +370,7 @@ class ChartWidget(QWidget):
 
         annotation = ax.annotate("", xy=(0, 0), xytext=(10, 10),
                                  textcoords="offset points",
-                                 bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.9),
+                                 bbox=dict(boxstyle="round,pad=0.3", fc="#444444", ec="#777777", alpha=0.9),
                                  fontsize=8)
         annotation.set_visible(False)
 

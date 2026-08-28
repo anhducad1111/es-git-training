@@ -176,6 +176,67 @@ python main.py
 - JSON format: `{"content": "Analysis text from Gemini..."}`
 - Useful for logging or further processing
 
+### RC Car Control
+
+**Blue 🚙 Button (Bottom Right):**
+- Toggle RC control panel on/off
+- Exclusive with AI panel (opening one closes the other)
+- Sends automatic STOP command when panel is closed (fail-safe)
+- All keyboard controls disabled when panel is closed
+
+**RC Panel Layout:**
+```
++------------------------------------------+
+|        🚙 RC Car Control                 |
+|        Status: Disconnected              |
++----------+-------------------------------+
+|  D-Pad   |                               |
+|  [⬆]     |      Live Video Feed          |
+| [⬅][⏹][➡] |     (Widescreen 16:9)        |
+|  [⬇]     |                               |
+|          |                               |
++----------+-------------------------------+
+|        [ Reset Camera ]                  |
+|        Speed: 50%                        |
++------------------------------------------+
+```
+
+**D-Pad Controls (Touch/Mouse):**
+- ⬆ Forward
+- ⬇ Backward
+- ⬅ Left
+- ➡ Right
+- ⏹ STOP button (red, center)
+- Press and hold to move — car stops on release
+
+**Keyboard Controls (WASD):**
+- W → Forward
+- S → Backward
+- A → Left
+- D → Right
+- Release any key → Stop
+- Keys ignored when typing in text fields
+- Keys disabled when RC panel is closed
+
+**Camera Controls (Hold E + Mouse):**
+- Hold E key to activate camera mode
+- Move mouse to pan camera view
+- Sends `CAMERA:{dx}:{dy}` via UDP
+- Works simultaneously with WASD driving
+- Camera mode disabled when RC panel is closed
+
+**Reset Camera Button:**
+- Click "Reset Camera" to return view to default position
+- Sends `CAMERA_RESET` command via UDP
+- Located below the video feed
+
+**Video Feed:**
+- Receives JPEG stream from Unity on UDP port 5006
+- Displays in widescreen format (16:9 aspect ratio)
+- Auto-scales to fill available space
+- Uses `VideoReceiverThread` for non-blocking reception
+- Shows "No Signal" when no stream is active
+
 ## Layout
 
 ### Main Dashboard Layout
@@ -204,7 +265,7 @@ python main.py
                        | | 85% →       |  |                   |                   |
                        | +-------------+  |                   |                   |
 +-------------------+-------------------+-------------------+-------------------+
-| 💭 Toggle AI Panel (bottom right corner)                                      |
+| 💭 Toggle AI Panel / 🚙 Toggle RC Panel (bottom right corner)                |
 +---------------------------------------------------------------------------+
 | [Log]  <-- click to expand                                                   |
 +---------------------------------------------------------------------------+
@@ -275,12 +336,67 @@ Sends analysis results to the server.
 - Integrate with external systems
 - Store insights for dashboarding
 
+### UDP Communication (RC Car)
+
+**Port 5005 — Car Commands (Python → Unity):**
+| Command | Description |
+|---------|-------------|
+| `FORWARD` | Move forward |
+| `BACKWARD` | Move backward |
+| `LEFT` | Turn left |
+| `RIGHT` | Turn right |
+| `STOP` | Stop all movement |
+| `CAMERA:{dx}:{dy}` | Pan camera by delta pixels |
+| `CAMERA_RESET` | Reset camera to default position |
+
+**Port 5006 — Video Stream (Unity → Python):**
+- Continuous JPEG frame stream
+- Received by `VideoReceiverThread` (QThread)
+- Displayed in RC panel camera feed
+- Socket timeout: 1 second (for clean shutdown)
+
+### Unity Integration
+
+**Architecture:**
+```
+Python (PyQt6)                    Unity (RC Car)
++----------------+               +----------------+
+|  RC Panel UI   |  UDP 5005     |  Car Controller |
+|  D-Pad Buttons | ------------> |  Movement       |
+|  WASD Keys     |  Commands     |  Rigidbody      |
++----------------+               +----------------+
+|  Camera Feed   |  UDP 5006     |  Camera         |
+|  QLabel        | <------------ |  RenderTexture  |
+|  VideoThread   |  JPEG Stream  |  JPEG Encoder   |
++----------------+               +----------------+
+```
+
+**Unity Setup Required:**
+1. **Car Controller Script** — Listen on UDP port 5005 for commands
+2. **Camera Capture Script** — Encode camera view as JPEG, send on port 5006
+3. **Network Manager** — Handle UDP sockets on both ports
+
+**Command Flow:**
+1. User presses button/key in Python app
+2. `send_rc_command()` encodes command as UTF-8
+3. UDP packet sent to `127.0.0.1:5005`
+4. Unity receives and applies command to car Rigidbody
+5. Car moves/turns accordingly
+
+**Video Flow:**
+1. Unity camera renders to RenderTexture
+2. Encode RenderTexture as JPEG (quality ~75)
+3. Send JPEG bytes via UDP to `127.0.0.1:5006`
+4. Python `VideoReceiverThread` receives packet
+5. Emit `frame_received` signal with bytes
+6. `update_camera_feed()` converts to QPixmap and displays
+
 ## File Structure
 
 | File | Purpose |
 |------|---------|
 | `main.py` | Entry point - initializes QApplication and shows the dashboard |
-| `app.py` | Main UI class (`SensorDashboardApp`) - layout, cards, charts, chat, polling, drag-and-drop, persistence |
+| `app.py` | Main UI class (`SensorDashboardApp`) - layout, cards, charts, chat, polling, drag-and-drop, persistence, RC car control |
 | `chart.py` | `ChartWidget` class - matplotlib charts with drag-and-drop, normalization, hover tooltips |
 | `worker.py` | `Worker` class - background HTTP GET/POST requests using QThread |
 | `gemini_worker.py` | `GeminiWorker` class - Gemini AI integration with function calling |
@@ -304,6 +420,12 @@ Sends analysis results to the server.
 | `send_chat()` | Sends message to Gemini and displays response |
 | `analyze_data()` | Sends sensor data to Gemini for analysis |
 | `_handle_chart_command()` | Parses `/chart` commands with `-n`, `-m`, `-d` flags |
+| `toggle_rc_panel()` | Toggles RC control panel visibility |
+| `send_rc_command()` | Sends UDP command to RC car (port 5005) |
+| `update_camera_feed()` | Displays JPEG frame from video stream |
+| `keyPressEvent()` | Handles WASD and E key press for car/camera control |
+| `keyReleaseEvent()` | Sends STOP command on key release |
+| `eventFilter()` | Captures mouse movement for camera control when E held |
 
 ### chart.py - Key Methods
 
@@ -425,6 +547,23 @@ pip install PyQt6 requests matplotlib google-genai
 - Press Enter to send (not just clicking Send button)
 - Check if Gemini panel is visible (click 💭 button)
 - Verify API key in config
+
+### RC Car Issues
+
+**Car Not Moving**
+- Verify Unity app is listening on UDP port 5005
+- Check log panel for "RC | Sent:" messages
+- Ensure car commands are being sent (press WASD or click D-pad)
+
+**Video Feed Not Showing**
+- Verify Unity app is streaming JPEG on UDP port 5006
+- Check log for connection errors
+- Ensure firewall allows localhost UDP traffic
+
+**Keyboard Controls Not Working**
+- Click on the main app window first (not a text field)
+- Text fields (chat input, URL) disable WASD temporarily
+- Press E + move mouse for camera control
 
 ### Layout Issues
 

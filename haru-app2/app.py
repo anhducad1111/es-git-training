@@ -1,14 +1,18 @@
+import socket
 from datetime import datetime
-from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal, QThread, QEvent
+from PyQt6.QtGui import QKeyEvent, QPixmap, QCursor
 from PyQt6.QtWidgets import (
+    QApplication,
     QGroupBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStackedWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -114,6 +118,35 @@ UNITS = {
     "gas": "",
     "battery": "%",
 }
+
+
+class VideoReceiverThread(QThread):
+    frame_received = pyqtSignal(bytes)
+
+    def __init__(self, host="127.0.0.1", port=5006):
+        super().__init__()
+        self.host = host
+        self.port = port
+        self._running = True
+
+    def run(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((self.host, self.port))
+        sock.settimeout(1.0)
+        while self._running:
+            try:
+                data, _ = sock.recvfrom(65536)
+                if data:
+                    self.frame_received.emit(data)
+            except socket.timeout:
+                continue
+            except Exception:
+                break
+        sock.close()
+
+    def stop(self):
+        self._running = False
 
 
 class SensorDashboardApp(QWidget):
@@ -354,9 +387,147 @@ class SensorDashboardApp(QWidget):
     self.ai_side_panel.setLayout(ai_panel_layout)
     self.ai_side_panel.setVisible(False)
 
+    # RC car control panel
+    self.rc_side_panel = QWidget()
+    self.rc_side_panel.setStyleSheet("background-color: #191A1E;")
+    rc_main_layout = QVBoxLayout()
+    rc_main_layout.setContentsMargins(10, 10, 10, 10)
+    rc_main_layout.setSpacing(5)
+
+    rc_title = QLabel("\U0001F699 RC Car Control")
+    rc_title.setStyleSheet("color: #F0F0F0; font-weight: bold; font-size: 12pt;")
+    rc_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    rc_main_layout.addWidget(rc_title)
+
+    rc_status = QLabel("Status: Disconnected")
+    rc_status.setStyleSheet("color: #888; font-size: 9pt;")
+    rc_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    rc_main_layout.addWidget(rc_status)
+
+    rc_body = QHBoxLayout()
+    rc_body.setSpacing(10)
+
+    dpad_widget = QWidget()
+    dpad_widget.setFixedSize(250, 250)
+    dpad_layout = QGridLayout(dpad_widget)
+    dpad_layout.setContentsMargins(10, 10, 10, 10)
+    dpad_layout.setSpacing(8)
+
+    btn_style = """
+        QPushButton {
+            background-color: #424242;
+            color: white;
+            border: 2px solid #555;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            min-width: 70px;
+            min-height: 70px;
+        }
+        QPushButton:pressed {
+            background-color: #9C27B0;
+            border-color: #CE93D8;
+        }
+    """
+    stop_style = """
+        QPushButton {
+            background-color: #F44336;
+            color: white;
+            border: 2px solid #D32F2F;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            min-width: 70px;
+            min-height: 70px;
+        }
+        QPushButton:pressed {
+            background-color: #D32F2F;
+        }
+    """
+
+    self.rc_forward_btn = QPushButton("\u2B06")
+    self.rc_forward_btn.setStyleSheet(btn_style)
+    dpad_layout.addWidget(self.rc_forward_btn, 0, 1)
+
+    self.rc_left_btn = QPushButton("\u2B05")
+    self.rc_left_btn.setStyleSheet(btn_style)
+    dpad_layout.addWidget(self.rc_left_btn, 1, 0)
+
+    self.rc_stop_btn = QPushButton("STOP")
+    self.rc_stop_btn.setStyleSheet(stop_style)
+    dpad_layout.addWidget(self.rc_stop_btn, 1, 1)
+
+    self.rc_right_btn = QPushButton("\u27A1")
+    self.rc_right_btn.setStyleSheet(btn_style)
+    dpad_layout.addWidget(self.rc_right_btn, 1, 2)
+
+    self.rc_backward_btn = QPushButton("\u2B07")
+    self.rc_backward_btn.setStyleSheet(btn_style)
+    dpad_layout.addWidget(self.rc_backward_btn, 2, 1)
+
+    self.rc_forward_btn.pressed.connect(lambda: self.send_rc_command("FORWARD"))
+    self.rc_backward_btn.pressed.connect(lambda: self.send_rc_command("BACKWARD"))
+    self.rc_left_btn.pressed.connect(lambda: self.send_rc_command("LEFT"))
+    self.rc_right_btn.pressed.connect(lambda: self.send_rc_command("RIGHT"))
+    self.rc_forward_btn.released.connect(lambda: self.send_rc_command("STOP"))
+    self.rc_backward_btn.released.connect(lambda: self.send_rc_command("STOP"))
+    self.rc_left_btn.released.connect(lambda: self.send_rc_command("STOP"))
+    self.rc_right_btn.released.connect(lambda: self.send_rc_command("STOP"))
+    self.rc_stop_btn.clicked.connect(lambda: self.send_rc_command("STOP"))
+
+    rc_body.addWidget(dpad_widget, stretch=0)
+
+    self.camera_feed_label = QLabel()
+    self.camera_feed_label.setStyleSheet("background-color: #000; border: 1px solid #333;")
+    self.camera_feed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    self.camera_feed_label.setText("No Signal")
+    self.camera_feed_label.setScaledContents(True)
+    self.camera_feed_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+    self.camera_feed_label.setMinimumSize(400, 300)
+    rc_body.addWidget(self.camera_feed_label, stretch=1)
+
+    rc_main_layout.addLayout(rc_body, stretch=1)
+
+    self.reset_camera_btn = QPushButton("Reset Camera")
+    self.reset_camera_btn.setFixedHeight(35)
+    self.reset_camera_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #37474F;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 5px 20px;
+        }
+        QPushButton:hover {
+            background-color: #455A64;
+        }
+        QPushButton:pressed {
+            background-color: #263238;
+        }
+    """)
+    self.reset_camera_btn.clicked.connect(lambda: self.send_rc_command("CAMERA_RESET"))
+    rc_main_layout.addWidget(self.reset_camera_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    self.rc_speed_label = QLabel("Speed: 50%")
+    self.rc_speed_label.setStyleSheet("color: #F0F0F0; font-size: 10pt;")
+    rc_main_layout.addWidget(self.rc_speed_label)
+
+    self.rc_side_panel.setLayout(rc_main_layout)
+    self.rc_side_panel.setVisible(False)
+
+    # Stacked widget to hold AI and RC panels (exclusive visibility)
+    self.right_stacked = QStackedWidget()
+    self.right_stacked.addWidget(self.ai_side_panel)
+    self.right_stacked.addWidget(self.rc_side_panel)
+    self.right_stacked.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    self.right_stacked.setVisible(False)
+
     right_container = QVBoxLayout()
     right_container.setContentsMargins(0, 0, 0, 0)
-    right_container.addWidget(self.ai_side_panel, stretch=1)
+    right_container.setSpacing(0)
+    right_container.addWidget(self.right_stacked, stretch=1)
 
     self.chatbot_toggle_btn = QPushButton("\U0001F4AC")
     self.chatbot_toggle_btn.setFixedSize(50, 50)
@@ -375,12 +546,30 @@ class SensorDashboardApp(QWidget):
     """)
     self.chatbot_toggle_btn.clicked.connect(self.toggle_ai_panel)
 
+    self.rc_toggle_btn = QPushButton("\U0001F699")
+    self.rc_toggle_btn.setFixedSize(50, 50)
+    self.rc_toggle_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: #1976D2;
+        }
+    """)
+    self.rc_toggle_btn.clicked.connect(self.toggle_rc_panel)
+
     self.top_layout.addLayout(left_layout, stretch=1)
     self.top_layout.addLayout(self.center_layout, stretch=10)
     self.top_layout.addLayout(right_container, stretch=0)
 
     btn_row = QHBoxLayout()
     btn_row.addStretch()
+    btn_row.addWidget(self.rc_toggle_btn)
     btn_row.addWidget(self.chatbot_toggle_btn)
 
     self.log_tab = QPushButton("[Log] Click to expand")
@@ -411,6 +600,21 @@ class SensorDashboardApp(QWidget):
     self.poll_timer = QTimer()
     self.poll_timer.setInterval(5000)
     self.poll_timer.timeout.connect(self.fetch_data)
+
+    self.video_thread = VideoReceiverThread(host="127.0.0.1", port=5006)
+    self.video_thread.frame_received.connect(self.update_camera_feed)
+    self.video_thread.start()
+
+    self.setMouseTracking(True)
+    self.is_e_pressed = False
+    self.last_mouse_pos = None
+    QApplication.instance().installEventFilter(self)
+
+  def update_camera_feed(self, jpeg_data):
+    pixmap = QPixmap()
+    pixmap.loadFromData(jpeg_data)
+    if not pixmap.isNull():
+      self.camera_feed_label.setPixmap(pixmap)
 
   def load_saved_config(self):
     self.url_entry.setText(self._config.get("api_url", ""))
@@ -480,16 +684,112 @@ class SensorDashboardApp(QWidget):
   def toggle_ai_panel(self):
     if self.ai_side_panel.isVisible():
       self.ai_side_panel.setVisible(False)
+      self.right_stacked.setVisible(False)
       self.chatbot_toggle_btn.setText("\U0001F4AC")
       self.charts_group.setVisible(True)
       self.top_layout.setStretch(1, 10)
       self.top_layout.setStretch(2, 0)
     else:
+      self.rc_side_panel.setVisible(False)
+      self.rc_toggle_btn.setText("\U0001F699")
       self.ai_side_panel.setVisible(True)
+      self.right_stacked.setVisible(True)
       self.chatbot_toggle_btn.setText("\u2716")
       self.charts_group.setVisible(False)
       self.top_layout.setStretch(1, 0)
       self.top_layout.setStretch(2, 10)
+
+  def toggle_rc_panel(self):
+    if self.rc_side_panel.isVisible():
+      self.send_rc_command("STOP")
+      self.is_e_pressed = False
+      self.last_mouse_pos = None
+      self.rc_side_panel.setVisible(False)
+      self.right_stacked.setVisible(False)
+      self.rc_toggle_btn.setText("\U0001F699")
+      self.charts_group.setVisible(True)
+      self.top_layout.setStretch(1, 10)
+      self.top_layout.setStretch(2, 0)
+    else:
+      self.ai_side_panel.setVisible(False)
+      self.chatbot_toggle_btn.setText("\U0001F4AC")
+      self.rc_side_panel.setVisible(True)
+      self.right_stacked.setVisible(True)
+      self.rc_toggle_btn.setText("\u2716")
+      self.charts_group.setVisible(False)
+      self.top_layout.setStretch(1, 0)
+      self.top_layout.setStretch(2, 10)
+
+  def send_rc_command(self, command):
+    try:
+      sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      sock.sendto(command.encode("utf-8"), ("127.0.0.1", 5005))
+      sock.close()
+      self.append_log(f"RC | Sent: {command}")
+    except Exception as e:
+      self.append_log(f"RC | Error sending {command}: {e}")
+
+  def _is_text_focused(self):
+    focused = self.focusWidget()
+    if focused and isinstance(focused, (QLineEdit, QTextEdit)):
+      return True
+    return False
+
+  def keyPressEvent(self, event):
+    if event.isAutoRepeat():
+      return
+    if self._is_text_focused():
+      return super().keyPressEvent(event)
+    if not self.rc_side_panel.isVisible():
+      return super().keyPressEvent(event)
+    if event.key() == Qt.Key.Key_E:
+      self.is_e_pressed = True
+      self.last_mouse_pos = QCursor.pos()
+      return
+    key_map = {
+        Qt.Key.Key_W: "FORWARD",
+        Qt.Key.Key_S: "BACKWARD",
+        Qt.Key.Key_A: "LEFT",
+        Qt.Key.Key_D: "RIGHT",
+    }
+    command = key_map.get(event.key())
+    if command:
+      self.send_rc_command(command)
+    else:
+      super().keyPressEvent(event)
+
+  def keyReleaseEvent(self, event):
+    if event.isAutoRepeat():
+      return
+    if self._is_text_focused():
+      return super().keyReleaseEvent(event)
+    if not self.rc_side_panel.isVisible():
+      return super().keyReleaseEvent(event)
+    if event.key() == Qt.Key.Key_E:
+      self.is_e_pressed = False
+      self.last_mouse_pos = None
+      return
+    key_map = {
+        Qt.Key.Key_W: "FORWARD",
+        Qt.Key.Key_S: "BACKWARD",
+        Qt.Key.Key_A: "LEFT",
+        Qt.Key.Key_D: "RIGHT",
+    }
+    if event.key() in key_map:
+      self.send_rc_command("STOP")
+    else:
+      super().keyReleaseEvent(event)
+
+  def eventFilter(self, obj, event):
+    if self.rc_side_panel.isVisible() and event.type() == QEvent.Type.MouseMove and self.is_e_pressed:
+      current_pos = QCursor.pos()
+      if self.last_mouse_pos is not None:
+        dx = current_pos.x() - self.last_mouse_pos.x()
+        dy = current_pos.y() - self.last_mouse_pos.y()
+        if dx != 0 or dy != 0:
+          self.send_rc_command(f"CAMERA:{dx}:{dy}")
+      self.last_mouse_pos = current_pos
+    return super().eventFilter(obj, event)
 
   def toggle_log(self):
     if self.log_group.isVisible():
@@ -798,7 +1098,7 @@ Keep the response concise and helpful."""
         "If the user requests multiple separate charts (e.g., 'Chart A and Chart B'), structure the dictionary with multiple keys. "
         "Example: {'CO2 and Gas': ['co2', 'gas'], 'PM1.0': ['pm1.0']}. "
         "Under NO circumstances should you respond with only text when a chart is requested. "
-        "AMBIGUITY RULE: If the user asks for 'pm', 'particulate matter', or 'dust' without specifying a size, "
+        "AMBIGUITY RULE: If the user asks for 'pm', 'pms', 'pm data', 'pm datas', 'particulate matter', or 'dust' without specifying a size, "
         "you MUST automatically include all three PM sensors ('pm1.0', 'pm2.5', and 'pm10') in your tool call list. "
         "NORMALIZATION RULE: If the user requests overlaying sensors with vastly different value scales "
         "(e.g., co2 in thousands, temperature in tens) on a single chart, do NOT immediately call the tool. "
@@ -1055,3 +1355,8 @@ Keep the response concise and helpful."""
     self.log_display.verticalScrollBar().setValue(
         self.log_display.verticalScrollBar().maximum()
     )
+
+  def closeEvent(self, event):
+    self.video_thread.stop()
+    self.video_thread.wait(2000)
+    event.accept()

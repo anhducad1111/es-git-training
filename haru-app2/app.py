@@ -567,11 +567,6 @@ class SensorDashboardApp(QWidget):
     self.top_layout.addLayout(self.center_layout, stretch=10)
     self.top_layout.addLayout(right_container, stretch=0)
 
-    btn_row = QHBoxLayout()
-    btn_row.addStretch()
-    btn_row.addWidget(self.rc_toggle_btn)
-    btn_row.addWidget(self.chatbot_toggle_btn)
-
     self.log_tab = QPushButton("[Log] Click to expand")
     self.log_tab.setStyleSheet(
         "background-color: #424242; color: white; font-weight: bold; padding: 5px; border-radius: 4px;"
@@ -593,9 +588,17 @@ class SensorDashboardApp(QWidget):
     self.log_group.setVisible(False)
 
     main_layout.addLayout(self.top_layout, stretch=1)
-    main_layout.addLayout(btn_row)
     main_layout.addWidget(self.log_tab)
     main_layout.addWidget(self.log_group)
+
+    self.floating_btn_container = QWidget(self)
+    floating_layout = QHBoxLayout(self.floating_btn_container)
+    floating_layout.setContentsMargins(0, 0, 0, 0)
+    floating_layout.setSpacing(15)
+    floating_layout.addWidget(self.rc_toggle_btn)
+    floating_layout.addWidget(self.chatbot_toggle_btn)
+    self.floating_btn_container.setStyleSheet("background: transparent;")
+    self.floating_btn_container.raise_()
 
     self.poll_timer = QTimer()
     self.poll_timer.setInterval(5000)
@@ -698,6 +701,7 @@ class SensorDashboardApp(QWidget):
       self.charts_group.setVisible(False)
       self.top_layout.setStretch(1, 0)
       self.top_layout.setStretch(2, 10)
+    QTimer.singleShot(10, self.update_floating_buttons_pos)
 
   def toggle_rc_panel(self):
     if self.rc_side_panel.isVisible():
@@ -719,6 +723,7 @@ class SensorDashboardApp(QWidget):
       self.charts_group.setVisible(False)
       self.top_layout.setStretch(1, 0)
       self.top_layout.setStretch(2, 10)
+    QTimer.singleShot(10, self.update_floating_buttons_pos)
 
   def send_rc_command(self, command):
     try:
@@ -798,6 +803,19 @@ class SensorDashboardApp(QWidget):
     else:
       self.log_group.setVisible(True)
       self.log_tab.setText("[Log] Click to collapse")
+    QTimer.singleShot(10, self.update_floating_buttons_pos)
+
+  def update_floating_buttons_pos(self):
+    if hasattr(self, 'floating_btn_container'):
+      self.floating_btn_container.adjustSize()
+      x = self.width() - self.floating_btn_container.width() - 30
+      y = self.log_tab.y() - self.floating_btn_container.height() - 20
+      self.floating_btn_container.move(x, y)
+      self.floating_btn_container.raise_()
+
+  def resizeEvent(self, event):
+    super().resizeEvent(event)
+    self.update_floating_buttons_pos()
 
   def toggle_polling(self):
     if self._poll_running:

@@ -91,12 +91,25 @@
             return String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
         }
 
-        function rowHtml(label, entry) {
-            const unit = UNIT_MAP[label] || "";
-            return `<div class="metric-row"><span class="metric-name">${esc(label)}</span><span class="metric-value">${Number(entry.data).toFixed(2)}${unit ? " <small>" + esc(unit) + "</small>" : ""}</span></div>`;
+        function trendFor(label, entry, history) {
+            const hist = history && history[label];
+            if (!hist || hist.length < 2) return null;
+            const prev = hist[hist.length - 2].data;
+            const curFixed = Number(entry.data).toFixed(2);
+            const prevFixed = Number(prev).toFixed(2);
+            if (curFixed === prevFixed) return "same";
+            return Number(curFixed) > Number(prevFixed) ? "up" : "down";
         }
 
-        function renderCards(latest) {
+        function rowHtml(label, entry, history) {
+            const unit = UNIT_MAP[label] || "";
+            const trend = trendFor(label, entry, history);
+            const trendClass = trend ? ` trend-${trend}` : "";
+            const arrow = trend === "up" ? "▲ " : trend === "down" ? "▼ " : "";
+            return `<div class="metric-row"><span class="metric-name">${esc(label)}</span><span class="metric-value${trendClass}">${arrow}${Number(entry.data).toFixed(2)}${unit ? " <small>" + esc(unit) + "</small>" : ""}</span></div>`;
+        }
+
+        function renderCards(latest, history) {
             const container = document.getElementById("cardsContainer");
             const labels = Object.keys(latest);
             if (labels.length === 0) {
@@ -109,12 +122,12 @@
                 const present = group.labels.filter(l => labels.includes(l));
                 if (present.length === 0) return;
                 present.forEach(l => grouped.add(l));
-                const rows = present.map(l => rowHtml(l, latest[l])).join("");
+                const rows = present.map(l => rowHtml(l, latest[l], history)).join("");
                 const footerTime = present.reduce((max, l) => latest[l].reading_time > max ? latest[l].reading_time : max, latest[present[0]].reading_time);
                 cards.push(`<div class="card"><div class="card-label">${esc(group.title.toUpperCase())}</div>${rows}<div class="card-footer">Updated: ${esc(footerTime)}</div></div>`);
             });
             labels.filter(l => !grouped.has(l)).forEach(l => {
-                cards.push(`<div class="card"><div class="card-label">${esc(l.toUpperCase())}</div>${rowHtml(l, latest[l])}<div class="card-footer">Updated: ${esc(latest[l].reading_time)}</div></div>`);
+                cards.push(`<div class="card"><div class="card-label">${esc(l.toUpperCase())}</div>${rowHtml(l, latest[l], history)}<div class="card-footer">Updated: ${esc(latest[l].reading_time)}</div></div>`);
             });
             container.innerHTML = cards.join("");
         }
@@ -390,9 +403,9 @@
                 if (!response.ok) throw new Error("HTTP " + response.status);
                 const result = await response.json();
                 if (!result.success) throw new Error(result.message || "API error");
-                renderCards(result.latest);
-                updateStaleWarning(result.latest, result.server_time);
                 lastHistory = result.history;
+                renderCards(result.latest, result.history);
+                updateStaleWarning(result.latest, result.server_time);
                 renderChart(result.history);
                 statusText.textContent = "Server Online";
                 statusDot.classList.remove("offline");

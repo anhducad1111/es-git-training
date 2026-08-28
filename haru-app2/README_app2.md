@@ -845,6 +845,195 @@ def save_config(config):
         print(f"Failed to save config: {e}")
 ```
 
+### Layout Persistence System
+
+The app automatically saves and restores your layout configuration across sessions.
+
+#### What Gets Saved
+
+| Data | Description |
+|------|-------------|
+| `api_url` | Server endpoint URL |
+| `gemini_api_key` | AI API key |
+| `center_charts` | Chart arrangement in Main Charts area |
+| `custom_charts` | User-created charts in AI Custom Charts area |
+| `custom_charts_normalize` | Normalization flags for custom charts |
+
+#### When Saving Occurs
+
+**Automatic Triggers:**
+1. **Chart Created** — `/chart` command or AI generates new chart
+2. **Chart Moved** — Drag-and-drop between areas
+3. **Chart Toggled** — Visibility changed (X/O button)
+4. **Chart Removed** — X button clicked
+5. **Move to Charts** — All custom charts moved to center
+6. **Gemini Tool Call** — AI creates custom charts
+
+**Manual Trigger:**
+- Reset Layout button restores defaults and saves
+
+#### Save Function Implementation
+
+```python
+# app.py
+def save_current_config(self):
+    """Save current layout state to config.json"""
+    self._config["api_url"] = self.url_entry.text().strip()
+    self._config["gemini_api_key"] = self.api_key_entry.text().strip()
+    self._config["center_charts"] = {
+        k: list(v) for k, v in self.chart_widget.current_groups.items()
+    }
+    self._config["custom_charts"] = {
+        k: list(v) for k, v in self.custom_chart_widget.current_groups.items()
+    }
+    self._config["custom_charts_normalize"] = dict(
+        self.custom_chart_widget.normalize_flags
+    )
+    save_config(self._config)
+```
+
+#### Load Function Implementation
+
+```python
+# app.py
+def load_saved_config(self):
+    """Restore layout from config.json on startup"""
+    # Restore API settings
+    self.url_entry.setText(self._config.get("api_url", ""))
+    self.api_key_entry.setText(self._config.get("gemini_api_key", ""))
+    
+    # Restore center charts
+    saved_charts = self._config.get("center_charts", {})
+    if saved_charts:
+        self.chart_widget.current_groups = saved_charts
+        self.chart_widget._clear_charts()
+        self.chart_widget._build_charts()
+        self.append_log(f"Restored {len(saved_charts)} center chart(s)")
+    
+    # Restore custom charts
+    saved_custom = self._config.get("custom_charts", {})
+    saved_custom_norm = self._config.get("custom_charts_normalize", {})
+    if saved_custom:
+        self.custom_chart_widget.current_groups = saved_custom
+        self.custom_chart_widget.normalize_flags = saved_custom_norm
+        self.custom_chart_widget._clear_charts()
+        self.custom_chart_widget._build_charts()
+        
+        # Update with latest data if available
+        if self._last_data:
+            history = self._last_data.get("history", {})
+            self.custom_chart_widget.update_charts(history)
+        
+        self.append_log(f"Restored {len(saved_custom)} custom chart(s)")
+```
+
+#### Data Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Layout Persistence Flow                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  App Start                                                                  │
+│     │                                                                       │
+│     ▼                                                                       │
+│  ┌─────────────┐                                                            │
+│  │ load_config │──── Read config.json                                       │
+│  └──────┬──────┘                                                            │
+│         │                                                                   │
+│         ▼                                                                   │
+│  ┌─────────────┐                                                            │
+│  │ load_saved  │──── Restore chart groups                                   │
+│  │ _config()   │     Restore API settings                                   │
+│  └──────┬──────┘     Rebuild UI                                             │
+│         │                                                                   │
+│         ▼                                                                   │
+│  ┌─────────────┐                                                            │
+│  │  App        │──── User interacts with charts                             │
+│  │  Running    │     (create, move, toggle, delete)                         │
+│  └──────┬──────┘                                                            │
+│         │                                                                   │
+│         ▼ (on each change)                                                  │
+│  ┌─────────────┐                                                            │
+│  │ save_config │──── Write to config.json                                   │
+│  └──────┬──────┘                                                            │
+│         │                                                                   │
+│         ▼                                                                   │
+│  ┌─────────────┐                                                            │
+│  │ App Exit    │──── Final save (if needed)                                 │
+│  └─────────────┘                                                            │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Config File Location
+
+```
+haru-app2/
+├── config.py          # Load/save functions
+├── config.json        # Saved configuration (gitignored)
+├── app.py             # Main app with save triggers
+└── ...
+```
+
+**Config File Path:**
+```python
+# config.py
+import os
+
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+```
+
+#### Example Session
+
+**First Run:**
+1. App starts with empty config
+2. User configures API URL
+3. User creates charts via `/chart` or AI
+4. Each change triggers `save_current_config()`
+5. `config.json` is created with all settings
+
+**Second Run:**
+1. App starts
+2. `load_saved_config()` reads `config.json`
+3. All charts restored to previous positions
+4. API settings pre-filled
+5. User continues where they left off
+
+#### Edge Cases Handled
+
+**Corrupted Config:**
+```python
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                config = json.load(f)
+                # Merge with defaults for missing keys
+                for key, value in DEFAULT_CONFIG.items():
+                    if key not in config:
+                        config[key] = value
+                return config
+        except (json.JSONDecodeError, IOError):
+            pass  # Fall back to defaults
+    return DEFAULT_CONFIG.copy()
+```
+
+**Missing Config:**
+- Returns `DEFAULT_CONFIG` with empty charts
+- App starts fresh with default layout
+
+**Write Errors:**
+```python
+def save_config(config):
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=2)
+    except IOError as e:
+        print(f"Failed to save config: {e}")
+        # App continues running, changes not persisted
+```
+
 ## Worker Thread System
 
 ### HTTP Worker

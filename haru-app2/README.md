@@ -1,6 +1,7 @@
 # Haru App 2 - Sensor Dashboard
 
 A PyQt6 desktop application for real-time IoT sensor monitoring with AI-powered analysis, interactive charts, and persistent layout customization.
+if you want to see Technical document, README_app2.md is what you want.
 
 ## Overview
 

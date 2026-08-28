@@ -325,6 +325,7 @@ class ChartWidget(QWidget):
         if label in history and history[label]:
           has_data = True
           points = history[label]
+          points = sorted(points, key=lambda x: x.get("reading_time", ""))
           times = []
           values = []
           for p in points:

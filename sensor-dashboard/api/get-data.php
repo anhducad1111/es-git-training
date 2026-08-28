@@ -3,8 +3,8 @@ date_default_timezone_set('Asia/Ho_Chi_Minh');
 header("Content-Type: application/json; charset=UTF-8");
 $host = "localhost";
 $dbname = "sensor_dashboard_db";
-$username = "esiot";
-$password = "1";
+$username = "root";
+$password = "";
 try {
   $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
 } catch (PDOException $e) {

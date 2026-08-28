@@ -7,6 +7,17 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 import matplotlib.pyplot as plt
+# --- Add this for Dark Mode Charts ---
+plt.style.use("dark_background")
+plt.rcParams.update({
+    "figure.facecolor": "#191A1E",  # Matches the app's scroll area background
+    "axes.facecolor": "#191A1E",
+    "axes.edgecolor": "#555555",
+    "text.color": "#F0F0F0",
+    "xtick.color": "#CCCCCC",
+    "ytick.color": "#CCCCCC"
+})
+# -------------------------------------
 
 
 CHART_GROUPS = {
@@ -359,7 +370,7 @@ class ChartWidget(QWidget):
 
         annotation = ax.annotate("", xy=(0, 0), xytext=(10, 10),
                                  textcoords="offset points",
-                                 bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.9),
+                                 bbox=dict(boxstyle="round,pad=0.3", fc="#444444", ec="#777777", alpha=0.9),
                                  fontsize=8)
         annotation.set_visible(False)
 

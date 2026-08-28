@@ -286,7 +286,7 @@ class SensorDashboardApp(QWidget):
             border: 1px solid #444;
             border-radius: 8px;
             padding: 8px 12px;
-            font-size: 9pt;
+            font-size: 11pt;
         }
     """)
     self.chat_send_btn = QPushButton("Send")
@@ -922,7 +922,7 @@ Keep the response concise and helpful."""
               color: #CCCCCC;
               padding: 10px 14px;
               border-radius: 10px;
-              font-size: 9pt;
+              font-size: 11pt;
           }
       """)
       layout = QHBoxLayout()
@@ -944,7 +944,7 @@ Keep the response concise and helpful."""
               color: #F0F0F0;
               padding: 10px 14px;
               border-radius: 10px;
-              font-size: 9pt;
+              font-size: 11pt;
           }
       """)
       layout = QHBoxLayout()
@@ -963,7 +963,7 @@ Keep the response concise and helpful."""
               color: white;
               padding: 10px 14px;
               border-radius: 10px;
-              font-size: 9pt;
+              font-size: 11pt;
           }
       """)
       layout = QHBoxLayout()
@@ -983,7 +983,7 @@ Keep the response concise and helpful."""
               color: #F0F0F0;
               padding: 10px 14px;
               border-radius: 10px;
-              font-size: 9pt;
+              font-size: 11pt;
           }
       """)
       layout = QHBoxLayout()

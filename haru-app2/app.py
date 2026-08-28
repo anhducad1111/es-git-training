@@ -846,7 +846,9 @@ Keep the response concise and helpful."""
         separate_charts = True
         i += 1
         continue
-      if token in ALL_LABELS:
+      if token == "pm":
+        sensors.extend(["pm1.0", "pm2.5", "pm10"])
+      elif token in ALL_LABELS:
         sensors.append(token)
       i += 1
     self.chat_input.setPlainText("")

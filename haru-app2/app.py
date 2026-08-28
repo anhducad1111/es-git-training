@@ -416,31 +416,10 @@ class SensorDashboardApp(QWidget):
     self.url_entry.setText(self._config.get("api_url", ""))
     self.api_key_entry.setText(self._config.get("gemini_api_key", ""))
     saved_charts = self._config.get("center_charts", {})
-    saved_hidden = self._config.get("center_charts_hidden", [])
-    self._hidden_charts = set(saved_hidden)
     if saved_charts:
       self.chart_widget.current_groups = saved_charts
       self.chart_widget._clear_charts()
       self.chart_widget._build_charts()
-      for name in saved_hidden:
-        if name in self.chart_widget.charts:
-          info = self.chart_widget.charts[name]
-          info["container"].setVisible(False)
-          if "close_btn" in info:
-            info["close_btn"].setText("O")
-            info["close_btn"].setStyleSheet("""
-                QPushButton {
-                    background-color: #4CAF50;
-                    color: white;
-                    border: none;
-                    border-radius: 10px;
-                    font-weight: bold;
-                    font-size: 10px;
-                }
-                QPushButton:hover {
-                    background-color: #388E3C;
-                }
-            """)
       self.append_log(f"Restored {len(saved_charts)} center chart(s)")
     saved_custom = self._config.get("custom_charts", {})
     saved_custom_norm = self._config.get("custom_charts_normalize", {})
@@ -458,11 +437,6 @@ class SensorDashboardApp(QWidget):
     self._config["api_url"] = self.url_entry.text().strip()
     self._config["gemini_api_key"] = self.api_key_entry.text().strip()
     self._config["center_charts"] = {k: list(v) for k, v in self.chart_widget.current_groups.items()}
-    self._hidden_charts = {
-        name for name, info in self.chart_widget.charts.items()
-        if not info["container"].isVisible()
-    }
-    self._config["center_charts_hidden"] = list(self._hidden_charts)
     self._config["custom_charts"] = {k: list(v) for k, v in self.custom_chart_widget.current_groups.items()}
     self._config["custom_charts_normalize"] = dict(self.custom_chart_widget.normalize_flags)
     save_config(self._config)
@@ -483,15 +457,15 @@ class SensorDashboardApp(QWidget):
         row = QHBoxLayout()
         name_label = QLabel(f"{label}:")
         name_label.setFixedWidth(120)
-        name_label.setMinimumHeight(24)
+        name_label.setMinimumHeight(25)
         name_label.setStyleSheet("font-size: 12pt; font-weight: bold;")
         value_label = QLabel("N/A")
         value_label.setFixedWidth(100)
-        value_label.setMinimumHeight(24)
+        value_label.setMinimumHeight(25)
         value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         arrow_label = QLabel("")
         arrow_label.setFixedWidth(40)
-        arrow_label.setMinimumHeight(24)
+        arrow_label.setMinimumHeight(25)
         arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         row.addWidget(name_label)
         row.addWidget(value_label)
@@ -596,7 +570,6 @@ class SensorDashboardApp(QWidget):
     self.chart_widget._clear_charts()
     self.chart_widget._build_charts()
     self._config["center_charts"] = {}
-    self._config["center_charts_hidden"] = []
     save_config(self._config)
     self.add_chat_bubble("System: Charts layout reset to default.", is_system=True)
     self.append_log("RESET | Center charts restored to default")
@@ -820,12 +793,14 @@ Keep the response concise and helpful."""
         "IMPORTANT: You are a sensor data assistant with chart creation capabilities. "
         "AVAILABLE SENSORS: co2, pm1.0, pm2.5, pm10, temperature, humidity, pressure, gas, battery. "
         "RULE: When a user asks to show, view, display, create, compare, or chart ANY sensor data, "
-        "you MUST execute the create_custom_charts tool. Under NO circumstances should you respond "
-        "with only text. You MUST call the tool with a dictionary mapping chart titles to sensor lists. "
-        "Example: User says 'show temperature' -> call create_custom_charts({\"Temperature\": [\"temperature\"]}). "
+        "you MUST execute the create_custom_charts tool. "
+        "Always use exact lowercase English sensor names as list elements in the custom_groups dictionary. "
+        "If the user requests multiple separate charts (e.g., 'Chart A and Chart B'), structure the dictionary with multiple keys. "
+        "Example: {'CO2 and Gas': ['co2', 'gas'], 'PM1.0': ['pm1.0']}. "
+        "Under NO circumstances should you respond with only text when a chart is requested. "
         "NORMALIZATION RULE: If the user requests overlaying sensors with vastly different value scales "
-        "(e.g., co2 in thousands, temperature in tens, pm2.5 in single digits) on a single chart, "
-        "do NOT immediately call the tool. Instead, ask: 'These sensors have significantly different value scales. "
+        "(e.g., co2 in thousands, temperature in tens) on a single chart, do NOT immediately call the tool. "
+        "Instead, ask: 'These sensors have significantly different value scales. "
         "Should I normalize them (Min-Max scaling) to 0-1 range for easier comparison, or display as is?' "
         "Wait for user response before executing the tool."
     )
@@ -854,12 +829,15 @@ Keep the response concise and helpful."""
         i += 1
         continue
       if token == "-n":
-        if i + 1 < len(tokens) and tokens[i + 1] not in ALL_LABELS and tokens[i + 1] != "-d":
+        normalize = True
+        i += 1
+        continue
+      if token == "-m":
+        if i + 1 < len(tokens) and tokens[i + 1] not in ALL_LABELS and tokens[i + 1] != "-d" and tokens[i + 1] != "-n":
           chart_name = tokens[i + 1]
           i += 2
           continue
         else:
-          normalize = True
           i += 1
           continue
       if token == "-d":
@@ -872,7 +850,7 @@ Keep the response concise and helpful."""
     self.chat_input.setPlainText("")
     self.add_chat_bubble(message, is_user=True)
     if not sensors:
-      self.add_chat_bubble("System: No valid sensors. Use: /chart co2 temperature -n My Chart", is_system=True)
+      self.add_chat_bubble("System: No valid sensors. Use: /chart co2 temperature -n -m My Chart", is_system=True)
       return
     if separate_charts:
       custom_groups = {sensor.capitalize(): [sensor] for sensor in sensors}

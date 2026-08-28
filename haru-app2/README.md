@@ -114,6 +114,8 @@ python main.py
    - `/chart co2 temperature` - Combined chart
    - `/chart gas co2 -n` - Normalized (0-1 scale)
    - `/chart pm1.0 pm2.5 pm10 -d` - Separate charts
+   - `/chart co2 temperature -m My Chart` - Custom name
+   - `/chart co2 temperature -n -m My Chart` - Normalized with custom name
 
 3. **Drag and Drop**
    - Drag any chart from Main Charts to AI Custom Charts
@@ -125,6 +127,7 @@ python main.py
 
 **Chart Options:**
 - `-n` flag: Normalize data to 0-1 range (Min-Max scaling)
+- `-m` flag: Set custom chart name (next token is the name)
 - `-d` flag: Display each sensor in separate charts
 - Toggle visibility with X/O button on each chart
 - Hover tooltips with dynamic positioning
@@ -217,7 +220,8 @@ python main.py
 - 6 sensor category cards with live values
 
 **Center Column (Main Charts):**
-- 3 line charts showing historical data
+- 2-column masonry layout for charts
+- Line charts showing historical data
 - Drag-and-drop enabled
 - Reset Layout button
 - Scrollable area for many charts
@@ -299,6 +303,7 @@ Sends analysis results to the server.
 | `on_fetch_result()` | Processes fetched data, updates cards and charts |
 | `send_chat()` | Sends message to Gemini and displays response |
 | `analyze_data()` | Sends sensor data to Gemini for analysis |
+| `_handle_chart_command()` | Parses `/chart` commands with `-n`, `-m`, `-d` flags |
 
 ### chart.py - Key Methods
 
@@ -312,6 +317,7 @@ Sends analysis results to the server.
 | `_on_drop()` | Handles drop events for drag-and-drop |
 | `_toggle_chart()` | Shows/hides a chart with X/O button |
 | `_on_hover()` | Handles mouse hover for tooltips |
+| `_clear_charts()` | Clears charts while preserving column layouts |
 
 ## Dependencies
 
@@ -358,6 +364,21 @@ pip install PyQt6 requests matplotlib google-genai
 | `center_charts_hidden` | array | List of hidden chart names |
 | `custom_charts` | object | User-created chart configurations |
 | `custom_charts_normalize` | object | Normalization settings per chart |
+
+## Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/chart co2 temperature` | Create chart with both sensors |
+| `/chart gas co2 -n` | Normalized (0-1 scale) for comparison |
+| `/chart pm1.0 pm2.5 pm10 -d` | Separate charts for each sensor |
+| `/chart co2 temperature -m My Chart` | Custom chart name |
+| `/chart co2 temperature -n -m My Chart` | Normalized with custom name |
+
+**Flags:**
+- `-n`: Normalize data to 0-1 range (Min-Max scaling)
+- `-m`: Set custom chart name (next token is the name)
+- `-d`: Display each sensor in separate charts
 
 ## Troubleshooting
 

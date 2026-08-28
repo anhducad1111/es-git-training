@@ -268,47 +268,14 @@ class ChartWidget(QWidget):
     target_col.addWidget(container)
 
   def _toggle_chart(self, group_name, btn):
-    if group_name in self.charts:
-      info = self.charts[group_name]
-      container = info["container"]
-      if container.isVisible():
-        container.setVisible(False)
-        btn.setText("O")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                font-weight: bold;
-                font-size: 10px;
-            }
-            QPushButton:hover {
-                background-color: #388E3C;
-            }
-        """)
-      else:
-        container.setVisible(True)
-        btn.setText("X")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #F44336;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                font-weight: bold;
-                font-size: 10px;
-            }
-            QPushButton:hover {
-                background-color: #D32F2F;
-            }
-        """)
-      self.chart_toggled.emit()
+    self.remove_chart(group_name)
+    self.chart_toggled.emit()
 
   def remove_chart(self, group_name):
     if group_name in self.charts:
       info = self.charts[group_name]
       info["container"].setParent(None)
+      info["container"].deleteLater()
       info["fig"].clear()
       del self.charts[group_name]
       del self.current_groups[group_name]
@@ -317,10 +284,15 @@ class ChartWidget(QWidget):
 
   def _clear_charts(self):
     for name, info in self.charts.items():
-      info["container"].setParent(None)
-      info["fig"].clear()
+      if "container" in info and info["container"]:
+        info["container"].setParent(None)
+        info["container"].deleteLater()
+      if "fig" in info and info["fig"]:
+        info["fig"].clear()
     self.charts.clear()
     self.normalize_flags.clear()
+    # STRICT RULE: Do NOT loop through self.main_layout to remove items here.
+    # The col_layouts (QVBoxLayouts) MUST remain attached to main_layout.
 
   def rebuild_charts(self, groups, normalize_flags=None, normalize=False):
     self.current_groups = groups

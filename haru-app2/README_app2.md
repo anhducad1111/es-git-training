@@ -175,6 +175,401 @@ App: Creates chart and displays it in AI Custom Charts area
 - Limits responses to ~100 words
 - Handles ambiguous queries about "PM data" → all three PM sensors
 
+### 4. LLM Chart Generation System
+
+#### Overview
+
+The app uses Google's Gemini LLM to generate charts from natural language requests. Instead of manually selecting sensors, users can describe what they want to see, and the AI creates the appropriate chart configuration.
+
+#### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    LLM Chart Generation Flow                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  User Input                                                                 │
+│  "Show me temperature and humidity trends"                                  │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────┐                                                            │
+│  │ Parse Input │                                                            │
+│  │ (app.py)    │                                                            │
+│  └──────┬──────┘                                                            │
+│         │                                                                   │
+│         ▼                                                                   │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐                   │
+│  │ Gemini      │────>│ Function    │────>│ Create      │                   │
+│  │ API Call    │     │ Calling     │     │ Chart       │                   │
+│  └─────────────┘     └─────────────┘     └──────┬──────┘                   │
+│                                                  │                          │
+│                                                  ▼                          │
+│                                         ┌─────────────┐                     │
+│                                         │ Display     │                     │
+│                                         │ in UI       │                     │
+│                                         └─────────────┘                     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Step 1: User Request Processing
+
+**Natural Language Input Examples:**
+- "Show me temperature and humidity together"
+- "I want to see air quality data"
+- "Compare PM1.0 and PM2.5"
+- "Show gas sensor trends"
+- "Create a chart with all environment sensors"
+
+**Input Processing in `app.py`:**
+```python
+def send_chat(self):
+    text = self.chat_input.text().strip()
+    if not text:
+        return
+    
+    # Check for slash commands first
+    if text.startswith("/chart"):
+        self._handle_chart_command(text)
+        return
+    
+    # Send to Gemini for natural language processing
+    self.append_chat("You", text)
+    self.gemini_worker.send_message(text)
+```
+
+#### Step 2: Gemini Function Calling
+
+**Function Definition:**
+```python
+# gemini_worker.py
+def create_custom_charts(self, custom_groups: dict, normalize: bool = False) -> str:
+    """Creates custom charts based on user requests.
+    
+    Args:
+        custom_groups: A dictionary where keys are chart titles and values are lists 
+                       of sensor names.
+                       Valid sensor names: "co2", "pm1.0", "pm2.5", "pm10", 
+                       "temperature", "humidity", "pressure", "gas", "battery".
+                       Example: {"CO2 Levels": ["co2"]}
+        normalize: If True, apply Min-Max normalization to scale all values to 0-1 range.
+                   Useful when comparing sensors with vastly different value scales.
+    
+    Returns:
+        Confirmation message.
+    """
+    self.tool_called.emit("create_custom_charts", {
+        "custom_groups": custom_groups, 
+        "normalize": normalize
+    })
+    return "Custom charts created successfully."
+```
+
+**Gemini Client Initialization:**
+```python
+def init_chat(self):
+    try:
+        self.client = genai.Client(api_key=self.api_key)
+        self.chat = self.client.chats.create(
+            model='gemini-3.5-flash-lite',
+            config={
+                'tools': [self.create_custom_charts],  # Register function
+                'temperature': 0.7,  # Balance creativity and accuracy
+            }
+        )
+        return True
+    except Exception as e:
+        self.error.emit(f"Failed to initialize Gemini: {str(e)}")
+        return False
+```
+
+#### Step 3: Tool Call Handling
+
+**Signal Connection in `app.py`:**
+```python
+# Connect tool_called signal
+self.gemini_worker.tool_called.connect(self._handle_tool_call)
+
+def _handle_tool_call(self, tool_name, args):
+    """Handle Gemini function calls"""
+    if tool_name == "create_custom_charts":
+        custom_groups = args.get("custom_groups", {})
+        normalize = args.get("normalize", False)
+        
+        # Create charts in the AI Custom Charts area
+        for chart_name, sensors in custom_groups.items():
+            self.custom_charts[chart_name] = sensors
+            if normalize:
+                self.custom_charts_normalize[chart_name] = True
+        
+        # Save configuration
+        self.save_current_config()
+        
+        # Rebuild charts
+        self.chart_widget._build_charts()
+        
+        self.append_chat("System", f"Created {len(custom_groups)} chart(s)")
+```
+
+#### Step 4: Chart Creation
+
+**Chart Configuration Generation:**
+```python
+def _build_single_chart(self, chart_name, sensor_keys, normalize=False):
+    """Create a single chart widget"""
+    # Get historical data for these sensors
+    chart_data = {}
+    for sensor_key in sensor_keys:
+        if sensor_key in self.history_data:
+            points = self.history_data[sensor_key]
+            if normalize:
+                points = self.normalize_data(points)
+            chart_data[sensor_key] = points
+    
+    # Create chart widget
+    chart = ChartWidget(
+        title=chart_name,
+        data=chart_data,
+        sensor_keys=sensor_keys,
+        normalize=normalize
+    )
+    
+    return chart
+```
+
+**Data Normalization (when `-n` flag or `normalize=True`):**
+```python
+def normalize_data(self, data_points):
+    """Min-Max normalization to 0-1 range"""
+    values = [p["data"] for p in data_points]
+    if not values:
+        return data_points
+    
+    min_val = min(values)
+    max_val = max(values)
+    
+    if max_val == min_val:
+        return [{"reading_time": p["reading_time"], "data": 0.5} 
+                for p in data_points]
+    
+    normalized = []
+    for p in data_points:
+        norm_val = (p["data"] - min_val) / (max_val - min_val)
+        normalized.append({
+            "reading_time": p["reading_time"],
+            "data": norm_val
+        })
+    return normalized
+```
+
+#### Example Interactions
+
+**Example 1: Simple Chart Request**
+```
+User: "Show me temperature and humidity together"
+
+Gemini Response: [Calls create_custom_charts({
+    "Temperature & Humidity": ["temperature", "humidity"]
+})]
+
+Result: Single chart with both temperature and humidity lines
+```
+
+**Example 2: Normalized Comparison**
+```
+User: "Compare gas and CO2 on the same scale"
+
+Gemini Response: [Calls create_custom_charts({
+    "Gas vs CO2": ["gas", "co2"]
+}, normalize=True)]
+
+Result: Normalized chart (0-1 scale) showing relative trends
+```
+
+**Example 3: Multiple Charts**
+```
+User: "Create separate charts for each PM sensor"
+
+Gemini Response: [Calls create_custom_charts({
+    "PM1.0": ["pm1.0"],
+    "PM2.5": ["pm2.5"],
+    "PM10": ["pm10"]
+})]
+
+Result: Three separate charts for each particulate matter sensor
+```
+
+**Example 4: Complex Request**
+```
+User: "I want to see air quality trends with CO2 and all PM sensors, normalized"
+
+Gemini Response: [Calls create_custom_charts({
+    "Air Quality Trends": ["co2", "pm1.0", "pm2.5", "pm10"]
+}, normalize=True)]
+
+Result: Single normalized chart with all four sensors
+```
+
+#### Slash Commands (Alternative to Natural Language)
+
+**Command Syntax:**
+```
+/chart <sensor1> <sensor2> ... [flags]
+```
+
+**Available Flags:**
+- `-n` : Normalize data to 0-1 range
+- `-m <name>` : Set custom chart name
+- `-d` : Display each sensor in separate charts
+
+**Examples:**
+```bash
+# Basic chart
+/chart co2 temperature
+
+# Normalized chart
+/chart gas co2 -n
+
+# Custom name
+/chart co2 temperature -m My Analysis
+
+# Separate charts for PM sensors
+/chart pm1.0 pm2.5 pm10 -d
+
+# Combined flags
+/chart temperature humidity -n -m Environment Data
+```
+
+**Command Parsing in `app.py`:**
+```python
+def _handle_chart_command(self, text):
+    """Parse /chart commands with flags"""
+    parts = text.split()
+    if len(parts) < 2:
+        self.append_chat("System", "Usage: /chart <sensors> [flags]")
+        return
+    
+    sensors = []
+    normalize = False
+    separate = False
+    custom_name = None
+    
+    i = 1  # Skip "/chart"
+    while i < len(parts):
+        if parts[i] == "-n":
+            normalize = True
+        elif parts[i] == "-d":
+            separate = True
+        elif parts[i] == "-m" and i + 1 < len(parts):
+            custom_name = parts[i + 1]
+            i += 1
+        elif parts[i] in VALID_SENSORS:
+            sensors.append(parts[i])
+        else:
+            # Try to expand PM shorthand
+            if parts[i] in ["pm", "pms", "pm data", "particulate matter", "dust"]:
+                sensors.extend(["pm1.0", "pm2.5", "pm10"])
+            else:
+                self.append_chat("System", f"Unknown sensor: {parts[i]}")
+        i += 1
+    
+    if not sensors:
+        self.append_chat("System", "No valid sensors specified")
+        return
+    
+    # Create chart(s)
+    chart_name = custom_name or "Custom Chart"
+    
+    if separate:
+        # Create separate chart for each sensor
+        for sensor in sensors:
+            self.custom_charts[f"{sensor.upper()} Chart"] = [sensor]
+            if normalize:
+                self.custom_charts_normalize[f"{sensor.upper()} Chart"] = True
+    else:
+        # Create single chart with all sensors
+        self.custom_charts[chart_name] = sensors
+        if normalize:
+            self.custom_charts_normalize[chart_name] = True
+    
+    self.save_current_config()
+    self.chart_widget._build_charts()
+    self.append_chat("System", f"Created chart(s) for: {', '.join(sensors)}")
+```
+
+#### System Prompt Context
+
+**Current Sensor Data in Prompt:**
+The system prompt includes real-time sensor values to help Gemini understand the current state:
+
+```python
+system_prompt = f"""You are a sensor data analyst. Current readings:
+- CO2: {latest.get('co2', {}).get('data', 'N/A')} ppm
+- Temperature: {latest.get('temperature', {}).get('data', 'N/A')}°C
+- Humidity: {latest.get('humidity', {}).get('data', 'N/A')}%
+- Pressure: {latest.get('pressure', {}).get('data', 'N/A')} hPa
+- PM1.0: {latest.get('pm1.0', {}).get('data', 'N/A')} µg/m³
+- PM2.5: {latest.get('pm2.5', {}).get('data', 'N/A')} µg/m³
+- PM10: {latest.get('pm10', {}).get('data', 'N/A')} µg/m³
+- Gas: {latest.get('gas', {}).get('data', 'N/A')}
+- Battery: {latest.get('battery', {}).get('data', 'N/A')}%
+
+Respond in ~100 words. Use create_custom_charts function when user asks for charts.
+Valid sensor keys: co2, pm1.0, pm2.5, pm10, temperature, humidity, pressure, gas, battery
+"""
+```
+
+**Ambiguity Rules:**
+- "pm" / "pms" / "pm data" / "particulate matter" / "dust" → all three PM sensors
+- "environment" → temperature, humidity, pressure
+- "air quality" → co2, pm1.0, pm2.5, pm10
+
+#### Configuration Storage
+
+**Custom Charts in config.json:**
+```json
+{
+  "custom_charts": {
+    "Temperature & Humidity": ["temperature", "humidity"],
+    "Air Quality Trends": ["co2", "pm1.0", "pm2.5", "pm10"]
+  },
+  "custom_charts_normalize": {
+    "Air Quality Trends": true
+  }
+}
+```
+
+**Saving After LLM Generation:**
+```python
+def save_current_config(self):
+    """Save current layout to config.json"""
+    config = {
+        "api_url": self.api_url,
+        "gemini_api_key": self.gemini_api_key,
+        "center_charts": self.center_charts,
+        "center_charts_hidden": self.center_charts_hidden,
+        "custom_charts": self.custom_charts,
+        "custom_charts_normalize": self.custom_charts_normalize,
+    }
+    save_config(config)
+```
+
+#### Visual Feedback
+
+**Chart Display:**
+- Charts appear in "AI Custom Charts" area (right panel)
+- Each chart shows sensor names in legend
+- Hover tooltips show exact values
+- X/Y axis auto-scale based on data
+- Toggle visibility with X/O button
+
+**Chat Feedback:**
+```
+System: Created 2 chart(s)
+- Temperature & Humidity
+- Air Quality Trends (normalized)
+```
+
 ## Unity Integration
 
 ### 1. UDP Communication Protocol

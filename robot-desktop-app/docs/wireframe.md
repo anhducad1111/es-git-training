@@ -28,16 +28,17 @@
 │                                                  │  ┌────────────────────────┐ │
 │             CENTER VIDEO VIEWPORT                 │  │  🌫 AIR QUALITY        │ │
 │                                                  │  │  ██████░░░░░ 450 ppm   │ │
-│         ┌──────────────────────────┐             │  └────────────────────────┘ │
-│         │                          │             │  ┌────────────────────────┐ │
-│         │                          │             │  │  📏 OBSTACLE           │ │
-│         │         ╋ CROSSHAIR      │             │  │  ████░░░░░░░ 45 cm     │ │
-│         │                          │             │  └────────────────────────┘ │
-│         │                          │             │  ┌────────────────────────┐ │
-│         │    FPS: 30.0 | Ping: 5ms│             │  │  ⚠ SAFETY ALARM        │ │
-│         └──────────────────────────┘             │  │  AUTO-BRAKE: [ON]      │ │
-│                                                  │  │  Threshold: [====] 30cm│ │
-│                                                  │  └────────────────────────┘ │
+│   ┌─────────────────────────────────────────┐    │  └────────────────────────┘ │
+│   │ 🟢 30.0 FPS   │   5 ms   │  📏 45 cm │    │  ┌────────────────────────┐ │
+│   │─────────────────────────────────────────│    │  │  📏 OBSTACLE           │ │
+│   │                                         │    │  │  ██████░░░░░ 45 cm     │ │
+│   │                                         │    │  │  ⚠ AUTO-BRAKE: ON     │ │
+│   │              ╋ CROSSHAIR               │    │  └────────────────────────┘ │
+│   │                                         │    │  ┌────────────────────────┐ │
+│   │                                         │    │  │  ⚠ SAFETY ALARM        │ │
+│   │                                         │    │  │  AUTO-BRAKE: [ON]      │ │
+│   │                                         │    │  │  Threshold: [====] 30cm│ │
+│   └─────────────────────────────────────────┘    │  └────────────────────────┘ │
 │                                                  │  ┌─────┐                   │
 │                                                  │  │ 💬  │ ← FLOATING BUTTON │
 ├──────────────────────────────────────────────────┤  └─────┘                   │
@@ -55,6 +56,22 @@
 │  [Log] Click to expand                                            ▼ COLLAPSED  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Video Overlay Status Bar
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 🟢 30.0 FPS   │   5 ms   │  📏 45 cm │  🌡 28.5°C │  💧 65% │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+| Indicator | Color | Description |
+|-----------|-------|-------------|
+| `🟢 30.0 FPS` | Green (≥25), Yellow (15-24), Red (<15) | Live frame rate |
+| `5 ms` | White | Network ping to rover |
+| `📏 45 cm` | Green (>30), Yellow (15-30), Red (<15) | Obstacle distance |
+| `🌡 28.5°C` | Blue | Temperature |
+| `💧 65%` | Cyan | Humidity |
 
 ---
 
@@ -224,8 +241,23 @@ Gemini: Creating custom chart...
 |---------|------|----------|
 | `Video Canvas` | QLabel | Live MJPEG stream display |
 | `Crosshair` | Overlay | Fixed center marker for aiming |
-| `FPS Display` | Label | Real-time frame rate (e.g., `30.0 FPS`) |
-| `Ping Display` | Label | Network latency (e.g., `5 ms`) |
+| `Status Overlay` | QWidget | FPS, Ping, Distance, Temp, Humidity |
+
+### Video Overlay Status Bar
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 🟢 30.0 FPS   │   5 ms   │  📏 45 cm │  🌡 28.5°C │  💧 65% │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+| Indicator | Color Logic | Description |
+|-----------|-------------|-------------|
+| `🟢 30.0 FPS` | 🟢 ≥25, 🟡 15-24, 🔴 <15 | Live frame rate |
+| `5 ms` | White | Network ping to rover |
+| `📏 45 cm` | 🟢 >30, 🟡 15-30, 🔴 <15 | Obstacle distance warning |
+| `🌡 28.5°C` | Blue | Temperature |
+| `💧 65%` | Cyan | Humidity |
 
 ---
 
@@ -254,7 +286,8 @@ Gemini: Creating custom chart...
 | `Temperature` | Progress Bar | Current °C with color coding |
 | `Humidity` | Progress Bar | Current % RH |
 | `Air Quality` | Progress Bar | Gas concentration in ppm |
-| `Obstacle Distance` | Progress Bar | Ultrasonic distance in cm |
+| `Obstacle Distance` | Progress Bar + Label | Ultrasonic distance in cm |
+| `Auto-Brake Status` | Label | Shows ON/OFF with color |
 | `Safety Alarm` | Warning Banner | Flashing when obstacle < threshold |
 | `Auto-Brake Toggle` | CheckBox | Enable/disable automatic braking |
 | `Threshold Slider` | Slider | Safety distance (5cm - 60cm) |
@@ -423,16 +456,191 @@ Gemini: Creating custom chart...
 | Command | Format | Description |
 |---------|--------|-------------|
 | `DRIVE` | `DRIVE:{speed}:{direction}` | Move with PWM speed |
-| `STEER` | `STEER:{direction}` | Spin left/right in place |
-| `STOP` | `STOP` | Emergency stop all motors |
-| `GIMBAL` | `GIMBAL:{pan}:{tilt}` | Set gimbal servo angles |
+| `STEER` | `STEER:{direction}` | Spin left/right |
+| `STOP` | `STOP` | Emergency stop |
+| `GIMBAL` | `GIMBAL:{pan}:{tilt}` | Set servo angles |
 | `CENTER` | `CENTER` | Reset gimbal to 90°/90° |
 | `RESOLUTION` | `RES:{width}:{height}` | Set camera resolution |
 | `FLIP` | `FLIP:{h/v}` | Flip camera orientation |
-| `SNAPSHOT` | `SNAPSHOT` | Capture high-res frame |
+| `SNAPSHOT` | `SNAPSHOT` | Capture frame |
 | `OTA` | `OTA:{version}` | Trigger firmware update |
 
-### Telemetry (ESP32 → PC, Port 5006)
+---
+
+## Resolution Change Architecture
+
+### Flow Diagram
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         RESOLUTION CHANGE FLOW                                   │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   ┌─────────────┐                                                               │
+│   │  USER       │                                                               │
+│   │  selects    │                                                               │
+│   │  resolution │                                                               │
+│   └──────┬──────┘                                                               │
+│          │                                                                       │
+│          ▼                                                                       │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │  DESKTOP APP                                                            │   │
+│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│   │  │ 1. Update UI Dropdown Selection                                   │  │   │
+│   │  │    - Save selected resolution to config                          │  │   │
+│   │  │    - Show "Changing..." status in log                            │  │   │
+│   │  └───────────────────────────────────────────────────────────────────┘  │   │
+│   │                              │                                           │   │
+│   │                              ▼                                           │   │
+│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│   │  │ 2. Send UDP Command to ESP32-CAM                                 │  │   │
+│   │  │    Command: RES:640:480 (or 800:600 / 1280:720)                  │  │   │
+│   │  │    Port: 5005                                                     │  │   │
+│   │  └───────────────────────────────────────────────────────────────────┘  │   │
+│   │                              │                                           │   │
+│   │                              ▼                                           │   │
+│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│   │  │ 3. Stop Current Video Stream                                      │  │   │
+│   │  │    - Pause video thread reception                                 │  │   │
+│   │  │    - Clear current frame display                                  │  │   │
+│   │  └───────────────────────────────────────────────────────────────────┘  │   │
+│   │                              │                                           │   │
+│   │                              ▼                                           │   │
+│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│   │  │ 4. Wait for ESP32-CAM Response (timeout: 2s)                     │  │   │
+│   │  │    - ACK received: Resume video thread                            │  │   │
+│   │  │    - Timeout: Show error, retry or revert                        │  │   │
+│   │  └───────────────────────────────────────────────────────────────────┘  │   │
+│   │                              │                                           │   │
+│   │                              ▼                                           │   │
+│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│   │  │ 5. Update Stream Diagnostics                                      │  │   │
+│   │  │    - Adjust FPS calculation for new resolution                    │  │   │
+│   │  │    - Update video overlay status bar                              │  │   │
+│   │  └───────────────────────────────────────────────────────────────────┘  │   │
+│   │                                                                          │   │
+│   └──────────────────────────────────────────────────────────────────────────┘   │
+│          │                                                                       │
+│          ▼                                                                       │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │  ESP32-CAM                                                              │   │
+│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│   │  │ 1. Receive RES command on UDP Port 5005                           │  │   │
+│   │  │    - Parse width and height from RES:{width}:{height}             │  │   │
+│   │  └───────────────────────────────────────────────────────────────────┘  │   │
+│   │                              │                                           │   │
+│   │                              ▼                                           │   │
+│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│   │  │ 2. Stop Camera Stream                                             │  │   │
+│   │  │    - Release current camera buffer                                │  │   │
+│   │  │    - Flush UDP socket                                             │  │   │
+│   │  └───────────────────────────────────────────────────────────────────┘  │   │
+│   │                              │                                           │   │
+│   │                              ▼                                           │   │
+│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│   │  │ 3. Reconfigure Camera Sensor                                      │  │   │
+│   │  │    - Set new resolution in camera driver                          │  │   │
+│   │  │    - Adjust JPEG compression quality                              │  │   │
+│   │  │    - Reallocate frame buffer                                      │  │   │
+│   │  └───────────────────────────────────────────────────────────────────┘  │   │
+│   │                              │                                           │   │
+│   │                              ▼                                           │   │
+│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│   │  │ 4. Send ACK to Desktop App                                        │  │   │
+│   │  │    - Response: ACK:RES:{width}:{height}:OK                        │  │   │
+│   │  └───────────────────────────────────────────────────────────────────┘  │   │
+│   │                              │                                           │   │
+│   │                              ▼                                           │   │
+│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│   │  │ 5. Resume Camera Stream                                           │  │   │
+│   │  │    - Start capturing at new resolution                            │  │   │
+│   │  │    - Send frames via UDP Port 5006                                │  │   │
+│   │  └───────────────────────────────────────────────────────────────────┘  │   │
+│   │                                                                          │   │
+│   └──────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Resolution Options
+
+| Resolution | Width | Height | FPS | Use Case |
+|------------|-------|--------|-----|----------|
+| `640x480` | 640 | 480 | 30 FPS | Standard Fluid (default) |
+| `800x600` | 800 | 600 | 25 FPS | Balanced quality |
+| `1280x720` | 1280 | 720 | 15-20 FPS | High Detail |
+
+### UDP Protocol for Resolution Change
+
+**Command (PC → ESP32-CAM, Port 5005):**
+```
+RES:640:480
+RES:800:600
+RES:1280:720
+```
+
+**Response (ESP32-CAM → PC, Port 5006):**
+```
+ACK:RES:640:480:OK
+ACK:RES:640:480:FAIL
+```
+
+### State Machine for Resolution Change
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                RESOLUTION CHANGE STATE MACHINE                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   [STREAMING] ──────────────────────────────────────────────────►│
+│      │                                                           │
+│      │ User selects new resolution                               │
+│      ▼                                                           │
+│   [CHANGING] ───────────────────────────────────────────────────►│
+│      │                                                           │
+│      │ Send RES command                                          │
+│      │ Stop video thread                                         │
+│      ▼                                                           │
+│   [WAITING_ACK] ────────────────────────────────────────────────►│
+│      │                                                           │
+│      ├─ ACK received ───────────────────────────────────────────►│
+│      │   │                                                       │
+│      │   ▼                                                       │
+│      │ [STREAMING] (new resolution)                              │
+│      │                                                           │
+│      └─ Timeout (2s) ───────────────────────────────────────────►│
+│          │                                                       │
+│          ▼                                                       │
+│      [ERROR] ───────────────────────────────────────────────────►│
+│          │                                                       │
+│          │ Show error in log                                     │
+│          │ Revert to previous resolution                         │
+│          ▼                                                       │
+│      [STREAMING] (old resolution)                                │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Thread Interaction During Resolution Change
+
+| Thread | Action | Duration |
+|--------|--------|----------|
+| Main Thread | Update UI, send command | Instant |
+| Command Thread | Send UDP RES command | ~1ms |
+| Video Thread | Pause reception | Until ACK |
+| ESP32-CAM | Reconfigure camera | ~500ms-1s |
+| Video Thread | Resume reception | After ACK |
+
+### Error Handling
+
+| Error | Detection | Recovery |
+|-------|-----------|----------|
+| No ACK received | Timeout (2s) | Revert to previous resolution |
+| ACK:FAIL received | Parse response | Show error, keep old resolution |
+| Stream corrupted | Frame decode error | Request keyframe, retry |
+| Connection lost | No frames for 5s | Show "Disconnected" status |
+
+### Telemetry Data (Port 5006)
 
 | Field | Format | Description |
 |-------|--------|-------------|
@@ -454,6 +662,8 @@ Gemini: Creating custom chart...
 | Status Online | Green | `#4CAF50` |
 | Status Offline | Red | `#F44336` |
 | Warning Alarm | Orange | `#FF9800` |
+| Danger (Close Obstacle) | Red | `#F44336` |
+| Safe (Far Obstacle) | Green | `#4CAF50` |
 | Text Primary | White | `#FFFFFF` |
 | Text Secondary | Light Gray | `#B0BEC5` |
 | AI Chat Button | Purple | `#9C27B0` |
@@ -466,6 +676,7 @@ Gemini: Creating custom chart...
 |------|----------|------|---------|
 | Top Bar | Top | 100% width × 80px | Connection, Camera, Tools |
 | Video Canvas | Center-Left | ~75% width × ~70% height | Live FPV feed (Main View) |
+| Video Overlay | Top of Video | Full video width × 30px | FPS, Ping, Distance, Temp, Humidity |
 | Historical Graphs | Center-Left | ~75% width × ~70% height | Charts (💬 View) |
 | Telemetry Sidebar | Right | ~25% width × ~70% height | Gauges, Alarms, Gimbal |
 | AI Chat Panel | Right | ~25% width × ~70% height | Gemini Chat (💬 View) |

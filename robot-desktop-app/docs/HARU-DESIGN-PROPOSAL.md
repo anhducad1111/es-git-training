@@ -271,14 +271,4 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 | 11 | Safety features (auto-brake, alarms) | Phase 6 |
 | 12 | Integration testing and bug fixes | Phases 4-11 |
 
----
 
-## 6. Questions for Duke
-
-1. **Video feed source:** Does video come directly from ESP32-CAM via UDP, or through the cloud gateway?
-2. **Telemetry relay:** Should the desktop app poll ESP32 and forward to cloud, or does ESP32 send directly to cloud?
-3. **Device UID:** How should the device identifier be configured?
-4. **Gimbal limits:** What are the valid pan/tilt angle ranges?
-5. **Speed slider:** Should the slider allow values below 80 for precision crawling?
-6. **AI model:** Which Gemini model version should be used?
-7. **Graph refresh:** How often should historical graphs poll the cloud API?

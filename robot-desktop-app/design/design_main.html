@@ -1,0 +1,314 @@
+<!DOCTYPE html><html class="dark" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Rover Teleop Cockpit</title>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "background": "#0b1326",
+          "surface": "#131b2e",
+          "surface-container": "#171f33",
+          "surface-container-low": "#0f172a",
+          "surface-container-high": "#1e293b",
+          "surface-container-highest": "#28344e",
+          "outline": "#334155",
+          "outline-variant": "#243147",
+          "primary": "#3b82f6",
+          "primary-container": "#1d4ed8",
+          "secondary": "#94a3b8",
+          "status-safe": "#10b981",
+          "status-warning": "#f59e0b",
+          "status-danger": "#ef4444",
+          "text-primary": "#f1f5f9",
+          "text-secondary": "#94a3b8",
+          "text-muted": "#64748b"
+        },
+        fontFamily: {
+          sans: ["Inter", "sans-serif"],
+          mono: ["JetBrains Mono", "monospace"]
+        }
+      }
+    }
+  }
+</script>
+</head>
+<body class="bg-background text-text-primary font-sans text-xs select-none overflow-hidden h-screen w-screen flex flex-col">
+<!-- TOP HEADER BAR (PyQt6 Desktop Application Toolbar Style) -->
+<header class="flex justify-between items-center w-full px-4 py-2 border-b border-outline-variant bg-surface shrink-0 z-30">
+<!-- App Title & Simple Status -->
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">precision_manufacturing</span>
+<h1 class="font-semibold text-sm text-text-primary tracking-tight">Rover Teleop Cockpit</h1>
+<span class="text-[10px] bg-surface-container-high text-secondary px-2 py-0.5 rounded font-mono border border-outline">v2.4.0</span>
+</div>
+<!-- Navigation Tabs -->
+<nav class="hidden md:flex items-center gap-1 ml-2 pl-3 border-l border-outline-variant">
+<a class="px-2.5 py-1 rounded text-primary bg-primary/10 font-medium text-xs" href="#">Main View</a>
+<a class="px-2.5 py-1 rounded text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors font-medium text-xs" href="#">Gimbal</a>
+<a class="px-2.5 py-1 rounded text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors font-medium text-xs" href="#" aria-label="Toggle Gemini AI Analytics View">Diagnostics</a>
+<a class="px-2.5 py-1 rounded text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors font-medium text-xs" href="#">Subsystems</a>
+</nav>
+</div>
+<!-- Network Address & Online Status -->
+<div class="hidden lg:flex items-center gap-3 bg-surface-container px-3 py-1 border border-outline-variant rounded">
+<div class="flex items-center gap-1.5 font-mono text-[11px]">
+<span class="text-secondary font-sans text-xs">Rover IP:</span>
+<input class="w-24 bg-background border border-outline text-text-primary px-1.5 py-0.5 rounded text-center focus:outline-none focus:border-primary text-xs" readonly="" type="text" value="192.168.1.100">
+</div>
+<div class="w-px h-3.5 bg-outline-variant"></div>
+<div class="flex items-center gap-1.5 font-mono text-[11px]">
+<span class="text-secondary font-sans text-xs">Camera IP:</span>
+<input class="w-24 bg-background border border-outline text-text-primary px-1.5 py-0.5 rounded text-center focus:outline-none focus:border-primary text-xs" readonly="" type="text" value="192.168.1.101">
+</div>
+<div class="w-px h-3.5 bg-outline-variant"></div>
+<!-- Simple Status Indicator Chips -->
+<div class="flex items-center gap-2 text-xs">
+<span class="inline-flex items-center gap-1 font-medium text-status-safe">
+<span class="w-2 h-2 rounded-full bg-status-safe"></span> Rover: Online
+      </span>
+<span class="inline-flex items-center gap-1 font-medium text-status-safe">
+<span class="w-2 h-2 rounded-full bg-status-safe"></span> Cam: Online
+      </span>
+</div>
+</div>
+<!-- Right Actions / Utilities -->
+<div class="flex items-center gap-2">
+<!-- Stream Resolution Dropdown -->
+
+<!-- Toolbar buttons -->
+<div class="flex items-center gap-1 bg-surface-container p-0.5 border border-outline-variant rounded">
+<button class="p-1 text-secondary hover:text-text-primary hover:bg-surface-container-high rounded transition-colors" title="Flip Orientation">
+<span class="material-symbols-outlined text-[16px]">flip</span>
+</button>
+
+<button class="flex items-center gap-1 px-2 py-1 text-secondary hover:text-text-primary hover:bg-surface-container-high rounded transition-colors text-xs" title="OTA Firmware Update">
+<span class="material-symbols-outlined text-[15px] text-status-warning">system_update_alt</span>
+<span class="hidden sm:inline">OTA Update</span>
+</button>
+</div>
+<!-- Connection State Toggle Button -->
+<button class="flex items-center gap-1.5 bg-status-safe/20 text-status-safe hover:bg-status-safe/30 border border-status-safe/40 font-medium px-3 py-1 rounded transition-colors">
+<span class="material-symbols-outlined text-[15px]">link</span>
+<span class="">Connected</span>
+</button>
+</div>
+</header>
+<!-- MAIN WORKSPACE -->
+<main class="flex-1 flex overflow-hidden w-full relative">
+<!-- VIDEO STAGE (FPV Camera Feed with Clean Minimal Overlays) -->
+<section class="flex-1 flex flex-col relative bg-black overflow-hidden">
+<!-- Camera Viewport Container -->
+<div class="relative w-full h-full flex items-center justify-center bg-black overflow-hidden"><div class="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3 py-1.5 rounded bg-background/80 border border-outline-variant text-text-primary text-xs font-mono shadow-md pointer-events-none select-none"><div class="flex items-center gap-1.5 font-sans"><span class="w-2 h-2 rounded-full bg-status-safe"></span><span class="font-medium text-status-safe font-mono">30.0 FPS</span></div><div class="w-px h-3 bg-outline-variant"></div><div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px]">network_ping</span><span class="text-text-primary">5 ms</span></div><div class="w-px h-3 bg-outline-variant"></div><div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px] text-primary">radar</span><span class="text-status-safe font-medium">45 cm</span></div><div class="w-px h-3 bg-outline-variant"></div><div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px] text-status-warning">device_thermostat</span><span class="text-text-primary">28.5 °C</span></div><div class="w-px h-3 bg-outline-variant"></div><div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px] text-primary">water_drop</span><span class="text-text-primary">65.0 %</span></div></div><div class="absolute inset-0 bg-cover bg-center" data-alt="Ground robot camera view of a peaceful daytime outdoor gravel pathway and green park" style="background-image: url(&quot;https://lh3.googleusercontent.com/aida-public/AB6AXuBe4_aBH3S-scYF7wEv-urUy0ZLO_D0MtMdGnGHpx3FpbGNADK0wnoiBtBhmsCKw2gSCr-0obiCO86XBWts3cJvM55mwRNcpzXkzqxMVViuY-jejELGhtFfzwlp3kmV6Qxz6DhfsgE63wtsU1AgCvS5hTRBg8XHvIuLx9BVvfV6orOxV73uHeJQjkDcc_YqvDA6ODKT7OShaQKCYeIzaJIy6Ybpc4FkCgh7KJ4ouH_UP_CdLjO95cz-&quot;);"></div><div class="relative pointer-events-none flex items-center justify-center select-none" style="filter: drop-shadow(rgba(0, 0, 0, 0.9) 0px 0px 2px) drop-shadow(rgba(0, 0, 0, 0.7) 0px 1px 2px);"><svg class="w-16 h-16 text-white" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 64 64"><circle cx="32" cy="32" r="6" stroke-width="1.75" fill="rgba(0,0,0,0.15)"></circle><circle cx="32" cy="32" r="1" fill="white" stroke="none"></circle><line stroke-width="2" x1="32" x2="32" y1="6" y2="22"></line><line stroke-width="2" x1="32" x2="32" y1="42" y2="58"></line><line stroke-width="2" x1="6" x2="22" y1="32" y2="32"></line><line stroke-width="2" x1="42" x2="58" y1="32" y2="32"></line><circle cx="32" cy="32" r="16" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"></circle></svg></div><div class="absolute bottom-3 right-3 z-20 flex items-center gap-1 bg-background/80 hover:bg-background border border-outline-variant rounded px-2 py-1 shadow-md transition-colors"><span class="material-symbols-outlined text-[14px] text-primary">videocam</span><select class="bg-transparent text-text-primary text-[11px] font-mono appearance-none outline-none cursor-pointer pr-4"><option class="bg-surface text-text-primary" selected="">640x480 (30 FPS)</option><option class="bg-surface text-text-primary">1280x720 (15 FPS)</option><option class="bg-surface text-text-primary">320x240 (60 FPS)</option></select><span class="material-symbols-outlined text-secondary pointer-events-none text-[14px] -ml-3">expand_more</span></div></div>
+</section>
+<!-- RIGHT TELEMETRY SIDEBAR (Clean PyQt Property/Telemetry Panel) -->
+<aside class="w-72 2xl:w-80 flex flex-col bg-surface border-l border-outline-variant h-full overflow-y-auto shrink-0 select-none z-20">
+<!-- Panel Header -->
+<div class="px-4 py-2.5 border-b border-outline-variant bg-surface-container flex justify-between items-center shrink-0">
+<div>
+<div class="text-xs font-semibold text-text-primary">Telemetry Sensors</div>
+<div class="text-[11px] text-status-safe font-medium">Link: 98% (Optimal)</div>
+</div>
+<button class="bg-status-danger/15 hover:bg-status-danger/25 text-status-danger border border-status-danger/30 px-2.5 py-1 text-[11px] font-semibold rounded transition-colors" title="Emergency Stop">
+        E-STOP
+      </button>
+</div>
+<!-- Clean Sensor Cards -->
+<div class="p-3 flex flex-col gap-2.5 overflow-y-auto flex-1">
+<!-- Sensor 1: Chassis Core Temp -->
+<div class="bg-surface-container p-3 border border-outline-variant rounded">
+<div class="flex justify-between items-center mb-1.5">
+<span class="text-secondary text-xs flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-status-warning">device_thermostat</span>
+            Chassis Core Temp
+          </span>
+<span class="font-mono text-xs font-semibold text-text-primary">28.5 °C</span>
+</div>
+<div class="w-full h-1.5 bg-background rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 58%;"></div>
+</div>
+</div>
+<!-- Sensor 2: Ambient Humidity -->
+<div class="bg-surface-container p-3 border border-outline-variant rounded">
+<div class="flex justify-between items-center mb-1.5">
+<span class="text-secondary text-xs flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-primary">water_drop</span>
+            Ambient Humidity
+          </span>
+<span class="font-mono text-xs font-semibold text-text-primary">65.0 %</span>
+</div>
+<div class="w-full h-1.5 bg-background rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 65%;"></div>
+</div>
+</div>
+<!-- Sensor 3: Air Purity -->
+<div class="bg-surface-container p-3 border border-outline-variant rounded">
+<div class="flex justify-between items-center mb-1.5">
+<span class="text-secondary text-xs flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-status-safe">air</span>
+            Air Purity Metric
+          </span>
+<span class="font-mono text-xs font-semibold text-status-safe">450 PPM</span>
+</div>
+<div class="w-full h-1.5 bg-background rounded-full overflow-hidden">
+<div class="h-full bg-status-safe rounded-full" style="width: 45%;"></div>
+</div>
+</div>
+<!-- Sensor 4: Obstacle Distance -->
+<div class="bg-surface-container p-3 border border-outline-variant rounded">
+<div class="flex justify-between items-center mb-1.5">
+<span class="text-secondary text-xs flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-primary">radar</span>
+            Obstacle Distance
+          </span>
+<span class="font-mono text-xs font-semibold text-status-safe">45 cm</span>
+</div>
+<div class="w-full h-1.5 bg-background rounded-full overflow-hidden">
+<div class="h-full bg-status-safe rounded-full" style="width: 45%;"></div>
+</div>
+</div>
+<!-- Quick Subsystem Status List -->
+<div class="bg-surface-container p-3 border border-outline-variant rounded mt-1">
+<div class="text-[11px] font-semibold text-secondary uppercase tracking-wider mb-2">Subsystem Health</div>
+<div class="flex flex-col gap-1.5 text-[11px]">
+<div class="flex justify-between items-center text-secondary">
+<span class="">ESP32 Main MCU</span>
+<span class="text-status-safe font-medium">OK</span>
+</div>
+<div class="flex justify-between items-center text-secondary">
+<span class="">Motor Drivers</span>
+<span class="text-status-safe font-medium">OK</span>
+</div>
+<div class="flex justify-between items-center text-secondary">
+<span class="">Pan/Tilt Servos</span>
+<span class="text-status-safe font-medium">OK</span>
+</div>
+<div class="flex justify-between items-center text-secondary">
+<span class="">Battery Level</span>
+<span class="font-mono text-text-primary">12.4V (88%)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Sidebar Bottom Links -->
+<div class="border-t border-outline-variant p-2 bg-surface-container flex flex-col gap-1 shrink-0"><button class="flex items-center justify-center gap-2 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded font-medium transition-colors text-xs active:scale-95 mb-1" title="Capture Snapshot"><span class="material-symbols-outlined text-[16px]">photo_camera</span><span class="">Take Snapshot</span></button>
+<a class="flex items-center gap-2 px-2 py-1.5 text-secondary hover:text-text-primary hover:bg-surface-container-high rounded transition-colors text-xs" href="#">
+<span class="material-symbols-outlined text-[15px]">build</span>
+<span class="">System Diagnostics</span>
+</a>
+<a class="flex items-center gap-2 px-2 py-1.5 text-secondary hover:text-text-primary hover:bg-surface-container-high rounded transition-colors text-xs" href="#">
+<span class="material-symbols-outlined text-[15px]">settings</span>
+<span class="">Device Configuration</span>
+</a>
+</div>
+</aside>
+<!-- FLOATING CHAT BUTTON (Minimal, Practical Circular Icon) -->
+<button aria-label="Toggle Gemini AI Analytics View" class="fixed bottom-24 right-4 z-30 w-10 h-10 rounded-full bg-primary hover:bg-primary-container text-white shadow-md flex items-center justify-center transition-transform hover:scale-105 active:scale-95 border border-outline-variant cursor-pointer group" title="Open Gemini AI Analytics &amp; Graph View"><span class="material-symbols-outlined text-[18px]">chat</span><span class="absolute right-12 bg-surface-container-highest text-text-primary px-2 py-1 rounded text-[11px] font-sans font-medium shadow-md border border-outline-variant whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity">Gemini AI Analytics</span></button>
+</main>
+<!-- BOTTOM CONTROL & LOG PANEL (Clean Desktop Style) -->
+<footer class="bg-surface border-t border-outline-variant flex flex-col justify-between shrink-0 z-20">
+<!-- Actuation Controls Row -->
+<div class="px-4 py-2 flex items-center justify-between gap-4 bg-surface border-b border-outline-variant overflow-x-auto">
+<!-- Motor PWM Speed Slider -->
+<div class="flex items-center gap-3 bg-surface-container px-3 py-1.5 border border-outline-variant rounded shrink-0">
+<div class="flex flex-col">
+<span class="text-[11px] text-secondary">Motor Speed</span>
+<div class="font-mono text-xs font-semibold text-text-primary">180 <span class="text-secondary font-normal">(70%)</span></div>
+</div>
+<input class="w-28 h-1.5 bg-background accent-primary rounded cursor-pointer" max="255" min="0" type="range" value="180">
+</div>
+<!-- Auto-Brake Guard -->
+<div class="flex items-center gap-3 bg-surface-container px-3 py-1.5 border border-outline-variant rounded shrink-0">
+<div class="flex items-center gap-2">
+<span class="text-xs font-medium text-text-primary">Auto-Brake</span>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-7 h-4 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-status-safe"></div>
+</label>
+</div>
+<div class="w-px h-4 bg-outline-variant"></div>
+<div class="flex items-center gap-2">
+<span class="text-[11px] text-secondary">Threshold:</span>
+<span class="font-mono text-xs font-medium text-text-primary">30 cm</span>
+<input class="w-20 h-1.5 bg-background accent-status-warning rounded cursor-pointer" max="100" min="10" type="range" value="30">
+</div>
+</div>
+<!-- Gimbal Controls (Pan, Tilt, Center) -->
+<div class="flex items-center gap-3 bg-surface-container px-3 py-1.5 border border-outline-variant rounded shrink-0">
+<span class="text-xs font-medium text-text-primary">Gimbal:</span>
+<div class="flex items-center gap-1.5">
+<span class="text-[11px] text-secondary">Pan</span>
+<span class="font-mono text-xs text-text-primary">90°</span>
+<input class="w-20 h-1.5 bg-background accent-primary rounded cursor-pointer" max="180" min="0" type="range" value="90">
+</div>
+<div class="flex items-center gap-1.5">
+<span class="text-[11px] text-secondary">Tilt</span>
+<span class="font-mono text-xs text-text-primary">90°</span>
+<input class="w-20 h-1.5 bg-background accent-primary rounded cursor-pointer" max="180" min="0" type="range" value="90">
+</div>
+<button class="text-xs text-primary hover:text-text-primary bg-primary/10 hover:bg-primary/20 px-2 py-0.5 rounded border border-primary/30 transition-colors font-medium">
+        Center
+      </button>
+</div>
+<!-- Keybinds indicator & Emergency Stop -->
+<div class="flex items-center gap-3 shrink-0">
+<div class="hidden xl:flex items-center gap-2 text-secondary text-[11px] font-mono">
+<span class=""><kbd class="px-1 py-0.5 bg-surface-container border border-outline rounded text-text-primary text-[10px]">W/S</kbd> Drive</span>
+<span class=""><kbd class="px-1 py-0.5 bg-surface-container border border-outline rounded text-text-primary text-[10px]">A/D</kbd> Turn</span>
+<span class=""><kbd class="px-1 py-0.5 bg-surface-container border border-outline rounded text-text-primary text-[10px]">I/J/K/L</kbd> Gimbal</span>
+</div>
+<button class="bg-status-danger hover:bg-red-600 text-white font-semibold text-xs px-4 py-1.5 rounded transition-colors active:scale-95 shrink-0">
+        Space: Stop
+      </button>
+</div>
+</div>
+<!-- COLLAPSIBLE MINIMAL CONSOLE LOG (Clean Desktop Output Style) -->
+<details class="group bg-surface-container-low flex flex-col border-t border-outline-variant select-none">
+<summary class="px-4 py-1.5 bg-surface-container flex items-center justify-between cursor-pointer text-[11px] list-none hover:bg-surface-container-high transition-colors">
+<div class="flex items-center gap-2 text-secondary">
+<span class="font-semibold text-text-primary font-mono">[LOG]</span>
+<span class="text-secondary font-medium">Click to expand/collapse</span>
+<span class="text-text-muted">• 4 Events</span>
+</div>
+<div class="flex items-center gap-3 font-mono text-text-muted">
+<span class="hidden sm:inline">115200 Baud</span>
+<span class="material-symbols-outlined text-[15px] transition-transform group-open:rotate-180">expand_less</span>
+</div>
+</summary>
+<div class="h-24 px-4 py-1.5 overflow-y-auto font-mono text-[11px] flex flex-col gap-1 bg-background/80 border-t border-outline-variant text-secondary">
+<div class="flex items-center gap-2">
+<span class="text-text-muted">10:00:01</span>
+<span class="text-status-safe font-medium">[CONNECTED]</span>
+<span class="text-text-primary">UDP Port 5005 bound to 192.168.1.100 (ACK in 4.2ms)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-text-muted">10:00:02</span>
+<span class="text-primary font-medium">[VIDEO]</span>
+<span class="text-text-primary">Stream active at 640x480 @ 30 FPS</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-text-muted">10:00:05</span>
+<span class="text-text-primary font-medium">[TELEMETRY]</span>
+<span class="text-secondary">Chassis Temp 28.5°C, Dist 45cm, Humidity 65%</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-text-muted">10:00:08</span>
+<span class="text-status-warning font-medium">[SAFETY]</span>
+<span class="text-secondary">Auto-brake threshold set to 30 cm</span>
+</div>
+</div>
+</details>
+</footer>
+
+
+
+
+</body></html>

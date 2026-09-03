@@ -1,145 +1,322 @@
-# Space Rover Desktop Teleoperation Cockpit - UI Wireframe
+# Space Rover Desktop Teleoperation Cockpit — UI Wireframe
 
 ## Screen Layout — Main View (Default)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              TOP BAR (Connection & Quick Controls)              │
-│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
-│  │  CAR IP:     │ │  CAM IP:     │ │   [Connect]    │ │ ● CAR ● CAM          │  │
-│  │  192.168.x.x │ │  192.168.x.x │ │   [Disconnect] │ │   ONLINE   ONLINE    │  │
-│  └──────────────┘ └──────────────┘ └────────────────┘ └──────────────────────┘  │
-│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
-│  │  Resolution: │ │  Orientation:│ │   [Snapshot]   │ │   [OTA Update]       │  │
-│  │  [640x480 ▼] │ │  [Flip H]   │ │      📷        │ │      ⚡              │  │
-│  └──────────────┘ └──────────────┘ └────────────────┘ └──────────────────────┘  │
+│ HEADER: 🏭 Rover Teleop Cockpit v2.4.0  │ Main View │ Gimbal │ Diag │ Subsys   │
+│         Rover IP: [192.168.1.100]  Cam IP: [192.168.1.101]  ● Rover ● Cam  [⚡]│
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────┬──────────────────────────────┐
-│                                                  │    TELEMETRY SIDEBAR        │
 │                                                  │  ┌────────────────────────┐ │
-│                                                  │  │  🌡 TEMPERATURE        │ │
-│                                                  │  │  ████████░░░░ 28.5°C   │ │
-│                                                  │  └────────────────────────┘ │
-│                                                  │  ┌────────────────────────┐ │
-│                                                  │  │  💧 HUMIDITY           │ │
-│                                                  │  │  ████████████░ 65%     │ │
-│                                                  │  └────────────────────────┘ │
-│                                                  │  ┌────────────────────────┐ │
-│             CENTER VIDEO VIEWPORT                 │  │  🌫 AIR QUALITY        │ │
-│                                                  │  │  ██████░░░░░ 450 ppm   │ │
-│   ┌─────────────────────────────────────────┐    │  └────────────────────────┘ │
-│   │ 🟢 30.0 FPS   │   5 ms   │  📏 45 cm │    │  ┌────────────────────────┐ │
-│   │─────────────────────────────────────────│    │  │  📏 OBSTACLE           │ │
-│   │                                         │    │  │  ██████░░░░░ 45 cm     │ │
-│   │                                         │    │  │  ⚠ AUTO-BRAKE: ON     │ │
-│   │              ╋ CROSSHAIR               │    │  └────────────────────────┘ │
-│   │                                         │    │  ┌────────────────────────┐ │
-│   │                                         │    │  │  ⚠ SAFETY ALARM        │ │
-│   │                                         │    │  │  AUTO-BRAKE: [ON]      │ │
-│   │                                         │    │  │  Threshold: [====] 30cm│ │
-│   └─────────────────────────────────────────┘    │  └────────────────────────┘ │
-│                                                  │  ┌─────┐                   │
-│                                                  │  │ 💬  │ ← FLOATING BUTTON │
-├──────────────────────────────────────────────────┤  └─────┘                   │
-│                    BOTTOM PANEL                  │  ┌────────────────────────┐ │
-│  ┌────────────────────────────────────────────┐  │  │  🎯 GIMBAL CONTROL     │ │
-│  │  SPEED: [============] 180 / 255          │  │  │  Pan:   [====] 90°    │ │
-│  └────────────────────────────────────────────┘  │  │  Tilt:  [====] 90°    │ │
-│  ┌────────────────────────────────────────────┐  │  │  [C] Center Gimbal    │ │
-│  │  KEYS: W/S=Forward/Back  A/D=Spin         │  │  └────────────────────────┘ │
-│  │        IJKL=Gimbal  C=Center  Space=Stop   │  │                            │
-│  └────────────────────────────────────────────┘  │                            │
-└──────────────────────────────────────────────────┴──────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│  [Log] Click to expand                                            ▼ COLLAPSED  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+│                                                  │  │ Telemetry Sensors      │ │
+│                                                  │  │ Link: 98% (Optimal)   │ │
+│                                                  │  │              [E-STOP]  │ │
+│                                                  │  ├────────────────────────┤ │
+│                                                  │  │ 🌡 Chassis Core Temp   │ │
+│                                                  │  │ ████████░░░░ 28.5°C    │ │
+│                                                  │  ├────────────────────────┤ │
+│                                                  │  │ 💧 Ambient Humidity    │ │
+│                                                  │  │ ████████████░ 65.0%    │ │
+│             CENTER VIDEO VIEWPORT                 │  ├────────────────────────┤ │
+│                                                  │  │ 🌫 Air Purity Metric   │ │
+│   ┌─────────────────────────────────────────┐    │  │ ██████░░░░░ 450 PPM    │ │
+│   │    🟢 30.0 FPS │ 5 ms │ 📏 45 cm │ ... │    │  ├────────────────────────┤ │
+│   │─────────────────────────────────────────│    │  │ 📏 Obstacle Distance   │ │
+│   │                                         │    │  │ ██████░░░░░ 45 cm      │ │
+│   │              ╋ CROSSHAIR               │    │  ├────────────────────────┤ │
+│   │                                         │    │  │ SUBSYSTEM HEALTH       │ │
+│   │                                         │    │  │ ESP32 Main MCU    OK   │ │
+│   │                                         │    │  │ Motor Drivers     OK   │ │
+│   └─────────────────────────────────────────┘    │  │ Pan/Tilt Servos   OK   │ │
+│                                                  │  │ Battery Level  12.4V   │ │
+│   ┌─────────────────────────────────────┐        │  ├────────────────────────┤ │
+│   │  📷 640x480 (30 FPS) ▼             │        │  │ [📷 Take Snapshot]     │ │
+│   └─────────────────────────────────────┘        │  │ [🔧 System Diagnostics]│ │
+│                                                  │  │ [⚙ Device Configuration]│
+├──────────────────────────────────────────────────┤  └────────────────────────┘ │
+│ BOTTOM CONTROLS                                                         │
+│ ┌──────────────────────┐ ┌──────────────────┐ ┌────────────────────┐ ┌────────┐ │
+│ │ Motor Speed          │ │ Auto-Brake [ON]  │ │ Gimbal: Pan 90°   │ │ W/S    │ │
+│ │ 180 (70%) [====]     │ │ Threshold: 30cm  │ │        Tilt 90°   │ │ A/D    │ │
+│ │                      │ │ [====]           │ │ [Center]           │ │[STOP]  │ │
+│ └──────────────────────┘ └──────────────────┘ └────────────────────┘ └────────┘ │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│ [LOG] Click to expand/collapse • 4 Events                         115200 Baud  │
+│ ┌──────────────────────────────────────────────────────────────────────────────┐ │
+│ │ 10:00:01 [CONNECTED] UDP Port 5005 bound to 192.168.1.100 (ACK in 4.2ms)   │ │
+│ │ 10:00:02 [VIDEO]      Stream active at 640x480 @ 30 FPS                    │ │
+│ │ 10:00:05 [TELEMETRY]  Chassis Temp 28.5°C, Dist 45cm, Humidity 65%         │ │
+│ │ 10:00:08 [SAFETY]     Auto-brake threshold set to 30 cm                    │ │
+│ └──────────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+                              ┌─────┐
+                              │ 💬  │ ← FLOATING BUTTON (bottom-right)
+                              └─────┘
 ```
-
-### Video Overlay Status Bar
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ 🟢 30.0 FPS   │   5 ms   │  📏 45 cm │  🌡 28.5°C │  💧 65% │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-| Indicator | Color | Description |
-|-----------|-------|-------------|
-| `🟢 30.0 FPS` | Green (≥25), Yellow (15-24), Red (<15) | Live frame rate |
-| `5 ms` | White | Network ping to rover |
-| `📏 45 cm` | Green (>30), Yellow (15-30), Red (<15) | Obstacle distance |
-| `🌡 28.5°C` | Blue | Temperature |
-| `💧 65%` | Cyan | Humidity |
 
 ---
 
-## Screen Layout — AI Chat View (💬 Active)
+## Screen Layout — Diagnostics View (💬 Active)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              TOP BAR (Connection & Quick Controls)              │
-│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
-│  │  CAR IP:     │ │  CAM IP:     │ │   [Connect]    │ │ ● CAR ● CAM          │  │
-│  │  192.168.x.x │ │  192.168.x.x │ │   [Disconnect] │ │   ONLINE   ONLINE    │  │
-│  └──────────────┘ └──────────────┘ └────────────────┘ └──────────────────────┘  │
-│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
-│  │  Resolution: │ │  Orientation:│ │   [Snapshot]   │ │   [OTA Update]       │  │
-│  │  [640x480 ▼] │ │  [Flip H]   │ │      📷        │ │      ⚡              │  │
-│  └──────────────┘ └──────────────┘ └────────────────┘ └──────────────────────┘  │
+│ HEADER: 🏭 Rover Teleop Cockpit v2.4.0  │ Main View │ Gimbal │ Diag │ Subsys   │
+│         Rover IP: [192.168.1.100]  Cam IP: [192.168.1.101]  ● Rover ● Cam  [⚡]│
 └─────────────────────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────────────────────────────────┬──────────────────────────────┐
-│                                                  │    AI CHAT PANEL            │
-│                                                  │  ┌────────────────────────┐ │
-│                                                  │  │ 💬 Gemini Chat         │ │
-│                                                  │  ├────────────────────────┤ │
-│             HISTORICAL GRAPHS                     │  │                        │ │
-│             (Drag & Drop to Customize)            │  │  System: Ready to      │ │
-│                                                  │  │  analyze sensor data.  │ │
-│  ┌──────────────────────────────────────────┐    │  │                        │ │
-│  │  📊 Temperature & Humidity               │    │  │  You: Show me temp     │ │
-│  │  ┌──────────────────────────────────┐    │    │  │  chart                 │ │
-│  │  │  30°┤      ╭─╮                   │    │    │  │                        │ │
-│  │  │     │    ╭─╯ ╰─╮    ╭──╮        │    │    │  │  Gemini: Creating      │ │
-│  │  │  25°┤───╯       ╰──╯  ╰──       │    │    │  │  temperature chart...  │ │
-│  │  │     │                            │    │    │  │                        │ │
-│  │  │  20°┤                            │    │    │  ├────────────────────────┤ │
-│  │  │     └────────────────────────────┘    │    │  │ [Type a message... ] [Send]│
-│  │  │      12:00  12:05  12:10  12:15      │    │  └────────────────────────┘ │
-│  │  └──────────────────────────────────┘    │    │  ┌─────┐                   │
-│  └──────────────────────────────────────────┘    │  │ ✖  │ ← FLOATING BUTTON  │
-│                                                  │  └─────┘   (active)        │
-│  ┌──────────────────────────────────────────┐    │  ┌────────────────────────┐ │
-│  │  📊 Air Quality (CO2, PM2.5)            │    │  │  🎯 GIMBAL CONTROL     │ │
-│  │  ┌──────────────────────────────────┐    │    │  │  Pan:   [====] 90°    │ │
-│  │  │  500┤      ╭──╮                  │    │    │  │  Tilt:  [====] 90°    │ │
-│  │  │     │    ╭─╯  ╰─╮  ╭───╮        │    │    │  │  [C] Center Gimbal    │ │
-│  │  │  400┤───╯        ╰─╯   ╰──      │    │    │  └────────────────────────┘ │
-│  │  │     │                            │    │    │                            │
-│  │  │  300┤                            │    │    │                            │
-│  │  │     └────────────────────────────┘    │    │                            │
-│  │  │      12:00  12:05  12:10  12:15      │    │                            │
-│  │  └──────────────────────────────────┘    │    │                            │
-│  └──────────────────────────────────────────┘    │                            │
-│                                                  │                            │
-│  [+ Add Chart]  [Reset Layout]                  │                            │
-├──────────────────────────────────────────────────┤                            │
-│                    BOTTOM PANEL                  │                            │
-│  ┌────────────────────────────────────────────┐  │                            │
-│  │  SPEED: [============] 180 / 255          │  │                            │
-│  └────────────────────────────────────────────┘  │                            │
-│  ┌────────────────────────────────────────────┐  │                            │
-│  │  KEYS: W/S=Forward/Back  A/D=Spin         │  │                            │
-│  │        IJKL=Gimbal  C=Center  Space=Stop   │  │                            │
-│  └────────────────────────────────────────────┘  │                            │
-└──────────────────────────────────────────────────┴──────────────────────────────┘
+┌────────────────────────────────────────────────────┬────────────────────────────┐
+│ 📊 Historical Sensor Analytics                     │  Gemini 3.5 Sensor Analyst │
+│   Window: 15m Telemetry Deck                       │  ┌──────────────────────┐ │
+│   Auto-Refresh (5s) [ON]  [+ Add Chart] [Reset]   │  │ ● gemini-3.5 active  │ │
+├────────────────────────────────────────────────────┤  ├──────────────────────┤ │
+│ 💡 Tip: /chart in Gemini chat to customize plots   │  │ ℹ TELEMETRY CONTEXT  │ │
+│    SYNC_RATE: 100ms • BUFFER: 900pts               │  │ Temp:28.5°C Air:450  │ │
+├────────────────────────────────────────────────────┤  │ Dist:45cm Batt:94%   │ │
+│                                                    │  ├──────────────────────┤ │
+│ 🌡 Temperature & Humidity (Dual-Axis)  ● LIVE      │  │ You:                 │ │
+│   Temp: 28.5°C  Humidity: 58.2%RH                 │  │ Show me temp and     │ │
+│   ┌──────────────────────────────────────────┐    │  │ humidity together... │ │
+│   │ 35°┤     ╭────╮                         │    │  ├──────────────────────┤ │
+│   │    │   ╭─╯    ╰──╮    ╭────╮           │    │  │ Gemini 3.5:          │ │
+│   │ 30°┤──╯          ╰──╯    ╰──           │    │  │ I have analyzed the  │ │
+│   │    │  ~~~~ Temp (orange) ~~~~           │    │  │ last 15 minutes of   │ │
+│   │ 25°┤  ---- Humidity (blue) ----         │    │  │ telemetry. Temp is   │ │
+│   │    └────────────────────────────────────┘    │  │ stable at 28.5°C...  │ │
+│   │ 12:00    12:03    12:06    12:12  12:15 LIVE│  │                      │ │
+│   └──────────────────────────────────────────┘    │  │ ┌──────────────────┐ │ │
+│                                                    │  │ │ Tool Call:       │ │ │
+│ ┌──────────────────────────┬─────────────────────┐ │  │ │ create_custom_   │ │ │
+│ │ 🌫 Air Quality &         │ 📏 Obstacle Proximity│ │  │ │ charts [0.12s]   │ │ │
+│ │    Particulate           │    & Sonar           │ │  │ │ {sensors:[temp,  │ │ │
+│ │   CO2: 450 ppm           │   ● CLEAR > 30cm     │ │  │ │  humidity]}      │ │ │
+│ │   PM2.5: 12 µg/m³        │   Sonar: 45 cm       │ │  │ └──────────────────┘ │ │
+│ │ ┌──────────────────┐     │ ┌──────────────────┐ │ │  ├──────────────────────┤ │
+│ │ │  ~~~CO2(emerald)~│     │ │  █ █ █ █ █ █ █  │ │ │  │ 💊 /chart co2 temp  │ │
+│ │ │  - -PM2.5(blue) -│     │ │  █ █ █ █ █ █ █  │ │ │  │    /filter anomalies │ │
+│ │ └──────────────────┘     │ │  █ █ █ █ █ █ █  │ │ │  │    /export csv 15m   │ │
+│ │ CO2:Nominal <600          │ │  NOW ← threshold │ │ │  ├──────────────────────┤ │
+│ │ PM2.5:Clean <25  Gas:Clean│ │ Safety:30cm OPTIMAL│ │  │ [/chart co2 temp -n] │ │
+│ └──────────────────────────┴─────────────────────┘ │  │               [Send] │ │
+└────────────────────────────────────────────────────┘  └──────────────────────┘ │
+                                                               ┌──────────────┐ │
+                                                               │ ❖ close      │ │
+                                                               └──────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────┘
+[LOG] 12:14:11 Gemini API tool response OK | 12:12:00 Radio Ping: 18ms   expand ▼
+                              ┌─────┐
+                              │ ✖   │ ← FLOATING BUTTON (purple, bottom-right)
+                              └─────┘
+```
 
+---
+
+## Video Overlay Status Bar (Top Center of Video)
+
+```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│  [Log] Click to expand                                            ▼ COLLAPSED  │
+│   🟢 30.0 FPS   │   5 ms   │  📏 45 cm   │  🌡 28.5 °C   │  💧 65.0 %      │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+| Indicator | Icon | Color Logic | Description |
+|-----------|------|-------------|-------------|
+| `🟢 30.0 FPS` | — | 🟢 ≥25, 🟡 15-24, 🔴 <15 | Live frame rate |
+| `5 ms` | network_ping | White | Network ping to rover |
+| `📏 45 cm` | radar | 🟢 >30, 🟡 15-30, 🔴 <15 | Obstacle distance |
+| `🌡 28.5 °C` | device_thermostat | Orange | Temperature |
+| `💧 65.0 %` | water_drop | Blue | Humidity |
+
+---
+
+## Screen Zones Summary
+
+### Main View
+
+| Zone | Position | Size | Purpose |
+|------|----------|------|---------|
+| Header Bar | Top | 100% width × 48px | App title, nav tabs, IPs, status, actions |
+| Video Canvas | Center | ~75% width × flex | Live FPV feed |
+| Video Overlay | Top of Video | Auto-width × 32px | FPS, Ping, Distance, Temp, Humidity |
+| Resolution Dropdown | Bottom-Right of Video | Auto | Camera resolution selector |
+| Telemetry Sidebar | Right | 320px (w-80) | Sensor cards, subsystem health |
+| Bottom Controls | Bottom | 100% width × auto | Speed, Auto-Brake, Gimbal, Keys, Stop |
+| Log Panel | Very Bottom | 100% width × 24px | Debug logs (collapsible) |
+| Floating Button | Bottom-Right | 40×40px circle | Toggle to Diagnostics view |
+
+### Diagnostics View
+
+| Zone | Position | Size | Purpose |
+|------|----------|------|---------|
+| Header Bar | Top | 100% width × 48px | Same as Main View |
+| Analytics Deck | Left | ~70% width × flex | Historical sensor charts |
+| Analytics Control Bar | Top of Analytics | 100% width × 48px | Auto-Refresh, Add Chart, Reset Layout |
+| Command Tip Banner | Below Control Bar | 100% width × 32px | /chart command hints |
+| Chart 1: Temp & Humidity | Full Width | 100% × 192px | Dual-axis line chart with live values |
+| Chart 2: Air Quality | Left Half | 50% × 180px | CO2 + PM2.5 multi-trend |
+| Chart 3: Obstacle Proximity | Right Half | 50% × 180px | Sonar bar chart timeline |
+| Gemini Chat Panel | Right | 384px (w-96) | AI analyst chat |
+| Chat Header | Top of Chat | 100% × 48px | Model name, status, close button |
+| Chat Stream | Middle | Flex | Messages, tool cards, suggestions |
+| Chat Input | Bottom | 100% × auto | Text input + send button |
+| Log Bar | Very Bottom | 100% width × 24px | Debug logs (collapsible) |
+| Floating Button | Bottom-Right | 52×52px circle | Purple, close/return to Main View |
+
+---
+
+## Component Descriptions
+
+### Header Bar
+
+| Element | Type | Function |
+|---------|------|----------|
+| `App Title` | Label | 🏭 Rover Teleop Cockpit v2.4.0 |
+| `Navigation Tabs` | Tab Bar | Main View / Gimbal / Diagnostics / Subsystems |
+| `Rover IP` | Text Input (readonly) | Rover chassis IP address |
+| `Camera IP` | Text Input (readonly) | Camera module IP address |
+| `Rover Status` | LED Indicator | ● GREEN = Online, ● RED = Offline |
+| `Cam Status` | LED Indicator | ● GREEN = Online, ● RED = Offline |
+| `Flip Orientation` | Button | Mirror video feed horizontally/vertically |
+| `OTA Update` | Button | Trigger firmware update (with confirmation) |
+| `Connection Toggle` | Button | Connect/Disconnect to rover |
+
+### Center Video Viewport (Main View)
+
+| Element | Type | Function |
+|---------|------|----------|
+| `Video Canvas` | Widget | Live MJPEG stream display |
+| `Crosshair` | SVG Overlay | Fixed center marker for aiming |
+| `Status Overlay` | Widget (top center) | FPS, Ping, Distance, Temp, Humidity |
+| `Resolution Dropdown` | ComboBox (bottom right) | 640x480 / 1280x720 / 320x240 |
+
+### Telemetry Sidebar (Main View)
+
+| Element | Type | Function |
+|---------|------|----------|
+| `Panel Header` | Widget | "Telemetry Sensors" + Link quality |
+| `E-STOP Button` | Button (red) | Emergency stop |
+| `Chassis Core Temp` | Card + Progress Bar | Current °C with color coding |
+| `Ambient Humidity` | Card + Progress Bar | Current % RH |
+| `Air Purity Metric` | Card + Progress Bar | Gas concentration in PPM |
+| `Obstacle Distance` | Card + Progress Bar | Ultrasonic distance in cm |
+| `Subsystem Health` | List | ESP32, Motor Drivers, Servos, Battery |
+| `Take Snapshot` | Button | Save current frame as JPEG |
+| `System Diagnostics` | Link | Open diagnostics view |
+| `Device Configuration` | Link | Open config view |
+
+### Bottom Controls
+
+| Element | Type | Function |
+|---------|------|----------|
+| `Motor Speed` | Slider + Label | PWM power 0-255 (displayed as %) |
+| `Auto-Brake Toggle` | Switch | Enable/disable automatic braking |
+| `Threshold Slider` | Slider + Label | Safety distance (10cm - 100cm) |
+| `Gimbal Pan` | Slider + Label | Servo angle 0-180° |
+| `Gimbal Tilt` | Slider + Label | Servo angle 0-180° |
+| `Center Gimbal` | Button | Reset to 90°/90° |
+| `Keybinds Display` | Labels | W/S=Drive, A/D=Turn, I/J/K/L=Gimbal |
+| `Emergency Stop` | Button (red) | Space: Stop all motors |
+
+### Analytics Deck (Diagnostics View)
+
+| Element | Type | Function |
+|---------|------|----------|
+| `Analytics Control Bar` | Widget | Title + Auto-Refresh toggle + Add Chart + Reset Layout |
+| `Auto-Refresh Toggle` | Switch (5s interval) | Enable/disable automatic chart refresh |
+| `Add Chart Button` | Button | Create new custom chart |
+| `Reset Layout Button` | Button | Restore default chart arrangement |
+| `Command Tip Banner` | Banner | /chart command hints and sync rate display |
+| `Chart 1: Temp & Humidity` | Dual-Axis Line Chart | Temperature (orange) + Humidity (blue) with live values |
+| `Chart 2: Air Quality` | Multi-Trend Chart | CO2 (emerald) + PM2.5 (blue) dashed line |
+| `Chart 3: Obstacle Proximity` | Bar Chart Timeline | Sonar distance history with threshold marker |
+
+### Gemini Chat Panel (Diagnostics View)
+
+| Element | Type | Function |
+|---------|------|----------|
+| `Chat Header` | Widget | Model name (gemini-3.5-flash-lite), status, close button |
+| `Close Button` | Button | Return to Main View |
+| `Telemetry Context Pill` | Card | Current sensor readings attached to context |
+| `Chat Messages` | Scroll Area | User questions + Gemini responses |
+| `Tool Execution Card` | Card | Shows function calls with args and execution time |
+| `Suggestion Pills` | Buttons | Quick action commands (/chart, /filter, /export) |
+| `Chat Input` | Text Input | Type /chart commands or natural language queries |
+| `Send Button` | Button | Submit message to Gemini |
+
+### Log Panel
+
+| Element | Type | Function |
+|---------|------|----------|
+| `Log Toggle` | Summary/Header | `[LOG] Click to expand/collapse • N Events` |
+| `Log Display` | Scrollable Area | Colored log entries with timestamps |
+| `Baud Rate` | Label | Serial baud rate display |
+
+**Log Entry Format:**
+```
+[HH:MM:SS] [CATEGORY] Message content
+```
+
+**Log Categories:**
+| Category | Color | Example |
+|----------|-------|---------|
+| CONNECTED | Green | `UDP Port 5005 bound (ACK in 4.2ms)` |
+| VIDEO | Blue | `Stream active at 640x480 @ 30 FPS` |
+| TELEMETRY | White | `Chassis Temp 28.5°C, Dist 45cm` |
+| SAFETY | Orange | `Auto-brake threshold set to 30 cm` |
+| ERROR | Red | `Connection lost to rover` |
+
+### Floating Chat Button
+
+| Element | Type | Function |
+|---------|------|----------|
+| `💬 Chat` | Circular Button | Toggle to Diagnostics view |
+
+**Position:** Bottom-right corner (fixed, not overlapping sidebar)
+**Styling:**
+- Main View: Blue (`#3b82f6`), 40×40px
+- Diagnostics View: Purple (`#9333ea`), 52×52px, close icon
+**States:** 💬 (inactive) → ✖ (active, returns to Main View)
+
+---
+
+## Floating Button & Panel Toggle Behavior
+
+| State | 💬 Button | Left Side | Right Side |
+|-------|-----------|-----------|------------|
+| **Main View** | OFF (💬) Blue | Video Camera | Telemetry Sensors |
+| **Diagnostics View** | ON (✖) Purple | Historical Charts | Gemini Chat Panel |
+
+- Click 💬 to open Diagnostics view
+- Click ✖ to close and return to Main View
+- Floating button stays at bottom-right corner (fixed position)
+
+---
+
+## Color Scheme
+
+| Element | Color Name | Hex Code |
+|---------|------------|----------|
+| Background | Charcoal | `#0b1326` |
+| Surface | Dark Navy | `#0b1326` |
+| Surface Container | Navy | `#171f33` |
+| Surface Container Low | Deep Navy | `#131b2e` |
+| Surface Container High | Slate | `#222a3d` |
+| Surface Container Highest | Blue Slate | `#2d3449` |
+| Surface Bright | Bright Slate | `#31394d` |
+| Outline | Gray | `#8d90a0` |
+| Outline Variant | Dark Slate | `#434655` |
+| Primary | Light Blue | `#b4c5ff` |
+| Primary Container | Blue | `#2563eb` |
+| Secondary | Light Slate | `#b7c8e1` |
+| Tertiary | Coral | `#ffb596` |
+| Error | Light Red | `#ffb4ab` |
+| Text Primary | White Smoke | `#dae2fd` |
+| Text Secondary | Light Slate | `#c3c6d7` |
+
+**Fonts:**
+- Sans: Inter
+- Mono: JetBrains Mono (for telemetry values)
 
 ---
 
@@ -150,7 +327,8 @@
 | Chart | Sensors | Description |
 |-------|---------|-------------|
 | Temperature & Humidity | `temperature`, `humidity` | Dual-axis line chart |
-| Air Quality | `co2`, `pm1.0`, `pm2.5`, `pm10` | Multi-line chart |
+| Air Quality | `co2`, `pm2.5` | Multi-line chart |
+| Obstacle Proximity | `distance` | Bar chart timeline |
 
 ### Custom Charts (User Created via Gemini or /chart command)
 
@@ -183,187 +361,13 @@ Gemini: Creating custom chart...
 - **Delete:** Right-click → Remove chart
 - **Export:** Right-click → Save as PNG
 - **Real-time:** Updates every 5 seconds with new data
-
----
-
-## Floating Button & Panel Toggle Behavior
-
-### Button Position (Right side, overlapping telemetry sidebar)
-
-```
-    ┌──────────────────────────────┐
-    │    TELEMETRY SIDEBAR        │
-    │  ┌────────────────────────┐ │
-    │  │  🌡 TEMPERATURE        │ │
-    │  └────────────────────────┘ │
-    │  ┌─────┐                   │
-    │  │ 💬  │  ← FLOATING BUTTON
-    │  └─────┘    (overlapping sidebar)
-    │  ┌────────────────────────┐ │
-    │  │  🎯 GIMBAL CONTROL     │ │
-    │  └────────────────────────┘ │
-    └──────────────────────────────┘
-```
-
-### Toggle Logic
-
-| State | 💬 Button | Left Side | Right Side |
-|-------|-----------|-----------|------------|
-| **Default** | OFF (💬) | Video Camera | Telemetry |
-| **AI Chat** | ON (✖) | Historical Graphs | AI Chat Panel |
-
-- Click 💬 to open AI Chat view
-- Click ✖ to close and return to Default view
-- Floating button always stays in same position
-
----
-
-## Component Descriptions
-
-### 1. TOP BAR — Connection & Quick Controls
-
-| Element | Type | Function |
-|---------|------|----------|
-| `CAR IP` | Text Input | Rover chassis IP address |
-| `CAM IP` | Text Input | Camera module IP address |
-| `Connect/Disconnect` | Button | Toggle connection state |
-| `CAR/CAM Status` | LED Indicator | ● GREEN = Online, ● RED = Offline |
-| `Resolution Dropdown` | ComboBox | 640x480 / 800x600 / 1280x720 |
-| `Flip H / Flip V` | Toggle Button | Mirror video feed horizontally/vertically |
-| `Snapshot` | Button | Save current frame as JPEG with timestamp |
-| `OTA Update` | Button | Trigger firmware update (with confirmation) |
-
----
-
-### 2. CENTER VIDEO VIEWPORT (Main View)
-
-| Element | Type | Function |
-|---------|------|----------|
-| `Video Canvas` | QLabel | Live MJPEG stream display |
-| `Crosshair` | Overlay | Fixed center marker for aiming |
-| `Status Overlay` | QWidget | FPS, Ping, Distance, Temp, Humidity |
-
-### Video Overlay Status Bar
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ 🟢 30.0 FPS   │   5 ms   │  📏 45 cm │  🌡 28.5°C │  💧 65% │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-| Indicator | Color Logic | Description |
-|-----------|-------------|-------------|
-| `🟢 30.0 FPS` | 🟢 ≥25, 🟡 15-24, 🔴 <15 | Live frame rate |
-| `5 ms` | White | Network ping to rover |
-| `📏 45 cm` | 🟢 >30, 🟡 15-30, 🔴 <15 | Obstacle distance warning |
-| `🌡 28.5°C` | Blue | Temperature |
-| `💧 65%` | Cyan | Humidity |
-
----
-
-### 3. HISTORICAL GRAPHS (AI Chat View - Left Side)
-
-| Element | Type | Function |
-|---------|------|----------|
-| `Chart Widget` | Matplotlib Canvas | Real-time line charts |
-| `Add Chart Button` | QPushButton | Create new custom chart |
-| `Reset Layout Button` | QPushButton | Reset to default charts |
-
-**Default Charts:**
-- Temperature & Humidity (dual-axis)
-- Air Quality (CO2, PM1.0, PM2.5, PM10)
-
-**Custom Charts:**
-- Created via Gemini chat or `/chart` command
-- Draggable, removable, exportable
-
----
-
-### 4. TELEMETRY SIDEBAR (Main View)
-
-| Element | Type | Function |
-|---------|------|----------|
-| `Temperature` | Progress Bar | Current °C with color coding |
-| `Humidity` | Progress Bar | Current % RH |
-| `Air Quality` | Progress Bar | Gas concentration in ppm |
-| `Obstacle Distance` | Progress Bar + Label | Ultrasonic distance in cm |
-| `Auto-Brake Status` | Label | Shows ON/OFF with color |
-| `Safety Alarm` | Warning Banner | Flashing when obstacle < threshold |
-| `Auto-Brake Toggle` | CheckBox | Enable/disable automatic braking |
-| `Threshold Slider` | Slider | Safety distance (5cm - 60cm) |
-| `Gimbal Pan` | Slider | Servo angle 0-180° |
-| `Gimbal Tilt` | Slider | Servo angle 0-180° |
-| `Center Gimbal` | Button | Reset to 90°/90° |
-
----
-
-### 5. AI CHAT PANEL (💬 View - Right Side)
-
-| Element | Type | Function |
-|---------|------|----------|
-| `Chat History` | QScrollArea | Scrollable message bubbles |
-| `Chat Input` | QTextEdit | Type messages (Tab autocomplete) |
-| `Send Button` | QPushButton | Send message to Gemini |
-| `Gimbal Control` | Panel | Always visible in sidebar |
-
----
-
-### 6. BOTTOM PANEL — Speed & Keys
-
-| Element | Type | Function |
-|---------|------|----------|
-| `Speed Slider` | Slider | Motor PWM power (80-255) |
-| `Speed Value` | Label | Current speed value |
-| `Keys Reference` | Label | Keyboard shortcuts reminder |
-
----
-
-### 7. FLOATING BUTTON (Right side, overlapping sidebar)
-
-| Element | Type | Function |
-|---------|------|----------|
-| `💬 AI Chat` | QPushButton | Toggle AI chat + graphs view |
-
-**Position:** Right side, overlapping telemetry sidebar (between Safety Alarm and Gimbal Control)
-
-**Styling:**
-- Round button (50x50px)
-- Purple (`#9C27B0`)
-- Hover effect: Darker shade
-- Active state: Shows ✖ instead of 💬
-- Always visible, always in same position
-
----
-
-### 8. LOG SCREEN — Collapsible Debug Panel
-
-| Element | Type | Function |
-|---------|------|----------|
-| `Log Toggle Button` | QPushButton | `[Log] Click to expand/collapse` |
-| `Log Display` | QTextEdit | Scrollable log output (read-only) |
-
-**Behavior:**
-- **Collapsed (Default):** Shows only the toggle button at the bottom
-- **Expanded:** Shows full log panel with colored messages
-- **Toggle:** Click button to switch between states
-
-**Log Message Format:**
-```
-[HH:MM:SS] CATEGORY | Message content
-```
-
-**Color Coding:**
-| Category | Color | Hex |
-|----------|-------|-----|
-| CONNECTED / OK | Green | `#69F0AE` |
-| WARNING | Orange | `#FF9800` |
-| ERROR / FAIL | Red | `#FF5252` |
-| DRIVE / GIMBAL / STOP | White | `#FFFFFF` |
-| SNAPSHOT / OTA | Cyan | `#00BCD4` |
+- **Auto-Refresh:** Toggle on/off in Analytics Control Bar
 
 ---
 
 ## Keyboard State Machine
+
+### Drive Control
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -383,6 +387,16 @@ Gemini: Creating custom chart...
 │      │ Send STOP command                                         │
 │      ▼                                                           │
 │   [IDLE]                                                         │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Gimbal Control
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    GIMBAL STATE MACHINE                          │
+├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │   [IDLE] ───────────────────────────────────────────────────────►│
 │      │                                                           │
@@ -449,143 +463,17 @@ Gemini: Creating custom chart...
 
 ---
 
-## UDP Command Protocol
-
-### Commands (PC → ESP32, Port 5005)
-
-| Command | Format | Description |
-|---------|--------|-------------|
-| `DRIVE` | `DRIVE:{speed}:{direction}` | Move with PWM speed |
-| `STEER` | `STEER:{direction}` | Spin left/right |
-| `STOP` | `STOP` | Emergency stop |
-| `GIMBAL` | `GIMBAL:{pan}:{tilt}` | Set servo angles |
-| `CENTER` | `CENTER` | Reset gimbal to 90°/90° |
-| `RESOLUTION` | `RES:{width}:{height}` | Set camera resolution |
-| `FLIP` | `FLIP:{h/v}` | Flip camera orientation |
-| `SNAPSHOT` | `SNAPSHOT` | Capture frame |
-| `OTA` | `OTA:{version}` | Trigger firmware update |
-
----
-
 ## Resolution Change Architecture
-
-### Flow Diagram
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         RESOLUTION CHANGE FLOW                                   │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│   ┌─────────────┐                                                               │
-│   │  USER       │                                                               │
-│   │  selects    │                                                               │
-│   │  resolution │                                                               │
-│   └──────┬──────┘                                                               │
-│          │                                                                       │
-│          ▼                                                                       │
-│   ┌─────────────────────────────────────────────────────────────────────────┐   │
-│   │  DESKTOP APP                                                            │   │
-│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
-│   │  │ 1. Update UI Dropdown Selection                                   │  │   │
-│   │  │    - Save selected resolution to config                          │  │   │
-│   │  │    - Show "Changing..." status in log                            │  │   │
-│   │  └───────────────────────────────────────────────────────────────────┘  │   │
-│   │                              │                                           │   │
-│   │                              ▼                                           │   │
-│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
-│   │  │ 2. Send UDP Command to ESP32-CAM                                 │  │   │
-│   │  │    Command: RES:640:480 (or 800:600 / 1280:720)                  │  │   │
-│   │  │    Port: 5005                                                     │  │   │
-│   │  └───────────────────────────────────────────────────────────────────┘  │   │
-│   │                              │                                           │   │
-│   │                              ▼                                           │   │
-│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
-│   │  │ 3. Stop Current Video Stream                                      │  │   │
-│   │  │    - Pause video thread reception                                 │  │   │
-│   │  │    - Clear current frame display                                  │  │   │
-│   │  └───────────────────────────────────────────────────────────────────┘  │   │
-│   │                              │                                           │   │
-│   │                              ▼                                           │   │
-│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
-│   │  │ 4. Wait for ESP32-CAM Response (timeout: 2s)                     │  │   │
-│   │  │    - ACK received: Resume video thread                            │  │   │
-│   │  │    - Timeout: Show error, retry or revert                        │  │   │
-│   │  └───────────────────────────────────────────────────────────────────┘  │   │
-│   │                              │                                           │   │
-│   │                              ▼                                           │   │
-│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
-│   │  │ 5. Update Stream Diagnostics                                      │  │   │
-│   │  │    - Adjust FPS calculation for new resolution                    │  │   │
-│   │  │    - Update video overlay status bar                              │  │   │
-│   │  └───────────────────────────────────────────────────────────────────┘  │   │
-│   │                                                                          │   │
-│   └──────────────────────────────────────────────────────────────────────────┘   │
-│          │                                                                       │
-│          ▼                                                                       │
-│   ┌─────────────────────────────────────────────────────────────────────────┐   │
-│   │  ESP32-CAM                                                              │   │
-│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
-│   │  │ 1. Receive RES command on UDP Port 5005                           │  │   │
-│   │  │    - Parse width and height from RES:{width}:{height}             │  │   │
-│   │  └───────────────────────────────────────────────────────────────────┘  │   │
-│   │                              │                                           │   │
-│   │                              ▼                                           │   │
-│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
-│   │  │ 2. Stop Camera Stream                                             │  │   │
-│   │  │    - Release current camera buffer                                │  │   │
-│   │  │    - Flush UDP socket                                             │  │   │
-│   │  └───────────────────────────────────────────────────────────────────┘  │   │
-│   │                              │                                           │   │
-│   │                              ▼                                           │   │
-│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
-│   │  │ 3. Reconfigure Camera Sensor                                      │  │   │
-│   │  │    - Set new resolution in camera driver                          │  │   │
-│   │  │    - Adjust JPEG compression quality                              │  │   │
-│   │  │    - Reallocate frame buffer                                      │  │   │
-│   │  └───────────────────────────────────────────────────────────────────┘  │   │
-│   │                              │                                           │   │
-│   │                              ▼                                           │   │
-│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
-│   │  │ 4. Send ACK to Desktop App                                        │  │   │
-│   │  │    - Response: ACK:RES:{width}:{height}:OK                        │  │   │
-│   │  └───────────────────────────────────────────────────────────────────┘  │   │
-│   │                              │                                           │   │
-│   │                              ▼                                           │   │
-│   │  ┌───────────────────────────────────────────────────────────────────┐  │   │
-│   │  │ 5. Resume Camera Stream                                           │  │   │
-│   │  │    - Start capturing at new resolution                            │  │   │
-│   │  │    - Send frames via UDP Port 5006                                │  │   │
-│   │  └───────────────────────────────────────────────────────────────────┘  │   │
-│   │                                                                          │   │
-│   └──────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
 
 ### Resolution Options
 
 | Resolution | Width | Height | FPS | Use Case |
 |------------|-------|--------|-----|----------|
 | `640x480` | 640 | 480 | 30 FPS | Standard Fluid (default) |
-| `800x600` | 800 | 600 | 25 FPS | Balanced quality |
 | `1280x720` | 1280 | 720 | 15-20 FPS | High Detail |
+| `320x240` | 320 | 240 | 60 FPS | High Frame Rate |
 
-### UDP Protocol for Resolution Change
-
-**Command (PC → ESP32-CAM, Port 5005):**
-```
-RES:640:480
-RES:800:600
-RES:1280:720
-```
-
-**Response (ESP32-CAM → PC, Port 5006):**
-```
-ACK:RES:640:480:OK
-ACK:RES:640:480:FAIL
-```
-
-### State Machine for Resolution Change
+### Resolution Change State Machine
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -620,107 +508,3 @@ ACK:RES:640:480:FAIL
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
-
-### Thread Interaction During Resolution Change
-
-| Thread | Action | Duration |
-|--------|--------|----------|
-| Main Thread | Update UI, send command | Instant |
-| Command Thread | Send UDP RES command | ~1ms |
-| Video Thread | Pause reception | Until ACK |
-| ESP32-CAM | Reconfigure camera | ~500ms-1s |
-| Video Thread | Resume reception | After ACK |
-
-### Error Handling
-
-| Error | Detection | Recovery |
-|-------|-----------|----------|
-| No ACK received | Timeout (2s) | Revert to previous resolution |
-| ACK:FAIL received | Parse response | Show error, keep old resolution |
-| Stream corrupted | Frame decode error | Request keyframe, retry |
-| Connection lost | No frames for 5s | Show "Disconnected" status |
-
-### Telemetry Data (Port 5006)
-
-| Field | Format | Description |
-|-------|--------|-------------|
-| `temp` | `TEMP:{value}` | Temperature in °C |
-| `humi` | `HUMI:{value}` | Humidity in % |
-| `gas` | `GAS:{value}` | Gas concentration in ppm |
-| `dist` | `DIST:{value}` | Obstacle distance in cm |
-| `video` | JPEG bytes | Video frame data |
-
----
-
-## Cloud API (App Perspective)
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `POST` | `/api/v1/telemetry` | Send sensor data to cloud |
-| `GET` | `/api/v1/rovers/{id}/latest` | Get latest reading (<30ms) |
-| `GET` | `/api/v1/rovers/{id}/readings` | Get last N records or time range |
-| `GET` | `/api/v1/rovers/{id}/summary` | Get aggregated statistics |
-| `GET` | `/api/v1/health` | Service health check |
-
-### Telemetry Payload (POST)
-
-```json
-{
-  "device_uid": "rover-001",
-  "recorded_at": "2026-09-03T10:00:00.123Z",
-  "temperature_c": 25.4,
-  "humidity_pct": 61.2,
-  "gas_ppm": 128.0,
-  "distance_cm": 34.5,
-  "auto_brake": false
-}
-```
-
-### Latest Reading (GET)
-
-```json
-{
-  "device_id": 1,
-  "recorded_at": "2026-09-03T10:00:00.123Z",
-  "age_seconds": 1.4,
-  "temperature_c": 25.4,
-  "humidity_pct": 61.2,
-  "gas_ppm": 128.0,
-  "distance_cm": 34.5,
-  "auto_brake": false
-}
-```
-
----
-
-## Color Scheme
-
-| Element | Color | Hex Code |
-|---------|-------|----------|
-| Background (Dark) | Charcoal | `#1A1A2E` |
-| Panel Background | Dark Navy | `#16213E` |
-| Accent (Primary) | Electric Blue | `#0F3460` |
-| Status Online | Green | `#4CAF50` |
-| Status Offline | Red | `#F44336` |
-| Warning Alarm | Orange | `#FF9800` |
-| Danger (Close Obstacle) | Red | `#F44336` |
-| Safe (Far Obstacle) | Green | `#4CAF50` |
-| Text Primary | White | `#FFFFFF` |
-| Text Secondary | Light Gray | `#B0BEC5` |
-| AI Chat Button | Purple | `#9C27B0` |
-
----
-
-## Screen Zones Summary
-
-| Zone | Position | Size | Purpose |
-|------|----------|------|---------|
-| Top Bar | Top | 100% width × 80px | Connection, Camera, Tools |
-| Video Canvas | Center-Left | ~75% width × ~70% height | Live FPV feed (Main View) |
-| Video Overlay | Top of Video | Full video width × 30px | FPS, Ping, Distance, Temp, Humidity |
-| Historical Graphs | Center-Left | ~75% width × ~70% height | Charts (💬 View) |
-| Telemetry Sidebar | Right | ~25% width × ~70% height | Gauges, Alarms, Gimbal |
-| AI Chat Panel | Right | ~25% width × ~70% height | Gemini Chat (💬 View) |
-| Bottom Panel | Bottom | 100% width × 120px | Speed, Keys Reference |
-| Floating Button | Right (overlapping sidebar) | 50x50px | Toggle AI Chat + Graphs |
-| Log Screen | Very Bottom | 100% width × 150px (collapsed: 30px) | Debug logs |

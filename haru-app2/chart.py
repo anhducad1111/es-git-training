@@ -155,14 +155,65 @@ class ChartWidget(QWidget):
       if len(parts) == 2:
         group_name = parts[0]
         labels = parts[1].split(",")
+
+
+        # 1. Determine drop location (column and row)
+        pos = event.position().toPoint()
+        col_width = self.width() / max(1, len(self.col_layouts))
+        target_col_idx = int(pos.x() / col_width)
+        target_col_idx = max(0, min(target_col_idx, len(self.col_layouts) - 1))
+        target_layout = self.col_layouts[target_col_idx]
+
+
+        target_row_idx = -1
+        for i in range(target_layout.count()):
+          item = target_layout.itemAt(i)
+          if item and item.widget():
+            widget_center_y = item.widget().y() + (item.widget().height() / 2)
+            if pos.y() < widget_center_y:
+              target_row_idx = i
+              break
+        if target_row_idx == -1:
+          target_row_idx = target_layout.count()
+
+
+        # 2. Handle New Chart vs Reordering
         if group_name not in self.current_groups:
+          # New chart from the other panel
           self.current_groups[group_name] = labels
           if self.is_custom:
             self._build_single_chart(group_name, labels)
           else:
             self._build_draggable_chart(group_name, labels)
           self.chart_added.emit(group_name)
-          event.acceptProposedAction()
+
+
+        # 3. Move the container to the precise drop location
+        container = self.charts[group_name]["container"]
+        for col in self.col_layouts:
+          col.removeWidget(container)
+        target_layout.insertWidget(target_row_idx, container)
+
+
+        # 4. Rebuild current_groups order visually to save config
+        new_groups = {}
+        for col in self.col_layouts:
+          for i in range(col.count()):
+            item = col.itemAt(i)
+            if item and item.widget() and isinstance(item.widget(), DraggableContainer):
+              w = item.widget()
+              new_groups[w.group_name] = w.labels
+        
+        # Preserve any groups that might be temporarily missing from layouts
+        for k, v in self.current_groups.items():
+            if k not in new_groups:
+                new_groups[k] = v
+
+
+        self.current_groups = new_groups
+        self.chart_toggled.emit()  # Trigger config save
+        
+        event.acceptProposedAction()
 
   def _build_single_chart(self, group_name, labels):
     header_layout = QHBoxLayout()

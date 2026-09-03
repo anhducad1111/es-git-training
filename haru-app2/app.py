@@ -1,7 +1,9 @@
+# Copy and paste this complete, updated code for app.py into your project to fully integrate the TelemetryReceiverThread and trajectory drawing on the radar map.
+
 import socket
 from datetime import datetime
-from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal, QThread, QEvent
-from PyQt6.QtGui import QKeyEvent, QPixmap, QCursor
+from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal, QThread, QEvent, QPointF
+from PyQt6.QtGui import QKeyEvent, QPixmap, QCursor, QPainter, QColor, QPen, QPolygonF
 from PyQt6.QtWidgets import (
     QApplication,
     QGroupBox,
@@ -22,13 +24,10 @@ from chart import ChartWidget, DropZone, CHART_GROUPS, ALL_LABELS
 from gemini_worker import GeminiWorker
 from config import load_config, save_config
 
-
 GROUP_BOX_STYLE = "QGroupBox { font-weight: bold; }"
-
 
 class DropGroupBox(QGroupBox):
   """QGroupBox that accepts drops anywhere on its frame and forwards to a target widget."""
-
   def __init__(self, title, drop_target, parent=None):
     super().__init__(title, parent)
     self._drop_target = drop_target
@@ -57,7 +56,6 @@ class DropGroupBox(QGroupBox):
 
 class ChatInput(QTextEdit):
   submit = pyqtSignal()
-
   def __init__(self, parent=None):
     super().__init__(parent)
     self._suggestions = ALL_LABELS + ["-n", "-d"]
@@ -93,13 +91,12 @@ class ChatInput(QTextEdit):
           cursor.insertText(suggestion + " ")
           self.setTextCursor(cursor)
           return
-
     if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
       if not event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
         self.submit.emit()
         return
-
     super().keyPressEvent(event)
+
 
 SENSOR_GROUPS = {
     "Air Quality": ["co2", "pm1.0", "pm2.5", "pm10"],
@@ -118,11 +115,116 @@ UNITS = {
     "gas": "",
     "battery": "%",
 }
+class RadarMapView(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.car_x = 0
+        self.car_y = 0
+        self.obstacles = []
+        self.trajectory = []
+        self.estimated_trajectory = []
+        self.last_heading_angle = 0.0
 
+    def update_map(self, car_x, car_y, obstacles):
+        self.car_x = car_x
+        self.car_y = car_y
+        self.obstacles = obstacles
+        self.update()
 
+    def add_trajectory_point(self, x, y, heading):
+        self.trajectory.append((x, y))
+        self.car_x = x
+        self.car_y = y
+        self.last_heading_angle = heading
+        self.update()
+
+    def add_estimated_point(self, x, y):
+        self.estimated_trajectory.append((x, y))
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        painter.fillRect(self.rect(), QColor("#191A1E"))
+        painter.setPen(QPen(QColor("#333"), 2))
+        painter.drawRect(0, 0, self.width() - 1, self.height() - 1)
+        
+        center_x = self.width() / 2
+        center_y = self.height() / 2
+
+        heading_angle = self.last_heading_angle
+
+        painter.save()
+        painter.translate(center_x, center_y)
+        painter.rotate(-heading_angle)
+        painter.translate(-center_x, -center_y)
+
+        painter.setPen(QPen(QColor("#444"), 1, Qt.PenStyle.DashLine))
+        painter.drawEllipse(int(center_x - 50), int(center_y - 50), 100, 100)
+        painter.drawEllipse(int(center_x - 100), int(center_y - 100), 200, 200)
+
+        if len(self.trajectory) > 1:
+            painter.setPen(QPen(QColor("#2196F3"), 2))
+            scale = 5.0
+            for i in range(len(self.trajectory) - 1):
+                p1_x, p1_y = self.trajectory[i]
+                p2_x, p2_y = self.trajectory[i+1]
+                
+                s1_x = center_x + ((p1_x - self.car_x) * scale)
+                s1_y = center_y - ((p1_y - self.car_y) * scale)
+                s2_x = center_x + ((p2_x - self.car_x) * scale)
+                s2_y = center_y - ((p2_y - self.car_y) * scale)
+                
+                painter.drawLine(QPointF(s1_x, s1_y), QPointF(s2_x, s2_y))
+
+        if len(self.estimated_trajectory) > 1:
+            painter.setPen(QPen(QColor("#F44336"), 2))
+            scale = 5.0
+            for i in range(len(self.estimated_trajectory) - 1):
+                p1_x, p1_y = self.estimated_trajectory[i]
+                p2_x, p2_y = self.estimated_trajectory[i+1]
+                
+                s1_x = center_x + ((p1_x - self.car_x) * scale)
+                s1_y = center_y - ((p1_y - self.car_y) * scale)
+                s2_x = center_x + ((p2_x - self.car_x) * scale)
+                s2_y = center_y - ((p2_y - self.car_y) * scale)
+                
+                painter.drawLine(QPointF(s1_x, s1_y), QPointF(s2_x, s2_y))
+            
+            ex, ey = self.estimated_trajectory[-1]
+            marker_x = center_x + ((ex - self.car_x) * scale)
+            marker_y = center_y - ((ey - self.car_y) * scale)
+            painter.setBrush(QColor("#F44336"))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(marker_x, marker_y), 5, 5)
+
+        painter.setBrush(QColor("#F44336"))
+        painter.setPen(Qt.PenStyle.NoPen)
+        scale = 5.0
+        for obs_x, obs_y in self.obstacles:
+            screen_x = center_x + ((obs_x - self.car_x) * scale)
+            screen_y = center_y - ((obs_y - self.car_y) * scale)
+            if 0 <= screen_x <= self.width() and 0 <= screen_y <= self.height():
+                painter.drawEllipse(QPointF(screen_x, screen_y), 4, 4)
+
+        painter.restore()
+
+        painter.setBrush(QColor("#2196F3"))
+        painter.setPen(Qt.PenStyle.NoPen)
+        car_poly = QPolygonF([
+            QPointF(center_x, center_y - 10),
+            QPointF(center_x - 7, center_y + 10),
+            QPointF(center_x + 7, center_y + 10)
+        ])
+        painter.drawPolygon(car_poly)
+
+        painter.setPen(QColor("#F0F0F0"))
+        painter.drawText(10, 20, f"Heading: {int(heading_angle)}°")
+        painter.drawText(10, 40, f"Ground Truth: {len(self.trajectory)} pts", )
+        painter.drawText(10, 55, f"Estimated: {len(self.estimated_trajectory)} pts", )
 class VideoReceiverThread(QThread):
     frame_received = pyqtSignal(bytes)
-
     def __init__(self, host="127.0.0.1", port=5006):
         super().__init__()
         self.host = host
@@ -148,9 +250,42 @@ class VideoReceiverThread(QThread):
     def stop(self):
         self._running = False
 
+class TelemetryReceiverThread(QThread):
+    position_received = pyqtSignal(float, float, float) # x, z, rotation を送るように変更
+
+    def __init__(self, host="127.0.0.1", port=5007):
+        super().__init__()
+        self.host = host
+        self.port = port
+        self._running = True
+
+    def run(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((self.host, self.port))
+        sock.settimeout(1.0)
+        while self._running:
+            try:
+                data, _ = sock.recvfrom(65536)
+                if data:
+                    text = data.decode("utf-8")
+                    if text.startswith("POS:"):
+                        parts = text.split(":")
+                        if len(parts) >= 4:
+                            x = float(parts[1])
+                            z = float(parts[2])
+                            rot = float(parts[3])
+                            self.position_received.emit(x, z, rot)
+            except socket.timeout:
+                continue
+            except Exception:
+                break
+        sock.close()
+
+    def stop(self):
+        self._running = False
 
 class SensorDashboardApp(QWidget):
-
   def __init__(self):
     super().__init__()
     self._config = load_config()
@@ -166,7 +301,6 @@ class SensorDashboardApp(QWidget):
   def init_ui(self):
     self.setWindowTitle("Haru App 2 - Sensor Dashboard")
     self.setMinimumSize(1400, 750)
-
     main_layout = QVBoxLayout(self)
     main_layout.setContentsMargins(20, 20, 20, 20)
     main_layout.setSpacing(10)
@@ -174,14 +308,12 @@ class SensorDashboardApp(QWidget):
     config_group = QGroupBox("Server Configuration")
     config_group.setStyleSheet(GROUP_BOX_STYLE)
     config_layout = QVBoxLayout()
-
     self.url_entry = QLineEdit()
     self.api_key_entry = QLineEdit()
     self.api_key_entry.setEchoMode(QLineEdit.EchoMode.Password)
     self.api_key_entry.setPlaceholderText("Gemini API Key")
     self.api_key_entry.setFixedWidth(200)
     self.api_key_entry.setVisible(False)
-
     gemini_label = QLabel("Gemini Key:")
     gemini_label.setVisible(False)
 
@@ -190,7 +322,6 @@ class SensorDashboardApp(QWidget):
         "background-color: #F44336; color: white; font-weight: bold; padding: 5px 15px; border-radius: 4px;"
     )
     self.poll_btn.clicked.connect(self.toggle_polling)
-
     self.status_label = QLabel("Connected")
     self.status_label.setStyleSheet("color: #69F0AE; font-weight: bold;")
 
@@ -198,16 +329,13 @@ class SensorDashboardApp(QWidget):
     config_layout.addWidget(self.url_entry)
     config_layout.addWidget(gemini_label)
     config_layout.addWidget(self.api_key_entry)
-
     poll_row = QHBoxLayout()
     poll_row.addWidget(self.poll_btn)
     poll_row.addWidget(self.status_label)
     config_layout.addLayout(poll_row)
-
     config_group.setLayout(config_layout)
 
     self.top_layout = QHBoxLayout()
-
     left_layout = QVBoxLayout()
     left_layout.addWidget(config_group)
 
@@ -235,10 +363,10 @@ class SensorDashboardApp(QWidget):
     self.chart_widget = ChartWidget(num_columns=2)
     self.chart_widget.chart_added.connect(self._on_chart_moved_to_center)
     self.chart_widget.chart_toggled.connect(self.save_current_config)
+
     self.chart_drop_zone = DropZone(self.chart_widget)
     self.charts_group = DropGroupBox("Charts", self.chart_drop_zone)
     charts_layout = QVBoxLayout()
-
     reset_charts_btn = QPushButton("Reset Layout")
     reset_charts_btn.setStyleSheet(
         "background-color: #03A9F4; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px; font-size: 9pt;"
@@ -327,7 +455,6 @@ class SensorDashboardApp(QWidget):
         "background-color: #06C755; color: white; font-weight: bold; padding: 8px 15px; border-radius: 8px;"
     )
     self.chat_send_btn.clicked.connect(self.send_chat)
-
     chat_input_layout.addWidget(self.chat_input)
     chat_input_layout.addWidget(self.chat_send_btn)
 
@@ -343,7 +470,6 @@ class SensorDashboardApp(QWidget):
     self.custom_drop_zone = DropZone(self.custom_chart_widget)
     custom_charts_group = DropGroupBox("AI Custom Charts", self.custom_drop_zone)
     custom_charts_layout = QVBoxLayout()
-
     move_btn = QPushButton("Move to Charts")
     move_btn.setStyleSheet(
         "background-color: #2196F3; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px; font-size: 9pt;"
@@ -405,51 +531,34 @@ class SensorDashboardApp(QWidget):
     rc_main_layout.addWidget(rc_status)
 
     rc_body = QHBoxLayout()
-    rc_body.setSpacing(10)
+    rc_body.setSpacing(20)
+
+    # ==========================================
+    # Left Column: D-Pad + Radar Map
+    # ==========================================
+    left_col = QVBoxLayout()
+    left_col.setSpacing(10)
 
     dpad_widget = QWidget()
-    dpad_widget.setFixedSize(250, 250)
+    dpad_widget.setFixedSize(230, 230)
     dpad_layout = QGridLayout(dpad_widget)
-    dpad_layout.setContentsMargins(10, 10, 10, 10)
+    dpad_layout.setContentsMargins(0, 0, 0, 0)
     dpad_layout.setSpacing(8)
 
     btn_style = """
-        QPushButton {
-            background-color: #424242;
-            color: white;
-            border: 2px solid #555;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: bold;
-            min-width: 70px;
-            min-height: 70px;
-        }
-        QPushButton:pressed {
-            background-color: #9C27B0;
-            border-color: #CE93D8;
-        }
+        QPushButton { background-color: #424242; color: white; border: 2px solid #555; border-radius: 8px; font-size: 16px; font-weight: bold; min-width: 70px; min-height: 70px; }
+        QPushButton:pressed { background-color: #9C27B0; border-color: #CE93D8; }
     """
     stop_style = """
-        QPushButton {
-            background-color: #F44336;
-            color: white;
-            border: 2px solid #D32F2F;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: bold;
-            min-width: 70px;
-            min-height: 70px;
-        }
-        QPushButton:pressed {
-            background-color: #D32F2F;
-        }
+        QPushButton { background-color: #F44336; color: white; border: 2px solid #D32F2F; border-radius: 8px; font-size: 14px; font-weight: bold; min-width: 70px; min-height: 70px; }
+        QPushButton:pressed { background-color: #D32F2F; }
     """
 
-    self.rc_forward_btn = QPushButton("\u2B06")
+    self.rc_forward_btn = QPushButton("⬆")
     self.rc_forward_btn.setStyleSheet(btn_style)
     dpad_layout.addWidget(self.rc_forward_btn, 0, 1)
 
-    self.rc_left_btn = QPushButton("\u2B05")
+    self.rc_left_btn = QPushButton("⬅")
     self.rc_left_btn.setStyleSheet(btn_style)
     dpad_layout.addWidget(self.rc_left_btn, 1, 0)
 
@@ -457,11 +566,11 @@ class SensorDashboardApp(QWidget):
     self.rc_stop_btn.setStyleSheet(stop_style)
     dpad_layout.addWidget(self.rc_stop_btn, 1, 1)
 
-    self.rc_right_btn = QPushButton("\u27A1")
+    self.rc_right_btn = QPushButton("➡")
     self.rc_right_btn.setStyleSheet(btn_style)
     dpad_layout.addWidget(self.rc_right_btn, 1, 2)
 
-    self.rc_backward_btn = QPushButton("\u2B07")
+    self.rc_backward_btn = QPushButton("⬇")
     self.rc_backward_btn.setStyleSheet(btn_style)
     dpad_layout.addWidget(self.rc_backward_btn, 2, 1)
 
@@ -469,55 +578,67 @@ class SensorDashboardApp(QWidget):
     self.rc_backward_btn.pressed.connect(lambda: self.send_rc_command("BACKWARD"))
     self.rc_left_btn.pressed.connect(lambda: self.send_rc_command("LEFT"))
     self.rc_right_btn.pressed.connect(lambda: self.send_rc_command("RIGHT"))
+
     self.rc_forward_btn.released.connect(lambda: self.send_rc_command("STOP"))
     self.rc_backward_btn.released.connect(lambda: self.send_rc_command("STOP"))
     self.rc_left_btn.released.connect(lambda: self.send_rc_command("STOP"))
     self.rc_right_btn.released.connect(lambda: self.send_rc_command("STOP"))
     self.rc_stop_btn.clicked.connect(lambda: self.send_rc_command("STOP"))
+    
+    left_col.addWidget(dpad_widget, alignment=Qt.AlignmentFlag.AlignCenter)
+    left_col.addSpacing(20)
 
-    rc_body.addWidget(dpad_widget, stretch=0)
+    self.radar_map = RadarMapView()
+    self.radar_map.setFixedSize(200, 200)
+    left_col.addWidget(self.radar_map, alignment=Qt.AlignmentFlag.AlignCenter)
+    left_col.addStretch()
 
+    # ==========================================
+    # Right Column: Camera feed + Open space below
+    # ==========================================
+    # ==========================================
+    # 右列：カメラ映像 ＋ 特徴量画面 ＋ リセットボタン等
+    # ==========================================
+    right_col = QVBoxLayout()
+    
     self.camera_feed_label = QLabel()
     self.camera_feed_label.setStyleSheet("background-color: #000; border: 1px solid #333;")
     self.camera_feed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     self.camera_feed_label.setText("No Signal")
     self.camera_feed_label.setScaledContents(True)
-    self.camera_feed_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
-    self.camera_feed_label.setMinimumSize(400, 300)
-    rc_body.addWidget(self.camera_feed_label, stretch=1)
+    self.camera_feed_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    self.camera_feed_label.setMinimumSize(200, 150) 
+    right_col.addWidget(self.camera_feed_label, stretch=2)
 
-    rc_main_layout.addLayout(rc_body, stretch=1)
+    # 【追加】特徴量を表示するためのスクリーン（カメラの下）
+    self.feature_feed_label = QLabel()
+    self.feature_feed_label.setStyleSheet("background-color: #000; border: 1px solid #333;")
+    self.feature_feed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    self.feature_feed_label.setText("Feature Points (ORB)")
+    self.feature_feed_label.setScaledContents(True)
+    self.feature_feed_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    self.feature_feed_label.setMinimumSize(200, 150)
+    right_col.addWidget(self.feature_feed_label, stretch=2)
 
     self.reset_camera_btn = QPushButton("Reset Camera")
     self.reset_camera_btn.setFixedHeight(35)
-    self.reset_camera_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #37474F;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: bold;
-            padding: 5px 20px;
-        }
-        QPushButton:hover {
-            background-color: #455A64;
-        }
-        QPushButton:pressed {
-            background-color: #263238;
-        }
-    """)
+    self.reset_camera_btn.setStyleSheet("QPushButton { background-color: #37474F; color: white; border: none; border-radius: 6px; font-weight: bold; padding: 0 15px; } QPushButton:hover { background-color: #455A64; }")
     self.reset_camera_btn.clicked.connect(lambda: self.send_rc_command("CAMERA_RESET"))
-    rc_main_layout.addWidget(self.reset_camera_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+    right_col.addWidget(self.reset_camera_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    right_col.addStretch(1) 
 
     self.rc_speed_label = QLabel("Speed: 50%")
-    self.rc_speed_label.setStyleSheet("color: #F0F0F0; font-size: 10pt;")
-    rc_main_layout.addWidget(self.rc_speed_label)
+    self.rc_speed_label.setStyleSheet("color: #F0F0F0; font-size: 10pt; font-weight: bold;")
+    right_col.addWidget(self.rc_speed_label, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+    rc_body.addLayout(left_col, stretch=0)
+    rc_body.addLayout(right_col, stretch=1)
+    rc_main_layout.addLayout(rc_body, stretch=1)
 
+    self.rc_side_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     self.rc_side_panel.setLayout(rc_main_layout)
     self.rc_side_panel.setVisible(False)
 
-    # Stacked widget to hold AI and RC panels (exclusive visibility)
     self.right_stacked = QStackedWidget()
     self.right_stacked.addWidget(self.ai_side_panel)
     self.right_stacked.addWidget(self.rc_side_panel)
@@ -608,17 +729,151 @@ class SensorDashboardApp(QWidget):
     self.video_thread.frame_received.connect(self.update_camera_feed)
     self.video_thread.start()
 
+    # Initialize and start telemetry receiver thread for port 5007
+    self.telemetry_thread = TelemetryReceiverThread(host="127.0.0.1", port=5007)
+    self.telemetry_thread.position_received.connect(self.radar_map.add_trajectory_point)
+    self.telemetry_thread.start()
+
     self.setMouseTracking(True)
     self.is_e_pressed = False
     self.last_mouse_pos = None
     QApplication.instance().installEventFilter(self)
 
   def update_camera_feed(self, jpeg_data):
-    pixmap = QPixmap()
-    pixmap.loadFromData(jpeg_data)
-    if not pixmap.isNull():
-      self.camera_feed_label.setPixmap(pixmap)
+        self.append_log("Frame received")
+        
+        pixmap = QPixmap()
+        pixmap.loadFromData(jpeg_data)
+        if not pixmap.isNull():
+            self.camera_feed_label.setPixmap(pixmap)
 
+        try:
+            import cv2
+            import numpy as np
+
+            nparr = np.frombuffer(jpeg_data, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+            if img is not None:
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                
+                if not hasattr(self, '_prev_gray') or not hasattr(self, '_prev_kp') or not hasattr(self, '_prev_des'):
+                    self._prev_gray = gray
+                    orb = cv2.ORB_create()
+                    self._prev_kp, self._prev_des = orb.detectAndCompute(gray, None)
+                    self._estimated_x = self.radar_map.car_x
+                    self._estimated_y = self.radar_map.car_y
+                    self._est_scale = 0.01
+                    self._est_initialized = True
+                    return
+
+                orb = cv2.ORB_create()
+                kp2, des2 = orb.detectAndCompute(gray, None)
+
+                if self._prev_des is not None and des2 is not None and len(self._prev_des) > 0 and len(des2) > 0:
+                    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+                    matches = bf.match(self._prev_des, des2)
+                    matches = sorted(matches, key=lambda x: x.distance)
+
+                    img_track = img.copy()
+                    
+                    h_img, w_img = img_track.shape[:2]
+                    center_x = w_img // 2
+                    center_y = h_img // 2
+                    
+                    forward_deltas = []
+                    lateral_deltas = []
+                    
+                    for m in matches[:50]:
+                        pt1 = self._prev_kp[m.queryIdx].pt
+                        pt2 = kp2[m.trainIdx].pt
+                        
+                        cv2.line(img_track, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), (0, 255, 0), 1)
+                        cv2.circle(img_track, (int(pt2[0]), int(pt2[1])), 3, (0, 0, 255), -1)
+                        
+                        raw_dx = pt2[0] - pt1[0]
+                        raw_dy = pt2[1] - pt1[1]
+                        
+                        if pt1[0] < center_x:
+                            radial_dx = -raw_dx
+                        else:
+                            radial_dx = raw_dx
+                        
+                        if pt1[1] < center_y:
+                            radial_dy = -raw_dy
+                        else:
+                            radial_dy = raw_dy
+                        
+                        forward_deltas.append(radial_dy)
+                        lateral_deltas.append(radial_dx)
+
+                    if forward_deltas:
+                        forward_spread = np.mean(forward_deltas)
+                        lateral_spread = np.mean(lateral_deltas)
+                        
+                        heading_rad = np.radians(self.radar_map.last_heading_angle)
+                        
+                        forward_world = forward_spread * self._est_scale
+                        lateral_world = lateral_spread * self._est_scale
+                        
+                        delta_x = forward_world * np.cos(heading_rad) - lateral_world * np.sin(heading_rad)
+                        delta_y = forward_world * np.sin(heading_rad) + lateral_world * np.cos(heading_rad)
+                        
+                        self._estimated_x += delta_x
+                        self._estimated_y += delta_y
+                        
+                        self.radar_map.add_estimated_point(self._estimated_x, self._estimated_y)
+                        
+                        arrow_scale = 3.0
+                        arrow_end_x = int(center_x + lateral_spread * arrow_scale)
+                        arrow_end_y = int(center_y + forward_spread * arrow_scale)
+                        
+                        cv2.arrowedLine(img_track, (center_x, center_y), (arrow_end_x, arrow_end_y),
+                                       (0, 255, 255), 3, tipLength=0.3)
+                        
+                        cv2.circle(img_track, (center_x, center_y), 8, (255, 255, 255), 2)
+                        
+                        spread_magnitude = np.sqrt(forward_spread**2 + lateral_spread**2)
+                        
+                        if forward_spread > 2.0:
+                            motion_type = "FORWARD (expansion)"
+                        elif forward_spread < -2.0:
+                            motion_type = "BACKWARD (contraction)"
+                        elif abs(forward_spread) <= 2.0 and spread_magnitude > 1.0:
+                            if abs(lateral_spread) > abs(forward_spread):
+                                motion_type = "RIGHT" if lateral_spread > 0 else "LEFT"
+                            else:
+                                motion_type = "FORWARD" if forward_spread > 0 else "BACKWARD"
+                        else:
+                            motion_type = "STATIONARY"
+                        
+                        cv2.putText(img_track, f"Motion: {motion_type}", 
+                                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                        cv2.putText(img_track, f"Forward/Back: {forward_spread:.1f}px (spread)", 
+                                   (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                        cv2.putText(img_track, f"Lateral: {lateral_spread:.1f}px (spread)", 
+                                   (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                        cv2.putText(img_track, f"World: dx={delta_x:.3f}, dy={delta_y:.3f}", 
+                                   (10, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 0), 2)
+                        
+                        self.append_log(f"Features: {len(matches)} | "
+                                       f"Motion: {motion_type} | "
+                                       f"Forward spread: {forward_spread:.1f}px | "
+                                       f"Lateral spread: {lateral_spread:.1f}px")
+
+                    self._prev_gray = gray
+                    self._prev_kp = kp2
+                    self._prev_des = des2
+
+                    h, w, ch = img_track.shape
+                    bytes_per_line = ch * w
+                    rgb_image = cv2.cvtColor(img_track, cv2.COLOR_BGR2RGB)
+                    from PyQt6.QtGui import QImage
+                    q_img = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+                    self.feature_feed_label.setPixmap(QPixmap.fromImage(q_img))
+
+        except Exception as e:
+            self.append_log(f"ERROR in feature tracking: {str(e)}")
   def load_saved_config(self):
     self.url_entry.setText(self._config.get("api_url", ""))
     self.api_key_entry.setText(self._config.get("gemini_api_key", ""))
@@ -723,7 +978,14 @@ class SensorDashboardApp(QWidget):
       self.charts_group.setVisible(False)
       self.top_layout.setStretch(1, 0)
       self.top_layout.setStretch(2, 10)
+      self._reset_dead_reckoning()
     QTimer.singleShot(10, self.update_floating_buttons_pos)
+
+  def _reset_dead_reckoning(self):
+    self._estimated_x = self.radar_map.car_x
+    self._estimated_y = self.radar_map.car_y
+    self.radar_map.estimated_trajectory = []
+    self.append_log(f"DEAD RECKON | Reset to ({self._estimated_x:.2f}, {self._estimated_y:.2f})")
 
   def send_rc_command(self, command):
     try:
@@ -731,8 +993,43 @@ class SensorDashboardApp(QWidget):
       sock.sendto(command.encode("utf-8"), ("127.0.0.1", 5005))
       sock.close()
       self.append_log(f"RC | Sent: {command}")
+      self._update_dead_reckoning(command)
     except Exception as e:
       self.append_log(f"RC | Error sending {command}: {e}")
+
+  def _update_dead_reckoning(self, command):
+    import numpy as np
+    
+    if not hasattr(self, '_estimated_x'):
+      self._estimated_x = self.radar_map.car_x
+      self._estimated_y = self.radar_map.car_y
+    
+    heading_rad = np.radians(self.radar_map.last_heading_angle)
+    step_distance = 0.1
+    
+    delta_x = 0.0
+    delta_y = 0.0
+    
+    if command == "FORWARD":
+      delta_x = step_distance * np.cos(heading_rad)
+      delta_y = step_distance * np.sin(heading_rad)
+    elif command == "BACKWARD":
+      delta_x = -step_distance * np.cos(heading_rad)
+      delta_y = -step_distance * np.sin(heading_rad)
+    elif command == "LEFT":
+      delta_x = -step_distance * np.sin(heading_rad)
+      delta_y = step_distance * np.cos(heading_rad)
+    elif command == "RIGHT":
+      delta_x = step_distance * np.sin(heading_rad)
+      delta_y = -step_distance * np.cos(heading_rad)
+    
+    if command in ["FORWARD", "BACKWARD", "LEFT", "RIGHT"]:
+      self._estimated_x += delta_x
+      self._estimated_y += delta_y
+      self.radar_map.add_estimated_point(self._estimated_x, self._estimated_y)
+      self.append_log(f"DEAD RECKON | {command} | "
+                     f"Heading: {self.radar_map.last_heading_angle:.0f}° | "
+                     f"Pos: ({self._estimated_x:.2f}, {self._estimated_y:.2f})")
 
   def _is_text_focused(self):
     focused = self.focusWidget()
@@ -955,13 +1252,13 @@ class SensorDashboardApp(QWidget):
             else:
               prv = cur
             if cur > prv:
-              arrow_text = "↑"
+              arrow_text = "▲"
               color = "#2196F3"
             elif cur < prv:
-              arrow_text = "↓"
+              arrow_text = "▼"
               color = "#FF5252"
             else:
-              arrow_text = "→"
+              arrow_text = "▬"
               color = "#4CAF50"
           except (ValueError, TypeError):
             pass
@@ -1003,28 +1300,14 @@ class SensorDashboardApp(QWidget):
     if not self._last_data:
       self.append_log("ERROR | No sensor data to analyze")
       return
-
     if not self.ai_side_panel.isVisible():
       self.toggle_ai_panel()
-
     latest = self._last_data.get("latest", {})
     data_text = "\n".join([
         f"- {label}: {info.get('data', 'N/A')} {UNITS.get(label, '')}"
         for label, info in latest.items()
     ])
-
-    prompt = f"""Analyze this sensor data and provide insights:
-
-Sensor Readings:
-{data_text}
-
-Please provide:
-1. Overall air quality assessment
-2. Any concerning values
-3. Recommendations based on the data
-
-Keep the response concise and helpful."""
-
+    prompt = f"""Analyze this sensor data and provide insights: Sensor Readings: {data_text} Please provide: 1. Overall air quality assessment 2. Any concerning values 3. Recommendations based on the data Keep the response concise and helpful."""
     self.append_log("Analyzing data with Gemini...")
     if not self.init_gemini():
       self.add_chat_bubble("System: Failed to connect to Gemini", is_user=False, is_system=True)
@@ -1047,15 +1330,12 @@ Keep the response concise and helpful."""
     except TypeError:
       pass
     self._gemini_worker.finished.connect(self.on_chat_result)
-
     url = self.url_entry.text().strip()
     if not url:
       self.append_log("ERROR | No API URL set")
       return
-
     api_url = "https://iotdigi.io.vn/es-git-training/sensor-dashboard/api/post-analysis.php"
     payload = {"content": text}
-
     self.append_log(f"Sending to: {api_url}")
     self._worker = Worker("post", api_url, payload=payload)
     self._worker.finished.connect(self.on_analyze_upload_result)
@@ -1093,20 +1373,15 @@ Keep the response concise and helpful."""
     message = self.chat_input.toPlainText().strip()
     if not message:
       return
-
     if message.startswith("/chart"):
       self._handle_chart_command(message)
       return
-
     if not self.init_gemini():
       self.add_chat_bubble("System: Failed to connect to Gemini", is_user=False, is_system=True)
       return
-
     self.add_chat_bubble(message, is_user=True)
     self.chat_input.setPlainText("")
-
     self._chat_history.append(message)
-
     system_prompt = (
         "IMPORTANT: You are a sensor data assistant with chart creation capabilities. "
         "AVAILABLE SENSORS: co2, pm1.0, pm2.5, pm10, temperature, humidity, pressure, gas, battery. "
@@ -1132,7 +1407,6 @@ Keep the response concise and helpful."""
           for label, info in latest.items()
       ])
       prompt = f"{system_prompt}\n\nCurrent sensor data: {data_text}\n\nUser: {message}"
-
     self.append_log("Sending to Gemini...")
     self._gemini_worker.send_message(prompt)
 
@@ -1226,14 +1500,11 @@ Keep the response concise and helpful."""
 
   def add_chat_bubble(self, text, is_user=False, is_system=False, is_analysis=False):
     ts = datetime.now().strftime("%H:%M")
-
     bubble = QLabel()
     bubble.setWordWrap(True)
     bubble.setTextFormat(Qt.TextFormat.RichText)
-
     time_label = QLabel(ts)
     time_label.setStyleSheet("font-size: 7pt; color: #888; background: transparent;")
-
     if is_system:
       bubble.setText(text)
       bubble.setStyleSheet("""
@@ -1314,7 +1585,6 @@ Keep the response concise and helpful."""
       time_layout.setContentsMargins(4, 0, 4, 4)
       time_layout.addWidget(time_label)
       time_layout.addStretch()
-
     container = QWidget()
     container_layout = QVBoxLayout()
     container_layout.setContentsMargins(0, 0, 0, 0)
@@ -1323,7 +1593,6 @@ Keep the response concise and helpful."""
     container_layout.addLayout(time_layout)
     container.setLayout(container_layout)
     container.setStyleSheet("background: transparent;")
-
     self.chat_content_layout.insertWidget(self.chat_content_layout.count() - 1, container)
     self.chat_scroll.verticalScrollBar().setValue(self.chat_scroll.verticalScrollBar().maximum())
 
@@ -1350,7 +1619,7 @@ Keep the response concise and helpful."""
         content = line[3:] if line.startswith('*   ') else line[2:]
         content = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', content)
         content = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', content)
-        html_lines.append(f'<div style="margin-left: 10px;">• {content}</div>')
+        html_lines.append(f'<div style="margin-left: 10px;">  {content}</div>')
       else:
         line = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', line)
         line = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<i>\1</i>', line)
@@ -1377,4 +1646,6 @@ Keep the response concise and helpful."""
   def closeEvent(self, event):
     self.video_thread.stop()
     self.video_thread.wait(2000)
+    self.telemetry_thread.stop()
+    self.telemetry_thread.wait(2000)
     event.accept()

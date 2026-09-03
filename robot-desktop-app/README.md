@@ -1,4 +1,4 @@
-# Earth Rover - Desktop Controller & ESP32 Integration Guide
+#  Rover - Desktop Controller & ESP32 Integration Guide
 
 A real-time IoT rover monitoring and control system featuring a PyQt6 Windows desktop controller, an ESP32-based hardware rover, and a cloud-backed data pipeline.
 

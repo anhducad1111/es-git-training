@@ -16,7 +16,11 @@
                 <h1>Sensor Dashboard</h1>
                 <p class="subtitle">Live data from MySQL</p>
             </div>
-            <div class="server-status"><span id="statusDot" class="status-dot"></span><span id="statusText">Connecting...</span></div>
+            <div class="status-group">
+                <div class="server-status"><span id="statusDot" class="status-dot"></span><span id="statusText">Connecting...</span></div>
+                <div class="server-status"><span id="esp32StatusDot" class="status-dot"></span><span id="esp32StatusText">ESP32: -</span></div>
+                <div class="server-status"><span id="selfTestText">Self-test: -</span></div>
+            </div>
         </header>
         <div id="staleWarning" class="stale-warning top-warning hidden" role="alert"></div>
         <div id="errorBox" class="error-box hidden"></div>
@@ -75,6 +79,8 @@
 
         const COLOR_PALETTE = ["#e56a54", "#3d7ee8", "#20b26b", "#a35de0", "#e0a72a", "#2ac1c1", "#e05299", "#7d889b", "#4560c9"];
 
+        const SELFTEST_LABEL = "selftest";
+
         let lastHistory = {};
         let visibleLabels = new Set();
         let seenLabels = new Set();
@@ -91,14 +97,27 @@
             return String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
         }
 
-        function rowHtml(label, entry) {
-            const unit = UNIT_MAP[label] || "";
-            return `<div class="metric-row"><span class="metric-name">${esc(label)}</span><span class="metric-value">${Number(entry.data).toFixed(2)}${unit ? " <small>" + esc(unit) + "</small>" : ""}</span></div>`;
+        function trendFor(label, entry, history) {
+            const hist = history && history[label];
+            if (!hist || hist.length < 2) return null;
+            const prev = hist[hist.length - 2].data;
+            const curFixed = Number(entry.data).toFixed(2);
+            const prevFixed = Number(prev).toFixed(2);
+            if (curFixed === prevFixed) return "same";
+            return Number(curFixed) > Number(prevFixed) ? "up" : "down";
         }
 
-        function renderCards(latest) {
+        function rowHtml(label, entry, history) {
+            const unit = UNIT_MAP[label] || "";
+            const trend = trendFor(label, entry, history);
+            const trendClass = trend ? ` trend-${trend}` : "";
+            const arrow = trend === "up" ? "▲ " : trend === "down" ? "▼ " : "";
+            return `<div class="metric-row"><span class="metric-name">${esc(label)}</span><span class="metric-value${trendClass}">${arrow}${Number(entry.data).toFixed(2)}${unit ? " <small>" + esc(unit) + "</small>" : ""}</span></div>`;
+        }
+
+        function renderCards(latest, history) {
             const container = document.getElementById("cardsContainer");
-            const labels = Object.keys(latest);
+            const labels = Object.keys(latest).filter(l => l !== SELFTEST_LABEL);
             if (labels.length === 0) {
                 container.innerHTML = '<div class="empty">No data yet.</div>';
                 return;
@@ -109,19 +128,19 @@
                 const present = group.labels.filter(l => labels.includes(l));
                 if (present.length === 0) return;
                 present.forEach(l => grouped.add(l));
-                const rows = present.map(l => rowHtml(l, latest[l])).join("");
+                const rows = present.map(l => rowHtml(l, latest[l], history)).join("");
                 const footerTime = present.reduce((max, l) => latest[l].reading_time > max ? latest[l].reading_time : max, latest[present[0]].reading_time);
                 cards.push(`<div class="card"><div class="card-label">${esc(group.title.toUpperCase())}</div>${rows}<div class="card-footer">Updated: ${esc(footerTime)}</div></div>`);
             });
             labels.filter(l => !grouped.has(l)).forEach(l => {
-                cards.push(`<div class="card"><div class="card-label">${esc(l.toUpperCase())}</div>${rowHtml(l, latest[l])}<div class="card-footer">Updated: ${esc(latest[l].reading_time)}</div></div>`);
+                cards.push(`<div class="card"><div class="card-label">${esc(l.toUpperCase())}</div>${rowHtml(l, latest[l], history)}<div class="card-footer">Updated: ${esc(latest[l].reading_time)}</div></div>`);
             });
             container.innerHTML = cards.join("");
         }
 
         function updateStaleWarning(latest, serverTime) {
             const warning = document.getElementById("staleWarning");
-            const labels = Object.keys(latest);
+            const labels = Object.keys(latest).filter(l => l !== SELFTEST_LABEL);
             if (labels.length === 0) {
                 warning.classList.add("hidden");
                 return;
@@ -135,6 +154,33 @@
                 warning.classList.remove("hidden");
             } else {
                 warning.classList.add("hidden");
+            }
+        }
+
+        function updateEsp32Status(latest, serverTime) {
+            const dot = document.getElementById("esp32StatusDot");
+            const text = document.getElementById("esp32StatusText");
+            const selfTestText = document.getElementById("selfTestText");
+
+            const selftest = latest[SELFTEST_LABEL];
+            selfTestText.textContent = "Self-test: " + (selftest ? selftest.reading_time : "-");
+
+            const labels = Object.keys(latest).filter(l => l !== SELFTEST_LABEL);
+            if (labels.length === 0) {
+                dot.classList.remove("offline");
+                text.textContent = "ESP32: -";
+                return;
+            }
+            const latestTime = labels.reduce((max, l) => latest[l].reading_time > max ? latest[l].reading_time : max, latest[labels[0]].reading_time);
+            const latestDate = new Date(latestTime.replace(" ", "T"));
+            const referenceDate = serverTime ? new Date(serverTime.replace(" ", "T")) : new Date();
+            const ageMinutes = (referenceDate.getTime() - latestDate.getTime()) / 60000;
+            if (Number.isFinite(ageMinutes) && ageMinutes < 2) {
+                dot.classList.remove("offline");
+                text.textContent = "ESP32: Online";
+            } else {
+                dot.classList.add("offline");
+                text.textContent = "ESP32: Offline";
             }
         }
 
@@ -165,7 +211,7 @@
         }
 
         function renderChart(history) {
-            const labels = Object.keys(history);
+            const labels = Object.keys(history).filter(l => l !== SELFTEST_LABEL);
             renderCheckboxes(labels);
             const chart = document.getElementById("sensorChart");
             const empty = document.getElementById("chartEmpty");
@@ -390,9 +436,10 @@
                 if (!response.ok) throw new Error("HTTP " + response.status);
                 const result = await response.json();
                 if (!result.success) throw new Error(result.message || "API error");
-                renderCards(result.latest);
-                updateStaleWarning(result.latest, result.server_time);
                 lastHistory = result.history;
+                renderCards(result.latest, result.history);
+                updateStaleWarning(result.latest, result.server_time);
+                updateEsp32Status(result.latest, result.server_time);
                 renderChart(result.history);
                 statusText.textContent = "Server Online";
                 statusDot.classList.remove("offline");

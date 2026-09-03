@@ -43,6 +43,14 @@ h1 {
     color: #748096
 }
 
+.status-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px
+}
+
 .server-status {
     display: flex;
     align-items: center;
@@ -142,6 +150,18 @@ h1 {
     color: #7b879b;
     font-size: 13px;
     font-weight: 600
+}
+
+.metric-value.trend-up {
+    color: #3d7ee8
+}
+
+.metric-value.trend-down {
+    color: #e05252
+}
+
+.metric-value.trend-same {
+    color: #20b26b
 }
 
 .card-footer {

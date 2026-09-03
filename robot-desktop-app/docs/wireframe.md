@@ -1,6 +1,6 @@
 # Space Rover Desktop Teleoperation Cockpit - UI Wireframe
 
-## Screen Layout (1920x1080)
+## Screen Layout — Main View (Default)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -47,8 +47,176 @@
 │  │  KEYS: W/S=Forward/Back  A/D=Spin         │  │                            │
 │  │        IJKL=Gimbal  C=Center  Space=Stop   │  │                            │
 │  └────────────────────────────────────────────┘  │                            │
+│                                                  │                            │
+│                              ┌─────┬─────┐       │                            │
+│                              │ 💬  │ 🚗  │       │                            │
+│                              └─────┴─────┘       │                            │
 └──────────────────────────────────────────────────┴──────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  [Log] Click to expand                                            ▼ COLLAPSED  │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Screen Layout — AI Chat View (💬 Active)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              TOP BAR (Connection & Quick Controls)              │
+│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
+│  │  CAR IP:     │ │  CAM IP:     │ │   [Connect]    │ │ ● CAR ● CAM          │  │
+│  │  192.168.x.x │ │  192.168.x.x │ │   [Disconnect] │ │   ONLINE   ONLINE    │  │
+│  └──────────────┘ └──────────────┘ └────────────────┘ └──────────────────────┘  │
+│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
+│  │  Resolution: │ │  Orientation:│ │   [Snapshot]   │ │   [OTA Update]       │  │
+│  │  [640x480 ▼] │ │  [Flip H]   │ │      📷        │ │      ⚡              │  │
+│  └──────────────┘ └──────────────┘ └────────────────┘ └──────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────┬──────────────────────────────┐
+│                                                  │    AI CHAT PANEL            │
+│                                                  │  ┌────────────────────────┐ │
+│                                                  │  │ 💬 Gemini Chat         │ │
+│                                                  │  ├────────────────────────┤ │
+│                                                  │  │                        │ │
+│                                                  │  │  System: Ready to      │ │
+│                                                  │  │  analyze sensor data.  │ │
+│                                                  │  │                        │ │
+│                                                  │  │  You: Show me temp     │ │
+│                                                  │  │  chart                 │ │
+│                                                  │  │                        │ │
+│                                                  │  │  Gemini: Creating      │ │
+│                                                  │  │  temperature chart...  │ │
+│                                                  │  │                        │ │
+│                                                  │  ├────────────────────────┤ │
+│                                                  │  │ [Type a message... ] [Send]│
+│                                                  │  └────────────────────────┘ │
+│                                                  │  ┌────────────────────────┐ │
+│                                                  │  │ 🎯 GIMBAL CONTROL     │ │
+│                                                  │  │  Pan:   [====] 90°    │ │
+│                                                  │  │  Tilt:  [====] 90°    │ │
+│                                                  │  │  [C] Center Gimbal    │ │
+│                                                  │  └────────────────────────┘ │
+├──────────────────────────────────────────────────┤                            │
+│                    BOTTOM PANEL                  │                            │
+│  ┌────────────────────────────────────────────┐  │                            │
+│  │  SPEED: [============] 180 / 255          │  │                            │
+│  └────────────────────────────────────────────┘  │                            │
+│  ┌────────────────────────────────────────────┐  │                            │
+│  │  KEYS: W/S=Forward/Back  A/D=Spin         │  │                            │
+│  │        IJKL=Gimbal  C=Center  Space=Stop   │  │                            │
+│  └────────────────────────────────────────────┘  │                            │
+│                              ┌─────┬─────┐       │                            │
+│                              │ 💬  │ 🚗  │       │                            │
+│                              └─────┴─────┘       │                            │
+└──────────────────────────────────────────────────┴──────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  [Log] Click to expand                                            ▼ COLLAPSED  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Screen Layout — RC Car View (🚗 Active)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              TOP BAR (Connection & Quick Controls)              │
+│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
+│  │  CAR IP:     │ │  CAM IP:     │ │   [Connect]    │ │ ● CAR ● CAM          │  │
+│  │  192.168.x.x │ │  192.168.x.x │ │   [Disconnect] │ │   ONLINE   ONLINE    │  │
+│  └──────────────┘ └──────────────┘ └────────────────┘ └──────────────────────┘  │
+│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
+│  │  Resolution: │ │  Orientation:│ │   [Snapshot]   │ │   [OTA Update]       │  │
+│  │  [640x480 ▼] │ │  [Flip H]   │ │      📷        │ │      ⚡              │  │
+│  └──────────────┘ └──────────────┘ └────────────────┘ └──────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────┬──────────────────────────────┐
+│                                                  │    RC CAR CONTROL           │
+│                                                  │  ┌────────────────────────┐ │
+│                                                  │  │ 🚗 RC Car Control      │ │
+│                                                  │  ├────────────────────────┤ │
+│                                                  │  │   Status: Connected    │ │
+│                                                  │  │                        │ │
+│                                                  │  │      ┌─────┐          │ │
+│                                                  │  │      │  ▲  │          │ │
+│                                                  │  │   ┌──┼──┼──┼──┐       │ │
+│                                                  │  │   │ ◀ │STOP│▶ │       │ │
+│                                                  │  │   └──┼──┼──┼──┘       │ │
+│                                                  │  │      │  ▼  │          │ │
+│                                                  │  │      └─────┘          │ │
+│                                                  │  │                        │ │
+│                                                  │  │   ┌──────────────┐     │ │
+│                                                  │  │   │  LIVE VIDEO  │     │ │
+│                                                  │  │   │    FEED      │     │ │
+│                                                  │  │   │  (Camera)    │     │ │
+│                                                  │  │   └──────────────┘     │ │
+│                                                  │  │                        │ │
+│                                                  │  │   [Reset Camera]       │ │
+│                                                  │  │   Speed: 50%           │ │
+│                                                  │  └────────────────────────┘ │
+│                                                  │  ┌────────────────────────┐ │
+├──────────────────────────────────────────────────┤  │  🎯 GIMBAL CONTROL     │ │
+│                    BOTTOM PANEL                  │  │  Pan:   [====] 90°    │ │
+│  ┌────────────────────────────────────────────┐  │  │  Tilt:  [====] 90°    │ │
+│  │  SPEED: [============] 180 / 255          │  │  │  [C] Center Gimbal    │ │
+│  └────────────────────────────────────────────┘  │  └────────────────────────┘ │
+│  ┌────────────────────────────────────────────┐  │                            │
+│  │  KEYS: W/S=Forward/Back  A/D=Spin         │  │                            │
+│  │        IJKL=Gimbal  C=Center  Space=Stop   │  │                            │
+│  └────────────────────────────────────────────┘  │                            │
+│                              ┌─────┬─────┐       │                            │
+│                              │ 💬  │ 🚗  │       │                            │
+│                              └─────┴─────┘       │                            │
+└──────────────────────────────────────────────────┴──────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  [Log] Click to expand                                            ▼ COLLAPSED  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Floating Buttons & Panel Toggle Behavior
+
+### Button Position (Same as haru-app2)
+
+```
+                              ┌─────┬─────┐
+                              │ 💬  │ 🚗  │  ← Floating buttons
+                              └─────┴─────┘     (bottom-right, above log tab)
+```
+
+### Toggle Logic
+
+| State | 💬 Button | 🚗 Button | Main Content |
+|-------|-----------|-----------|--------------|
+| **Default** | OFF (💬) | OFF (🚗) | Video + Telemetry |
+| **AI Chat** | ON (✖) | OFF (🚗) | AI Chat Panel |
+| **RC Car** | OFF (💬) | ON (✖) | RC Car Control |
+
+- **Only one sub-panel can be active at a time**
+- Clicking the active button again returns to Default view
+- Clicking the other button switches directly to that panel
+
+### Panel Content
+
+**💬 AI Chat Panel:**
+- Chat history (scrollable)
+- Text input + Send button
+- Gemini responses with markdown rendering
+- `/chart` command support for custom charts
+
+**🚗 RC Car Control Panel:**
+- D-pad buttons (▲◀▶▼ + STOP)
+- Live video feed (smaller preview)
+- Reset Camera button
+- Speed percentage display
+- WASD keyboard control (when panel active)
 
 ---
 
@@ -69,7 +237,7 @@
 
 ---
 
-### 2. CENTER VIDEO VIEWPORT
+### 2. CENTER VIDEO VIEWPORT (Main View)
 
 | Element | Type | Function |
 |---------|------|----------|
@@ -80,7 +248,7 @@
 
 ---
 
-### 3. TELEMETRY SIDEBAR
+### 3. TELEMETRY SIDEBAR (Main View)
 
 | Element | Type | Function |
 |---------|------|----------|
@@ -97,13 +265,81 @@
 
 ---
 
-### 4. BOTTOM PANEL — Speed & Keys
+### 4. AI CHAT PANEL (💬 View)
+
+| Element | Type | Function |
+|---------|------|----------|
+| `Chat History` | QScrollArea | Scrollable message bubbles |
+| `Chat Input` | QTextEdit | Type messages (Tab autocomplete) |
+| `Send Button` | QPushButton | Send message to Gemini |
+| `Gimbal Control` | Panel | Always visible in sidebar |
+
+---
+
+### 5. RC CAR CONTROL PANEL (🚗 View)
+
+| Element | Type | Function |
+|---------|------|----------|
+| `D-Pad` | QGridLayout | ▲◀▶▼ directional buttons |
+| `STOP Button` | QPushButton | Emergency stop (center) |
+| `Video Preview` | QLabel | Smaller live camera feed |
+| `Reset Camera` | QPushButton | Reset camera gimbal |
+| `Speed Display` | QLabel | Current speed percentage |
+| `Gimbal Control` | Panel | Always visible in sidebar |
+
+---
+
+### 6. BOTTOM PANEL — Speed & Keys
 
 | Element | Type | Function |
 |---------|------|----------|
 | `Speed Slider` | Slider | Motor PWM power (80-255) |
 | `Speed Value` | Label | Current speed value |
 | `Keys Reference` | Label | Keyboard shortcuts reminder |
+
+---
+
+### 7. FLOATING BUTTONS
+
+| Element | Type | Function |
+|---------|------|----------|
+| `💬 AI Chat` | QPushButton | Toggle AI chat panel |
+| `🚗 RC Car` | QPushButton | Toggle RC car control panel |
+
+**Styling:**
+- Round buttons (50x50px)
+- 💬: Purple (`#9C27B0`)
+- 🚗: Blue (`#2196F3`)
+- Hover effect: Darker shade
+- Active state: Shows ✖ instead of emoji
+
+---
+
+### 8. LOG SCREEN — Collapsible Debug Panel
+
+| Element | Type | Function |
+|---------|------|----------|
+| `Log Toggle Button` | QPushButton | `[Log] Click to expand/collapse` |
+| `Log Display` | QTextEdit | Scrollable log output (read-only) |
+
+**Behavior:**
+- **Collapsed (Default):** Shows only the toggle button at the bottom
+- **Expanded:** Shows full log panel with colored messages
+- **Toggle:** Click button to switch between states
+
+**Log Message Format:**
+```
+[HH:MM:SS] CATEGORY | Message content
+```
+
+**Color Coding:**
+| Category | Color | Hex |
+|----------|-------|-----|
+| CONNECTED / OK | Green | `#69F0AE` |
+| WARNING | Orange | `#FF9800` |
+| ERROR / FAIL | Red | `#FF5252` |
+| DRIVE / GIMBAL / STOP | White | `#FFFFFF` |
+| SNAPSHOT / OTA | Cyan | `#00BCD4` |
 
 ---
 
@@ -233,6 +469,8 @@
 | Warning Alarm | Orange | `#FF9800` |
 | Text Primary | White | `#FFFFFF` |
 | Text Secondary | Light Gray | `#B0BEC5` |
+| AI Chat Button | Purple | `#9C27B0` |
+| RC Car Button | Blue | `#2196F3` |
 
 ---
 
@@ -241,6 +479,10 @@
 | Zone | Position | Size | Purpose |
 |------|----------|------|---------|
 | Top Bar | Top | 100% width × 80px | Connection, Camera, Tools |
-| Video Canvas | Center-Left | ~75% width × ~70% height | Live FPV feed |
+| Video Canvas | Center-Left | ~75% width × ~70% height | Live FPV feed (Main View) |
 | Telemetry Sidebar | Right | ~25% width × ~70% height | Gauges, Alarms, Gimbal |
+| AI Chat Panel | Right | ~25% width × ~70% height | Gemini Chat (💬 View) |
+| RC Car Panel | Right | ~25% width × ~70% height | D-pad + Video (🚗 View) |
 | Bottom Panel | Bottom | 100% width × 120px | Speed, Keys Reference |
+| Floating Buttons | Bottom-Right | 2 × 50x50px | Toggle AI/RC panels |
+| Log Screen | Very Bottom | 100% width × 150px (collapsed: 30px) | Debug logs |

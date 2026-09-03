@@ -652,6 +652,47 @@ ACK:RES:640:480:FAIL
 
 ---
 
+## Cloud API (App Perspective)
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/api/v1/telemetry` | Send sensor data to cloud |
+| `GET` | `/api/v1/rovers/{id}/latest` | Get latest reading (<30ms) |
+| `GET` | `/api/v1/rovers/{id}/readings` | Get last N records or time range |
+| `GET` | `/api/v1/rovers/{id}/summary` | Get aggregated statistics |
+| `GET` | `/api/v1/health` | Service health check |
+
+### Telemetry Payload (POST)
+
+```json
+{
+  "device_uid": "rover-001",
+  "recorded_at": "2026-09-03T10:00:00.123Z",
+  "temperature_c": 25.4,
+  "humidity_pct": 61.2,
+  "gas_ppm": 128.0,
+  "distance_cm": 34.5,
+  "auto_brake": false
+}
+```
+
+### Latest Reading (GET)
+
+```json
+{
+  "device_id": 1,
+  "recorded_at": "2026-09-03T10:00:00.123Z",
+  "age_seconds": 1.4,
+  "temperature_c": 25.4,
+  "humidity_pct": 61.2,
+  "gas_ppm": 128.0,
+  "distance_cm": 34.5,
+  "auto_brake": false
+}
+```
+
+---
+
 ## Color Scheme
 
 | Element | Color | Hex Code |

@@ -21,22 +21,18 @@ The application integrates high-speed manual driving controls, 2-axis precision 
    Command Out      │       │  Video & Sensors In
                     ▼       │
             ┌──────────────────────────┐
-            │   Desktop Receiver       │
-            │   (Thread A - Realtime)  │
+            │   Desktop App            │
+            │   (PyQt6 + QThreads)     │
             └───────┬──────────┬───────┘
                     │          │
                     ▼          ▼
-             [ Live UI ]   [ Local Queue (FIFO) ]
+             [ Live UI ]   [ HTTP POST ]
                             │
-                            │ Asynchronous Background Worker
                             ▼
                     ┌──────────────────────────┐
-                    │   Cloud Uploader         │
-                    │   (Thread B - Async)     │
-                    └───────┬──────────────────┘
-                            │ HTTPS (REST API)
-                            ▼
-                     [ Cloud Database ]
+                    │   Cloud Backend          │
+                    │   (Raspberry Pi 5)       │
+                    └──────────────────────────┘
 ```
 
 ### Thread Architecture
@@ -46,29 +42,19 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 | Main Thread | UI updates, event loop | PyQt6 |
 | Video Thread | Receive live video feed | UDP Port 5006 |
 | Command Thread | Send driving commands | UDP Port 5005 |
-| Telemetry Thread | Poll sensor data | HTTP GET |
+| Telemetry Thread | Send sensor data to cloud | HTTP POST |
 | Gimbal Thread | Send pan/tilt commands | UDP Port 5005 |
 | AI Chat Thread | Gemini API calls | HTTPS |
 
 ---
 
-## 3. Hardware Microcontroller Architecture
-
-| Microcontroller | Role | Description |
-|-----------------|------|-------------|
-| `esp32_car` | Motion Control | Manages rover motion and motor driving |
-| `esp32_cam` | Video Feed | Handles FPV video feed capture and streaming |
-| `esp32_monitor` | Sensors | Base station sensor node for environment data |
-
----
-
-## 4. Communication Protocol
+## 3. Communication Protocol
 
 | Direction | Protocol | Port | Purpose |
 |-----------|----------|------|---------|
 | PC → ESP32 | UDP | 5005 | Low-latency control commands |
 | ESP32 → PC | UDP | 5006 | Real-time MJPEG video + sensors |
-| PC → Cloud | HTTPS | REST API | Historical data storage |
+| PC → Cloud | HTTP | REST API | Historical data storage |
 
 ### UDP Commands (Port 5005)
 
@@ -96,6 +82,106 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 
 ---
 
+## 4. Cloud API Endpoints
+
+**Base Path:** `/api/v1`
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/api/v1/telemetry` | Send sensor data to cloud |
+| `GET` | `/api/v1/rovers/{id}/latest` | Get latest reading (<30ms) |
+| `GET` | `/api/v1/rovers/{id}/readings` | Get last N records or time range |
+| `GET` | `/api/v1/rovers/{id}/summary` | Get aggregated statistics |
+| `GET` | `/api/v1/rovers/{id}/export` | Export CSV or JSON |
+| `GET` | `/api/v1/health` | Service health check |
+
+### POST /api/v1/telemetry
+
+**Request:**
+```json
+{
+  "device_uid": "rover-001",
+  "recorded_at": "2026-09-03T10:00:00.123Z",
+  "temperature_c": 25.4,
+  "humidity_pct": 61.2,
+  "gas_ppm": 128.0,
+  "distance_cm": 34.5,
+  "auto_brake": false
+}
+```
+
+**Response 201:**
+```json
+{
+  "success": true,
+  "device_id": 1,
+  "recorded_at": "2026-09-03T10:00:00.123Z",
+  "duplicate": false
+}
+```
+
+### GET /api/v1/rovers/{id}/latest
+
+**Response (<30ms target):**
+```json
+{
+  "device_id": 1,
+  "recorded_at": "2026-09-03T10:00:00.123Z",
+  "age_seconds": 1.4,
+  "temperature_c": 25.4,
+  "humidity_pct": 61.2,
+  "gas_ppm": 128.0,
+  "distance_cm": 34.5,
+  "auto_brake": false
+}
+```
+
+### GET /api/v1/rovers/{id}/readings
+
+**Parameters:** `limit`, `start`, `end`, `order`
+
+**Response:**
+```json
+{
+  "device_id": 1,
+  "count": 2,
+  "readings": [
+    { "recorded_at": "...", "temperature_c": 25.3, "humidity_pct": 61.0, "gas_ppm": 127.0, "distance_cm": 40.2, "auto_brake": false }
+  ]
+}
+```
+
+### GET /api/v1/rovers/{id}/summary
+
+**Parameters:** `granularity` (hour/day), `start`, `end`
+
+**Response:**
+```json
+{
+  "device_id": 1,
+  "granularity": "day",
+  "buckets": [
+    {
+      "bucket_start": "2026-09-03T00:00:00Z",
+      "sample_count": 17280,
+      "temperature_c": { "min": 18.2, "avg": 24.1, "max": 31.7 },
+      "humidity_pct": { "min": 40.1, "avg": 58.9, "max": 72.4 },
+      "gas_ppm": { "min": 95.0, "avg": 130.2, "max": 402.0 },
+      "distance_cm": { "min": 4.0, "avg": 88.3, "max": 400.0 },
+      "obstacle_events": 12
+    }
+  ]
+}
+```
+
+### GET /api/v1/health
+
+```json
+{ "status": "ok", "database": "ok", "api": "ok", "uptime_seconds": 84213 }
+```
+
+---
+
 ## 5. Feature Requirements
 
 ### 5.1 Connection Management (Top Bar)
@@ -112,7 +198,7 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 
 - Live video feed at 25–30 FPS
 - Fixed center crosshair for aiming
-- Real-time diagnostics: FPS and Ping display
+- Real-time diagnostics: FPS, Ping, and Obstacle Distance overlay
 
 ### 5.3 Rover Teleoperation (Keyboard)
 
@@ -139,7 +225,7 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 
 - Temperature (°C) with color-coded ranges
 - Humidity (% RH)
-- Air Quality / Gas (ppm)
+- Gas Concentration (ppm)
 - Obstacle Distance (cm)
 - Auto-brake warning banner when obstacle < threshold
 - Configurable safety threshold slider (5cm–60cm)
@@ -149,76 +235,14 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 
 - Floating 💬 button on right side (overlapping telemetry sidebar)
 - When active:
-  - Left side: Historical graphs (temperature, humidity, air quality)
+  - Left side: Historical graphs (temperature, humidity, gas)
   - Right side: Gemini AI chat panel
 - Chart customization via `/chart` command or Gemini chat
 - Drag & drop to rearrange charts
 
 ---
 
-## 6. Screen Layout
-
-### Main View (Default)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         TOP BAR                                 │
-├─────────────────────────────────────┬───────────────────────────┤
-│                                     │   TELEMETRY SIDEBAR       │
-│         VIDEO VIEWPORT              │   ┌─────────────────┐    │
-│         (Live Camera Feed)          │   │ Temperature     │    │
-│                                     │   │ Humidity        │    │
-│              ╋                      │   │ Air Quality     │    │
-│         (Crosshair)                 │   │ Obstacle        │    │
-│                                     │   │ Safety Alarm    │    │
-│    FPS: 30.0 | Ping: 5ms           │   │     ┌───┐       │    │
-│                                     │   │     │💬 │       │    │
-├─────────────────────────────────────┤   │     └───┘       │    │
-│  SPEED: [===========] 180/255      │   │ Gimbal Control  │    │
-│  KEYS: WASD=Drive IJKL=Gimbal      │   └─────────────────┘    │
-└─────────────────────────────────────┴───────────────────────────┘
-┌─────────────────────────────────────────────────────────────────┐
-│  [Log] Click to expand                                          │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### AI Chat View (💬 Active)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         TOP BAR                                 │
-├─────────────────────────────────────┬───────────────────────────┤
-│                                     │   AI CHAT PANEL           │
-│      HISTORICAL GRAPHS              │   ┌─────────────────┐    │
-│   ┌─────────────────────────────┐   │   │ 💬 Gemini Chat  │    │
-│   │ Temperature & Humidity      │   │   │                 │    │
-│   │ ┌───────────────────────┐   │   │   │ You: Show temp  │    │
-│   │ │ 30°┤    ╭─╮           │   │   │   │ Gemini: Chart   │    │
-│   │ │    │  ╭─╯ ╰─╮  ╭──╮  │   │   │   │ created...      │    │
-│   │ │ 25°┤─╯      ╰─╯  ╰──│   │   │   │                 │    │
-│   │ └───────────────────────┘   │   │   │ [Input] [Send]  │    │
-│   └─────────────────────────────┘   │   │     ┌───┐       │    │
-│   ┌─────────────────────────────┐   │   │     │✖  │       │    │
-│   │ Air Quality                 │   │   │     └───┘       │    │
-│   │ ┌───────────────────────┐   │   │   │ Gimbal Control  │    │
-│   │ │ 500┤    ╭──╮          │   │   │   └─────────────────┘    │
-│   │ │    │  ╭─╯  ╰─╮  ╭───╮│   │   │                           │
-│   │ │ 400┤─╯       ╰─╯   ╰│   │   │                           │
-│   │ └───────────────────────┘   │   │                           │
-│   └─────────────────────────────┘   │                           │
-│   [+ Add Chart] [Reset Layout]      │                           │
-├─────────────────────────────────────┤                           │
-│  SPEED: [===========] 180/255      │                           │
-│  KEYS: WASD=Drive IJKL=Gimbal      │                           │
-└─────────────────────────────────────┴───────────────────────────┘
-┌─────────────────────────────────────────────────────────────────┐
-│  [Log] Click to expand                                          │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 7. Safety Features
+## 6. Safety Features
 
 ### Rover-Side Failsafe (HW-008)
 
@@ -241,7 +265,7 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 
 ---
 
-## 8. OTA Firmware Updates
+## 7. OTA Firmware Updates
 
 - Central OTA Hub: `http://rpi5.local/ota/`
 - Supports all three microcontrollers
@@ -258,36 +282,7 @@ Content-Type: multipart/form-data
 
 ---
 
-## 9. Sensor Data Format
-
-### GET Response
-
-```json
-{
-  "success": true,
-  "server_time": "2026-09-03 12:00:00",
-  "latest": {
-    "temperature": {"data": "28.5", "reading_time": "..."},
-    "humidity": {"data": "65", "reading_time": "..."},
-    "co2": {"data": "450", "reading_time": "..."}
-  },
-  "history": {
-    "temperature": [{"data": "28.5", "reading_time": "..."}, ...]
-  }
-}
-```
-
-### Sensor Labels
-
-| Group | Sensors |
-|-------|---------|
-| Air Quality | `co2`, `pm1.0`, `pm2.5`, `pm10` |
-| Environment | `temperature`, `humidity`, `pressure` |
-| Other | `gas`, `battery` |
-
----
-
-## 10. File Structure
+## 8. File Structure
 
 ```
 robot-desktop-app/
@@ -300,6 +295,7 @@ robot-desktop-app/
 ├── ota.py            # Firmware upload
 ├── ai_chat.py        # Gemini AI chat interface
 ├── charts.py         # Historical graph widgets
+├── cloud_api.py      # Cloud backend API client
 ├── worker.py         # Background QThread workers
 ├── config.py         # Config load/save
 ├── panels.py         # UI component generators
@@ -308,7 +304,7 @@ robot-desktop-app/
 
 ---
 
-## 11. Installation
+## 9. Installation
 
 ```bash
 pip install PyQt6 requests matplotlib
@@ -316,7 +312,7 @@ pip install PyQt6 requests matplotlib
 
 ---
 
-## 12. Usage
+## 10. Usage
 
 ```bash
 python main.py
@@ -343,9 +339,9 @@ python main.py
 ### Chart Commands
 
 ```
-/chart temperature humidity -n -m "Environment"
-/chart co2 gas -d
-/chart pm -n
+/chart temperature_c humidity_pct -n -m "Environment"
+/chart gas_ppm distance_cm -d
+/chart temperature_c -n
 ```
 
 | Flag | Description |
@@ -356,7 +352,7 @@ python main.py
 
 ---
 
-## 13. Configuration
+## 11. Configuration
 
 ### Config File (config.json)
 
@@ -364,7 +360,8 @@ python main.py
 {
   "car_ip": "192.168.1.100",
   "cam_ip": "192.168.1.101",
-  "api_url": "https://example.com/api/get-data.php",
+  "cloud_api_url": "http://rpi5.local/api/v1",
+  "device_uid": "rover-001",
   "gemini_api_key": "",
   "center_charts": {},
   "custom_charts": {},
@@ -374,19 +371,19 @@ python main.py
 
 ---
 
-## 14. Development Checklist
+## 12. Development Checklist
 
 - [ ] **Phase 1:** UI wireframes & layout mockups
 - [ ] **Phase 2:** Keyboard state machine mapping
 - [ ] **Phase 3:** Multi-threaded architecture diagram
 - [ ] **Phase 4:** Desktop application prototype
-- [ ] **Phase 5:** API integration with ESP32
+- [ ] **Phase 5:** Cloud API integration
 - [ ] **Phase 6:** Safety testing (HW-008 compliance)
 - [ ] **Phase 7:** End-to-end integration testing
 
 ---
 
-## 15. User Stories
+## 13. User Stories
 
 | Persona | Need | Feature |
 |---------|------|---------|
@@ -394,5 +391,6 @@ python main.py
 | Rover Pilot | Inspect surroundings without turning | IJKL gimbal |
 | Rover Pilot | Avoid obstacles due to lag | Low-latency FPV video |
 | Safety Officer | Prevent collisions | Obstacle alarm + auto-brake |
+| Safety Officer | Monitor environment | Real-time telemetry |
 | Field Technician | Record discoveries | Snapshot with timestamp |
 | Field Technician | Upgrade firmware wirelessly | OTA update |

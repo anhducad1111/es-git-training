@@ -801,17 +801,7 @@ python main.py
 - [ ] **Phase 6:** Safety testing (HW-008 compliance)
 - [ ] **Phase 7:** End-to-end integration testing
 
----
 
-## 17. Questions for Duke
-
-1. **Video feed source:** Does video come directly from ESP32-CAM via UDP, or through the cloud gateway?
-2. **Telemetry relay:** Should the desktop app poll ESP32 and forward to cloud, or does ESP32 send directly to cloud?
-3. **Device UID:** How should the device identifier be configured?
-4. **Gimbal limits:** What are the valid pan/tilt angle ranges?
-5. **Speed slider:** Should the slider allow values below 80 for precision crawling?
-6. **AI model:** Which Gemini model version should be used?
-7. **Graph refresh:** How often should historical graphs poll the cloud API?
 
 ---
 

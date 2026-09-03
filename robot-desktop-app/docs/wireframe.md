@@ -38,19 +38,17 @@
 │         └──────────────────────────┘             │  │  AUTO-BRAKE: [ON]      │ │
 │                                                  │  │  Threshold: [====] 30cm│ │
 │                                                  │  └────────────────────────┘ │
-├──────────────────────────────────────────────────┤  ┌────────────────────────┐ │
-│                    BOTTOM PANEL                  │  │  🎯 GIMBAL CONTROL     │ │
-│  ┌────────────────────────────────────────────┐  │  │  Pan:   [====] 90°    │ │
-│  │  SPEED: [============] 180 / 255          │  │  │  Tilt:  [====] 90°    │ │
-│  └────────────────────────────────────────────┘  │  │  [C] Center Gimbal    │ │
-│  ┌────────────────────────────────────────────┐  │  └────────────────────────┘ │
-│  │  KEYS: W/S=Forward/Back  A/D=Spin         │  │                            │
+│                                                  │  ┌─────┐                   │
+│                                                  │  │ 💬  │ ← FLOATING BUTTON │
+├──────────────────────────────────────────────────┤  └─────┘                   │
+│                    BOTTOM PANEL                  │  ┌────────────────────────┐ │
+│  ┌────────────────────────────────────────────┐  │  │  🎯 GIMBAL CONTROL     │ │
+│  │  SPEED: [============] 180 / 255          │  │  │  Pan:   [====] 90°    │ │
+│  └────────────────────────────────────────────┘  │  │  Tilt:  [====] 90°    │ │
+│  ┌────────────────────────────────────────────┐  │  │  [C] Center Gimbal    │ │
+│  │  KEYS: W/S=Forward/Back  A/D=Spin         │  │  └────────────────────────┘ │
 │  │        IJKL=Gimbal  C=Center  Space=Stop   │  │                            │
 │  └────────────────────────────────────────────┘  │                            │
-│                                                  │                            │
-│                              ┌─────┬─────┐       │                            │
-│                              │ 💬  │ 🚗  │       │                            │
-│                              └─────┴─────┘       │                            │
 └──────────────────────────────────────────────────┴──────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -80,25 +78,36 @@
 │                                                  │  ┌────────────────────────┐ │
 │                                                  │  │ 💬 Gemini Chat         │ │
 │                                                  │  ├────────────────────────┤ │
-│                                                  │  │                        │ │
-│                                                  │  │  System: Ready to      │ │
+│             HISTORICAL GRAPHS                     │  │                        │ │
+│             (Drag & Drop to Customize)            │  │  System: Ready to      │ │
 │                                                  │  │  analyze sensor data.  │ │
-│                                                  │  │                        │ │
-│                                                  │  │  You: Show me temp     │ │
-│                                                  │  │  chart                 │ │
-│                                                  │  │                        │ │
-│                                                  │  │  Gemini: Creating      │ │
-│                                                  │  │  temperature chart...  │ │
-│                                                  │  │                        │ │
-│                                                  │  ├────────────────────────┤ │
-│                                                  │  │ [Type a message... ] [Send]│
-│                                                  │  └────────────────────────┘ │
-│                                                  │  ┌────────────────────────┐ │
-│                                                  │  │ 🎯 GIMBAL CONTROL     │ │
-│                                                  │  │  Pan:   [====] 90°    │ │
-│                                                  │  │  Tilt:  [====] 90°    │ │
-│                                                  │  │  [C] Center Gimbal    │ │
-│                                                  │  └────────────────────────┘ │
+│  ┌──────────────────────────────────────────┐    │  │                        │ │
+│  │  📊 Temperature & Humidity               │    │  │  You: Show me temp     │ │
+│  │  ┌──────────────────────────────────┐    │    │  │  chart                 │ │
+│  │  │  30°┤      ╭─╮                   │    │    │  │                        │ │
+│  │  │     │    ╭─╯ ╰─╮    ╭──╮        │    │    │  │  Gemini: Creating      │ │
+│  │  │  25°┤───╯       ╰──╯  ╰──       │    │    │  │  temperature chart...  │ │
+│  │  │     │                            │    │    │  │                        │ │
+│  │  │  20°┤                            │    │    │  ├────────────────────────┤ │
+│  │  │     └────────────────────────────┘    │    │  │ [Type a message... ] [Send]│
+│  │  │      12:00  12:05  12:10  12:15      │    │  └────────────────────────┘ │
+│  │  └──────────────────────────────────┘    │    │  ┌─────┐                   │
+│  └──────────────────────────────────────────┘    │  │ ✖  │ ← FLOATING BUTTON  │
+│                                                  │  └─────┘   (active)        │
+│  ┌──────────────────────────────────────────┐    │  ┌────────────────────────┐ │
+│  │  📊 Air Quality (CO2, PM2.5)            │    │  │  🎯 GIMBAL CONTROL     │ │
+│  │  ┌──────────────────────────────────┐    │    │  │  Pan:   [====] 90°    │ │
+│  │  │  500┤      ╭──╮                  │    │    │  │  Tilt:  [====] 90°    │ │
+│  │  │     │    ╭─╯  ╰─╮  ╭───╮        │    │    │  │  [C] Center Gimbal    │ │
+│  │  │  400┤───╯        ╰─╯   ╰──      │    │    │  └────────────────────────┘ │
+│  │  │     │                            │    │    │                            │
+│  │  │  300┤                            │    │    │                            │
+│  │  │     └────────────────────────────┘    │    │                            │
+│  │  │      12:00  12:05  12:10  12:15      │    │                            │
+│  │  └──────────────────────────────────┘    │    │                            │
+│  └──────────────────────────────────────────┘    │                            │
+│                                                  │                            │
+│  [+ Add Chart]  [Reset Layout]                  │                            │
 ├──────────────────────────────────────────────────┤                            │
 │                    BOTTOM PANEL                  │                            │
 │  ┌────────────────────────────────────────────┐  │                            │
@@ -108,9 +117,6 @@
 │  │  KEYS: W/S=Forward/Back  A/D=Spin         │  │                            │
 │  │        IJKL=Gimbal  C=Center  Space=Stop   │  │                            │
 │  └────────────────────────────────────────────┘  │                            │
-│                              ┌─────┬─────┐       │                            │
-│                              │ 💬  │ 🚗  │       │                            │
-│                              └─────┴─────┘       │                            │
 └──────────────────────────────────────────────────┴──────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -120,103 +126,78 @@
 
 ---
 
-## Screen Layout — RC Car View (🚗 Active)
+## Chart Customization (Like haru-app2)
 
+### Default Charts (Always Visible)
+
+| Chart | Sensors | Description |
+|-------|---------|-------------|
+| Temperature & Humidity | `temperature`, `humidity` | Dual-axis line chart |
+| Air Quality | `co2`, `pm1.0`, `pm2.5`, `pm10` | Multi-line chart |
+
+### Custom Charts (User Created via Gemini or /chart command)
+
+**Via Gemini Chat:**
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              TOP BAR (Connection & Quick Controls)              │
-│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
-│  │  CAR IP:     │ │  CAM IP:     │ │   [Connect]    │ │ ● CAR ● CAM          │  │
-│  │  192.168.x.x │ │  192.168.x.x │ │   [Disconnect] │ │   ONLINE   ONLINE    │  │
-│  └──────────────┘ └──────────────┘ └────────────────┘ └──────────────────────┘  │
-│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌──────────────────────┐  │
-│  │  Resolution: │ │  Orientation:│ │   [Snapshot]   │ │   [OTA Update]       │  │
-│  │  [640x480 ▼] │ │  [Flip H]   │ │      📷        │ │      ⚡              │  │
-│  └──────────────┘ └──────────────┘ └────────────────┘ └──────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────┬──────────────────────────────┐
-│                                                  │    RC CAR CONTROL           │
-│                                                  │  ┌────────────────────────┐ │
-│                                                  │  │ 🚗 RC Car Control      │ │
-│                                                  │  ├────────────────────────┤ │
-│                                                  │  │   Status: Connected    │ │
-│                                                  │  │                        │ │
-│                                                  │  │      ┌─────┐          │ │
-│                                                  │  │      │  ▲  │          │ │
-│                                                  │  │   ┌──┼──┼──┼──┐       │ │
-│                                                  │  │   │ ◀ │STOP│▶ │       │ │
-│                                                  │  │   └──┼──┼──┼──┘       │ │
-│                                                  │  │      │  ▼  │          │ │
-│                                                  │  │      └─────┘          │ │
-│                                                  │  │                        │ │
-│                                                  │  │   ┌──────────────┐     │ │
-│                                                  │  │   │  LIVE VIDEO  │     │ │
-│                                                  │  │   │    FEED      │     │ │
-│                                                  │  │   │  (Camera)    │     │ │
-│                                                  │  │   └──────────────┘     │ │
-│                                                  │  │                        │ │
-│                                                  │  │   [Reset Camera]       │ │
-│                                                  │  │   Speed: 50%           │ │
-│                                                  │  └────────────────────────┘ │
-│                                                  │  ┌────────────────────────┐ │
-├──────────────────────────────────────────────────┤  │  🎯 GIMBAL CONTROL     │ │
-│                    BOTTOM PANEL                  │  │  Pan:   [====] 90°    │ │
-│  ┌────────────────────────────────────────────┐  │  │  Tilt:  [====] 90°    │ │
-│  │  SPEED: [============] 180 / 255          │  │  │  [C] Center Gimbal    │ │
-│  └────────────────────────────────────────────┘  │  └────────────────────────┘ │
-│  ┌────────────────────────────────────────────┐  │                            │
-│  │  KEYS: W/S=Forward/Back  A/D=Spin         │  │                            │
-│  │        IJKL=Gimbal  C=Center  Space=Stop   │  │                            │
-│  └────────────────────────────────────────────┘  │                            │
-│                              ┌─────┬─────┐       │                            │
-│                              │ 💬  │ 🚗  │       │                            │
-│                              └─────┴─────┘       │                            │
-└──────────────────────────────────────────────────┴──────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│  [Log] Click to expand                                            ▼ COLLAPSED  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+You: Show me gas and battery on one chart
+Gemini: Creating custom chart...
+→ New chart appears with gas + battery lines
 ```
+
+**Via /chart Command:**
+```
+/chart temperature humidity -n -m "My Environment Chart"
+/chart co2 gas -d
+/chart pm -n
+```
+
+### Chart Commands
+
+| Command | Description |
+|---------|-------------|
+| `/chart {sensors}` | Create chart with specified sensors |
+| `-n` | Normalize values (Min-Max scaling to 0-1) |
+| `-d` | Separate into individual charts |
+| `-m {name}` | Name the chart |
+
+### Chart Features
+
+- **Drag & Drop:** Drag charts to rearrange
+- **Delete:** Right-click → Remove chart
+- **Export:** Right-click → Save as PNG
+- **Real-time:** Updates every 5 seconds with new data
 
 ---
 
-## Floating Buttons & Panel Toggle Behavior
+## Floating Button & Panel Toggle Behavior
 
-### Button Position (Same as haru-app2)
+### Button Position (Right side, overlapping telemetry sidebar)
 
 ```
-                              ┌─────┬─────┐
-                              │ 💬  │ 🚗  │  ← Floating buttons
-                              └─────┴─────┘     (bottom-right, above log tab)
+    ┌──────────────────────────────┐
+    │    TELEMETRY SIDEBAR        │
+    │  ┌────────────────────────┐ │
+    │  │  🌡 TEMPERATURE        │ │
+    │  └────────────────────────┘ │
+    │  ┌─────┐                   │
+    │  │ 💬  │  ← FLOATING BUTTON
+    │  └─────┘    (overlapping sidebar)
+    │  ┌────────────────────────┐ │
+    │  │  🎯 GIMBAL CONTROL     │ │
+    │  └────────────────────────┘ │
+    └──────────────────────────────┘
 ```
 
 ### Toggle Logic
 
-| State | 💬 Button | 🚗 Button | Main Content |
-|-------|-----------|-----------|--------------|
-| **Default** | OFF (💬) | OFF (🚗) | Video + Telemetry |
-| **AI Chat** | ON (✖) | OFF (🚗) | AI Chat Panel |
-| **RC Car** | OFF (💬) | ON (✖) | RC Car Control |
+| State | 💬 Button | Left Side | Right Side |
+|-------|-----------|-----------|------------|
+| **Default** | OFF (💬) | Video Camera | Telemetry |
+| **AI Chat** | ON (✖) | Historical Graphs | AI Chat Panel |
 
-- **Only one sub-panel can be active at a time**
-- Clicking the active button again returns to Default view
-- Clicking the other button switches directly to that panel
-
-### Panel Content
-
-**💬 AI Chat Panel:**
-- Chat history (scrollable)
-- Text input + Send button
-- Gemini responses with markdown rendering
-- `/chart` command support for custom charts
-
-**🚗 RC Car Control Panel:**
-- D-pad buttons (▲◀▶▼ + STOP)
-- Live video feed (smaller preview)
-- Reset Camera button
-- Speed percentage display
-- WASD keyboard control (when panel active)
+- Click 💬 to open AI Chat view
+- Click ✖ to close and return to Default view
+- Floating button always stays in same position
 
 ---
 
@@ -248,7 +229,25 @@
 
 ---
 
-### 3. TELEMETRY SIDEBAR (Main View)
+### 3. HISTORICAL GRAPHS (AI Chat View - Left Side)
+
+| Element | Type | Function |
+|---------|------|----------|
+| `Chart Widget` | Matplotlib Canvas | Real-time line charts |
+| `Add Chart Button` | QPushButton | Create new custom chart |
+| `Reset Layout Button` | QPushButton | Reset to default charts |
+
+**Default Charts:**
+- Temperature & Humidity (dual-axis)
+- Air Quality (CO2, PM1.0, PM2.5, PM10)
+
+**Custom Charts:**
+- Created via Gemini chat or `/chart` command
+- Draggable, removable, exportable
+
+---
+
+### 4. TELEMETRY SIDEBAR (Main View)
 
 | Element | Type | Function |
 |---------|------|----------|
@@ -265,26 +264,13 @@
 
 ---
 
-### 4. AI CHAT PANEL (💬 View)
+### 5. AI CHAT PANEL (💬 View - Right Side)
 
 | Element | Type | Function |
 |---------|------|----------|
 | `Chat History` | QScrollArea | Scrollable message bubbles |
 | `Chat Input` | QTextEdit | Type messages (Tab autocomplete) |
 | `Send Button` | QPushButton | Send message to Gemini |
-| `Gimbal Control` | Panel | Always visible in sidebar |
-
----
-
-### 5. RC CAR CONTROL PANEL (🚗 View)
-
-| Element | Type | Function |
-|---------|------|----------|
-| `D-Pad` | QGridLayout | ▲◀▶▼ directional buttons |
-| `STOP Button` | QPushButton | Emergency stop (center) |
-| `Video Preview` | QLabel | Smaller live camera feed |
-| `Reset Camera` | QPushButton | Reset camera gimbal |
-| `Speed Display` | QLabel | Current speed percentage |
 | `Gimbal Control` | Panel | Always visible in sidebar |
 
 ---
@@ -299,19 +285,20 @@
 
 ---
 
-### 7. FLOATING BUTTONS
+### 7. FLOATING BUTTON (Right side, overlapping sidebar)
 
 | Element | Type | Function |
 |---------|------|----------|
-| `💬 AI Chat` | QPushButton | Toggle AI chat panel |
-| `🚗 RC Car` | QPushButton | Toggle RC car control panel |
+| `💬 AI Chat` | QPushButton | Toggle AI chat + graphs view |
+
+**Position:** Right side, overlapping telemetry sidebar (between Safety Alarm and Gimbal Control)
 
 **Styling:**
-- Round buttons (50x50px)
-- 💬: Purple (`#9C27B0`)
-- 🚗: Blue (`#2196F3`)
+- Round button (50x50px)
+- Purple (`#9C27B0`)
 - Hover effect: Darker shade
-- Active state: Shows ✖ instead of emoji
+- Active state: Shows ✖ instead of 💬
+- Always visible, always in same position
 
 ---
 
@@ -429,7 +416,7 @@
 
 ---
 
-## UDP Command Protocol (Updated)
+## UDP Command Protocol
 
 ### Commands (PC → ESP32, Port 5005)
 
@@ -470,7 +457,6 @@
 | Text Primary | White | `#FFFFFF` |
 | Text Secondary | Light Gray | `#B0BEC5` |
 | AI Chat Button | Purple | `#9C27B0` |
-| RC Car Button | Blue | `#2196F3` |
 
 ---
 
@@ -480,9 +466,9 @@
 |------|----------|------|---------|
 | Top Bar | Top | 100% width × 80px | Connection, Camera, Tools |
 | Video Canvas | Center-Left | ~75% width × ~70% height | Live FPV feed (Main View) |
+| Historical Graphs | Center-Left | ~75% width × ~70% height | Charts (💬 View) |
 | Telemetry Sidebar | Right | ~25% width × ~70% height | Gauges, Alarms, Gimbal |
 | AI Chat Panel | Right | ~25% width × ~70% height | Gemini Chat (💬 View) |
-| RC Car Panel | Right | ~25% width × ~70% height | D-pad + Video (🚗 View) |
 | Bottom Panel | Bottom | 100% width × 120px | Speed, Keys Reference |
-| Floating Buttons | Bottom-Right | 2 × 50x50px | Toggle AI/RC panels |
+| Floating Button | Right (overlapping sidebar) | 50x50px | Toggle AI Chat + Graphs |
 | Log Screen | Very Bottom | 100% width × 150px (collapsed: 30px) | Debug logs |

@@ -1,12 +1,18 @@
-#  Rover - Desktop Controller & ESP32 Integration Guide
+# Space Rover Desktop Teleoperation Cockpit
 
-A real-time IoT rover monitoring and control system featuring a PyQt6 Windows desktop controller, an ESP32-based hardware rover, and a cloud-backed data pipeline.
+A real-time IoT rover teleoperation system featuring a PyQt6 Windows desktop controller, ESP32-based hardware rover, and cloud-backed data pipeline.
 
 ---
 
-## 1. System Architecture Overview
+## 1. Executive Summary
 
-To ensure that high-latency cloud operations or network jitter never compromise the safety and real-time responsiveness of the physical rover, the desktop application separates operations into **two independent execution paths (decoupled via an asynchronous FIFO queue)**.
+The **Space Rover Desktop Teleoperation Cockpit** is the primary command and control hub used by human operators to remotely pilot the Space Rover in real-time.
+
+The application integrates high-speed manual driving controls, 2-axis precision camera gimbal steering, zero-lag first-person view (FPV) video streaming, and real-time environmental telemetry feeds into a single, cohesive user interface.
+
+---
+
+## 2. System Architecture
 
 ```text
                   [ ESP32 Rover ]
@@ -31,130 +37,224 @@ To ensure that high-latency cloud operations or network jitter never compromise 
                             │ HTTPS (REST API)
                             ▼
                      [ Cloud Database ]
-
 ```
 
-### Path A: Real-Time Control & Display (Thread A / High Priority)
+### Thread Architecture
 
-* **Responsibility:** Handles high-frequency tasks such as receiving live video feeds and sensor data from the ESP32, updating the desktop GUI instantly, and transmitting driving commands.
-* **Characteristics:** Completely non-blocking. It is designed never to wait for external network responses (like cloud APIs), ensuring smooth 10–30Hz command-and-response loops.
-
-### Path B: Cloud Upload Pipeline (Thread B / Background)
-
-* **Responsibility:** Ingests sensor data received by Thread A, buffers it into a **thread-safe FIFO (First-In, First-Out) Queue**, and runs a background worker to push data securely to the cloud backend.
-* **Characteristics:** If the cloud API or internet connection slows down or temporarily drops (e.g., a 500ms delay), data is safely queued in memory. The rover's live driving and video rendering remain entirely unaffected.
-
----
-
-## 2. Hardware Microcontroller Architecture
-
-The physical deployment consists of **three distinct microcontrollers** handling specialized roles within the local Wi-Fi network:
-
-* `esp32_car`: Manages rover motion and motor driving.
-* `esp32_cam`: Handles FPV video feed capture and streaming.
-* `esp32_monitor`: Acts as the base station sensor node for environment data acquisition.
+| Thread | Responsibility | Protocol |
+|--------|----------------|----------|
+| Main Thread | UI updates, event loop | PyQt6 |
+| Video Thread | Receive live video feed | UDP Port 5006 |
+| Command Thread | Send driving commands | UDP Port 5005 |
+| Telemetry Thread | Poll sensor data | HTTP GET |
+| Gimbal Thread | Send pan/tilt commands | UDP Port 5005 |
+| AI Chat Thread | Gemini API calls | HTTPS |
 
 ---
 
-## 3. Communication Protocol & Network Design
+## 3. Hardware Microcontroller Architecture
 
-The system carefully selects networking protocols based on performance requirements. (Note: Radar telemetry has been intentionally omitted to focus strictly on robust manual driving and video streaming).
-
-| Direction & Target | Protocol | Port / Method | Purpose & Rationale |
-| --- | --- | --- | --- |
-| **PC -> ESP32 Rover** | **UDP** | Port `5005` | Low-latency control commands (`FORWARD`, `BACKWARD`, `LEFT`, `RIGHT`, `STOP`, `CAMERA:*`). |
-| **ESP32 Rover -> PC** | **UDP** | Port `5006` | Real-time MJPEG video stream and environment sensors. Avoids TCP head-of-line blocking so dropped frames never freeze the display. |
-| **PC -> Cloud Backend** | **HTTPS** | REST API (JSON) | Historical data storage and analysis logging, handled asynchronously via the FIFO queue. |
+| Microcontroller | Role | Description |
+|-----------------|------|-------------|
+| `esp32_car` | Motion Control | Manages rover motion and motor driving |
+| `esp32_cam` | Video Feed | Handles FPV video feed capture and streaming |
+| `esp32_monitor` | Sensors | Base station sensor node for environment data |
 
 ---
 
-## 4. Thread Architecture
+## 4. Communication Protocol
 
-```text
-Main Thread (UI)
-    │
-    ├── RC Control ──────> UDP Socket (send commands)
-    │
-    ├── Video Feed ──────> QThread (recv packets)
-    │
-    ├── Sensor Polling ──> QThread (HTTP GET)
-    │
-    ├── OTA Upload ──────> QThread (HTTP POST + progress)
-    │
-    └── AI Chat ─────────> QThread (Gemini API)
+| Direction | Protocol | Port | Purpose |
+|-----------|----------|------|---------|
+| PC → ESP32 | UDP | 5005 | Low-latency control commands |
+| ESP32 → PC | UDP | 5006 | Real-time MJPEG video + sensors |
+| PC → Cloud | HTTPS | REST API | Historical data storage |
+
+### UDP Commands (Port 5005)
+
+| Command | Format | Description |
+|---------|--------|-------------|
+| `DRIVE` | `DRIVE:{speed}:{direction}` | Move with PWM speed |
+| `STEER` | `STEER:{direction}` | Spin left/right |
+| `STOP` | `STOP` | Emergency stop |
+| `GIMBAL` | `GIMBAL:{pan}:{tilt}` | Set servo angles |
+| `CENTER` | `CENTER` | Reset gimbal to 90°/90° |
+| `RESOLUTION` | `RES:{width}:{height}` | Set camera resolution |
+| `FLIP` | `FLIP:{h/v}` | Flip camera orientation |
+| `SNAPSHOT` | `SNAPSHOT` | Capture frame |
+| `OTA` | `OTA:{version}` | Trigger firmware update |
+
+### Telemetry Data (Port 5006)
+
+| Field | Format | Description |
+|-------|--------|-------------|
+| `temp` | `TEMP:{value}` | Temperature in °C |
+| `humi` | `HUMI:{value}` | Humidity in % |
+| `gas` | `GAS:{value}` | Gas concentration in ppm |
+| `dist` | `DIST:{value}` | Obstacle distance in cm |
+| `video` | JPEG bytes | Video frame data |
+
+---
+
+## 5. Feature Requirements
+
+### 5.1 Connection Management (Top Bar)
+
+- Independent IP fields for **Rover Chassis (CAR IP)** and **Camera Module (CAM IP)**
+- One-click Connect/Disconnect button
+- Status indicators: `● CAR ONLINE/OFFLINE`, `● CAM ONLINE/OFFLINE`
+- Resolution dropdown: 640x480 / 800x600 / 1280x720
+- Flip Horizontal / Flip Vertical toggles
+- Snapshot button (saves JPEG with timestamp)
+- OTA Update trigger (with confirmation)
+
+### 5.2 FPV Video Viewport (Center)
+
+- Live video feed at 25–30 FPS
+- Fixed center crosshair for aiming
+- Real-time diagnostics: FPS and Ping display
+
+### 5.3 Rover Teleoperation (Keyboard)
+
+| Key | Action |
+|-----|--------|
+| `W` | Drive forward |
+| `S` | Drive backward |
+| `A` | Spin left |
+| `D` | Spin right |
+| `Space` / Key Release | Emergency stop |
+| Speed Slider | PWM power (80–255) |
+
+### 5.4 Camera Gimbal Control (Keyboard)
+
+| Key | Action |
+|-----|--------|
+| `I` | Tilt up |
+| `K` | Tilt down |
+| `J` | Pan left |
+| `L` | Pan right |
+| `C` | Center gimbal (90°, 90°) |
+
+### 5.5 Telemetry & Safety (Sidebar)
+
+- Temperature (°C) with color-coded ranges
+- Humidity (% RH)
+- Air Quality / Gas (ppm)
+- Obstacle Distance (cm)
+- Auto-brake warning banner when obstacle < threshold
+- Configurable safety threshold slider (5cm–60cm)
+- Enable/disable auto-brake checkbox
+
+### 5.6 AI Chat & Historical Graphs
+
+- Floating 💬 button on right side (overlapping telemetry sidebar)
+- When active:
+  - Left side: Historical graphs (temperature, humidity, air quality)
+  - Right side: Gemini AI chat panel
+- Chart customization via `/chart` command or Gemini chat
+- Drag & drop to rearrange charts
+
+---
+
+## 6. Screen Layout
+
+### Main View (Default)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         TOP BAR                                 │
+├─────────────────────────────────────┬───────────────────────────┤
+│                                     │   TELEMETRY SIDEBAR       │
+│         VIDEO VIEWPORT              │   ┌─────────────────┐    │
+│         (Live Camera Feed)          │   │ Temperature     │    │
+│                                     │   │ Humidity        │    │
+│              ╋                      │   │ Air Quality     │    │
+│         (Crosshair)                 │   │ Obstacle        │    │
+│                                     │   │ Safety Alarm    │    │
+│    FPS: 30.0 | Ping: 5ms           │   │     ┌───┐       │    │
+│                                     │   │     │💬 │       │    │
+├─────────────────────────────────────┤   │     └───┘       │    │
+│  SPEED: [===========] 180/255      │   │ Gimbal Control  │    │
+│  KEYS: WASD=Drive IJKL=Gimbal      │   └─────────────────┘    │
+└─────────────────────────────────────┴───────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  [Log] Click to expand                                          │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-- **Main Thread**: PyQt6 event loop, UI updates
-- **Video Thread**: `QThread` receiving UDP packets on port 5006
-- **Worker Thread**: `QThread` for HTTP requests (GET/POST)
-- **OTA Thread**: `QThread` for chunked file uploads with progress
+### AI Chat View (💬 Active)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         TOP BAR                                 │
+├─────────────────────────────────────┬───────────────────────────┤
+│                                     │   AI CHAT PANEL           │
+│      HISTORICAL GRAPHS              │   ┌─────────────────┐    │
+│   ┌─────────────────────────────┐   │   │ 💬 Gemini Chat  │    │
+│   │ Temperature & Humidity      │   │   │                 │    │
+│   │ ┌───────────────────────┐   │   │   │ You: Show temp  │    │
+│   │ │ 30°┤    ╭─╮           │   │   │   │ Gemini: Chart   │    │
+│   │ │    │  ╭─╯ ╰─╮  ╭──╮  │   │   │   │ created...      │    │
+│   │ │ 25°┤─╯      ╰─╯  ╰──│   │   │   │                 │    │
+│   │ └───────────────────────┘   │   │   │ [Input] [Send]  │    │
+│   └─────────────────────────────┘   │   │     ┌───┐       │    │
+│   ┌─────────────────────────────┐   │   │     │✖  │       │    │
+│   │ Air Quality                 │   │   │     └───┘       │    │
+│   │ ┌───────────────────────┐   │   │   │ Gimbal Control  │    │
+│   │ │ 500┤    ╭──╮          │   │   │   └─────────────────┘    │
+│   │ │    │  ╭─╯  ╰─╮  ╭───╮│   │   │                           │
+│   │ │ 400┤─╯       ╰─╯   ╰│   │   │                           │
+│   │ └───────────────────────┘   │   │                           │
+│   └─────────────────────────────┘   │                           │
+│   [+ Add Chart] [Reset Layout]      │                           │
+├─────────────────────────────────────┤                           │
+│  SPEED: [===========] 180/255      │                           │
+│  KEYS: WASD=Drive IJKL=Gimbal      │                           │
+└─────────────────────────────────────┴───────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  [Log] Click to expand                                          │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 5. Handling Disconnections & Failsafes (Why UDP + Timers?)
+## 7. Safety Features
 
-While UDP is stateless and connectionless, **disconnection detection and automatic recovery are strictly implemented at the application layer**:
+### Rover-Side Failsafe (HW-008)
 
-1. **Rover-Side Failsafe (HW-008 Compliance):**
-* The ESP32 firmware maintains a last-received packet timestamp. If no command or heartbeat packet is received from the controller within a defined timeout (e.g., 1.0 second), the firmware automatically triggers an emergency motor stop to prevent runaway behavior during network drops.
+- ESP32 firmware maintains last-received packet timestamp
+- If no command received within 1.0 second → emergency motor stop
+- Prevents runaway behavior during network drops
 
+### App-Side Connection Monitoring
 
-2. **App-Side Connection Monitoring:**
-* The desktop application monitors incoming UDP streams. If sensor or video packets stop arriving, the UI updates its status indicator to "Disconnected" and initiates background reconnection logic without restarting the application framework.
+- Monitors incoming UDP streams
+- If packets stop arriving → UI shows "Disconnected"
+- Initiates background reconnection without app restart
+
+### Auto-Brake System
+
+- Ultrasonic sensor detects obstacle distance
+- When distance < threshold → warning banner flashes
+- Auto-brake engages (if enabled) to stop motors
+- Configurable threshold: 5cm to 60cm
 
 ---
 
-## 6. Wireless Firmware Flashing (OTA)
+## 8. OTA Firmware Updates
 
-To fulfill requirements **HW-004** and **APP-007**, all three microcontrollers support wireless firmware updates over Wi-Fi, eliminating the need to constantly plug and unplug USB cables:
+- Central OTA Hub: `http://rpi5.local/ota/`
+- Supports all three microcontrollers
+- Version metadata and progress tracking
+- Automatic file renaming: `{device}-{version}-{info}-{client}.bin`
+- Version verification after upload
 
-* **Central OTA Hub:** Accessible via `http://rpi5.local/ota/`, handling wireless updates for `esp32_car`, `esp32_cam`, and `esp32_monitor`.
-* **Initiation & Monitoring (APP-007):** The desktop controller app allows operators to specify version metadata, select compiled `.bin` firmware files, and track progress via an interactive progress bar.
-* **Automatic File Renaming:** The client app automatically standardizes and renames uploaded binaries into a strict naming convention (`filename-version-info-client.bin`) to track releases cleanly.
-* **Version Verification & Unpinning:** After a successful upload, the application queries the server to check version synchronization (`latest.php`), warning the operator of any mismatches and providing an "Unpin" option (`target.php`) to ensure devices boot correctly into the new image.
+### OTA Headers
 
-### OTA Upload Details
-
-**Headers:**
 ```
 X-OTA-Key: shodai-haru-2026-8-25
 Content-Type: multipart/form-data
 ```
-
-**Filename Convention:**
-```
-{device}-{version}-{info}-{client}.bin
-```
-Example: `esp32_car-1_0_0-InitialRelease-Haru_Client.bin`
-
----
-
-## 7. Migration Roadmap: Simulation to ESP32 Hardware
-
-Transitioning the PyQt6 codebase from simulation to physical hardware involves the following steps:
-
-1. **Network Endpoint Adjustment:**
-* Replace local loopback addresses (`127.0.0.1`) with the actual static or DHCP-assigned IP address of the ESP32 units on the local Wi-Fi network.
-
-
-2. **FIFO Queue & Sensor Integration:**
-* Implement Python's `queue.Queue` inside `app.py` to decouple sensor ingestion from cloud HTTP POST requests. Receive sensor data directly via UDP port 5006 instead of HTTP fetching.
-
-
-3. **ESP32 Firmware Development:**
-* Set up Wi-Fi connection routines on the ESP32.
-* Bind a UDP server on port `5005` to parse incoming command strings and drive motors via a motor driver (e.g., L298N) using PWM.
-* Implement the safety watchdog timer for communication loss.
-
----
-
-## 8. HTTP API Endpoints
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `api/get-data.php` | Fetch latest sensor data + history |
-| POST | `api/post-data.php` | Upload sensor readings |
-| POST | `api/api.php?action=ota` | Upload firmware `.bin` file |
 
 ---
 
@@ -187,48 +287,83 @@ Transitioning the PyQt6 codebase from simulation to physical hardware involves t
 
 ---
 
-## 10. Quick Start & File Structure
+## 10. File Structure
 
-### Installation & Execution
+```
+robot-desktop-app/
+├── main.py           # Application entry point
+├── app.py            # Main window, UI layout, timers
+├── video_feed.py     # Video receiver thread (UDP 5006)
+├── command.py        # Command sender (UDP 5005)
+├── sensors.py        # Sensor dashboard + charts
+├── gimbal.py         # Gimbal control panel
+├── ota.py            # Firmware upload
+├── ai_chat.py        # Gemini AI chat interface
+├── charts.py         # Historical graph widgets
+├── worker.py         # Background QThread workers
+├── config.py         # Config load/save
+├── panels.py         # UI component generators
+└── config.json       # Saved settings
+```
+
+---
+
+## 11. Installation
 
 ```bash
 pip install PyQt6 requests matplotlib
+```
+
+---
+
+## 12. Usage
+
+```bash
 python main.py
 ```
 
-### Core Source Files
+### Keyboard Shortcuts
 
-| File | Purpose |
-| --- | --- |
-| `main.py` | Application entry point (initializes `QApplication` and main window). |
-| `app.py` | Main window class, manages UI layout, timers, auto-mode, and disconnect dialogs. |
-| `rc_control.py` | RC car control panel with D-pad and keyboard input. |
-| `video_feed.py` | Video receiver thread for UDP MJPEG stream. |
-| `sensors.py` | Sensor dashboard, cards, and chart widgets. |
-| `ota.py` | Handles firmware file selection, validation (`.bin` only), automatic renaming, and upload execution. |
-| `ai_chat.py` | Gemini AI chat interface with custom chart creation. |
-| `worker.py` | Background `QThread` worker handling HTTP GET/POST and chunked file uploads with progress tracking. |
-| `config.py` | Config load/save utilities. |
+| Key | Action |
+|-----|--------|
+| `W` | Drive forward |
+| `A` | Spin left |
+| `S` | Drive backward |
+| `D` | Spin right |
+| `Space` | Emergency stop |
+| `I` | Gimbal tilt up |
+| `J` | Gimbal pan left |
+| `K` | Gimbal tilt down |
+| `L` | Gimbal pan right |
+| `C` | Center gimbal |
+| `Tab` | Autocomplete in chat |
+| `Enter` | Send chat message |
+| `Shift+Enter` | New line in chat |
 
-### Controls
+### Chart Commands
 
-- **WASD** - Drive the rover (when RC panel is open)
-- **E + Mouse Move** - Control camera gimbal
-- **Tab** - Autocomplete sensor names in chat
-- **Enter** - Send chat message
-- **Shift+Enter** - New line in chat
-- **/chart** - Create custom charts (e.g., `/chart temperature humidity -n`)
+```
+/chart temperature humidity -n -m "Environment"
+/chart co2 gas -d
+/chart pm -n
+```
 
-### Configuration
+| Flag | Description |
+|------|-------------|
+| `-n` | Normalize values (0–1 range) |
+| `-d` | Separate into individual charts |
+| `-m {name}` | Name the chart |
 
-1. Enter ESP32 rover IP in the "Rover IP" field
-2. Enter cloud API URL in the "API URL" field
-3. Enter Gemini API key in the "Gemini Key" field (optional)
+---
 
-**Config File Format:**
+## 13. Configuration
+
+### Config File (config.json)
+
 ```json
 {
-  "rover_ip": "192.168.1.100",
+  "car_ip": "192.168.1.100",
+  "cam_ip": "192.168.1.101",
   "api_url": "https://example.com/api/get-data.php",
   "gemini_api_key": "",
   "center_charts": {},
@@ -239,20 +374,25 @@ python main.py
 
 ---
 
-## 11. Development Checklist
+## 14. Development Checklist
 
-* [ ] **Desktop App:** Remove UI components for Port 5007 (radar telemetry).
-* [ ] **Desktop App:** Implement `queue.Queue` and background thread worker for cloud telemetry uploads.
-* [ ] **Firmware:** Set up ESP32 Wi-Fi configuration and UDP command listener (Port 5005).
-* [ ] **Hardware:** Integrate motor drivers, sensors, and camera module onto the rover chassis (`esp32_car`, `esp32_cam`, `esp32_monitor`).
-* [ ] **Safety Testing:** Verify that disconnecting the Wi-Fi mid-drive successfully stops the rover within the timeout limit (HW-008).
-* [ ] **End-to-End Integration:** Validate full data flow from ESP32 -> Desktop App -> Cloud Database -> Historical Chart Retrieval (INT-003).
+- [ ] **Phase 1:** UI wireframes & layout mockups
+- [ ] **Phase 2:** Keyboard state machine mapping
+- [ ] **Phase 3:** Multi-threaded architecture diagram
+- [ ] **Phase 4:** Desktop application prototype
+- [ ] **Phase 5:** API integration with ESP32
+- [ ] **Phase 6:** Safety testing (HW-008 compliance)
+- [ ] **Phase 7:** End-to-end integration testing
 
 ---
 
-## 12. Code Sources
+## 15. User Stories
 
-| Component | Source |
-|-----------|--------|
-| RC Control, Video, Sensors, AI | `haru-app2/` |
-| OTA Firmware Upload | `haru-app/` |
+| Persona | Need | Feature |
+|---------|------|---------|
+| Rover Pilot | Intuitive game-like driving | WASD controls |
+| Rover Pilot | Inspect surroundings without turning | IJKL gimbal |
+| Rover Pilot | Avoid obstacles due to lag | Low-latency FPV video |
+| Safety Officer | Prevent collisions | Obstacle alarm + auto-brake |
+| Field Technician | Record discoveries | Snapshot with timestamp |
+| Field Technician | Upgrade firmware wirelessly | OTA update |

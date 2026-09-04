@@ -6,8 +6,10 @@ require __DIR__ . '/../src/autoload.php';
 
 use RoverTelemetry\Config;
 use RoverTelemetry\Database;
+use RoverTelemetry\Repositories\GatewayMetricsRepository;
 use RoverTelemetry\Repositories\RoverRepository;
 use RoverTelemetry\Repositories\SummaryRepository;
+use RoverTelemetry\Support\HostMetrics;
 
 $config = Config::fromEnv();
 $pdo = Database::connection($config);
@@ -30,6 +32,9 @@ foreach ($rovers as $rover) {
     }
     $summaries->recomputeBucket($deviceId, 'day', $currentDay);
 }
+
+$metrics = HostMetrics::collect($pdo, $config->dbName);
+(new GatewayMetricsRepository($pdo))->sample($metrics, $now);
 
 file_put_contents(__DIR__ . '/../storage/aggregate.lastrun', $now->format('Y-m-d\TH:i:s\Z'));
 

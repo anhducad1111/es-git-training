@@ -10,18 +10,19 @@
 
 ## 1. Purpose
 
-This is the Phase 1 deliverable requested in PRD §6. It contains:
+This proposal presents the UI design and implementation plan for the Space Rover Desktop Teleoperation Cockpit, a PyQt6 application for remote piloting an ESP32-based rover.
 
+**Deliverables:**
 1. UI wireframes and screen layout design
 2. Keyboard event and state machine mapping
 3. Thread architecture diagram
 4. Implementation plan
 
-**Note:** Cloud API integration details will be added in Phase 3 after receiving the official API documentation from Duke.
+**Reference:** For detailed technical specifications, see `HARU-PRD-DESIGN-PROPOSAL.md`.
 
 ---
 
-## 2. System Architecture
+## 2. System Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -37,12 +38,9 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 │ ESP32-CAM   │   │ ESP32-MCU   │   │  Cloud API  │
 │ (Camera)    │   │ (Sensors,   │   │   (RPi5)    │
 │ Binary JPEG │   │  Motors,    │   │ Historical  │
-│ frames      │   │  Gimbal)    │   │ Data        │
-│ ws://?:?/ws │   │ ws://?:?/ws │   │ HTTP REST   │
+│             │   │  Gimbal)    │   │ Data        │
 └─────────────┘   └─────────────┘   └─────────────┘
 ```
-
-> **Note:** WebSocket addresses will be provided by supervisor during implementation.
 
 ---
 
@@ -91,13 +89,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 │ │                      │ │ [====]           │ │ [Center]           │ │[STOP]  │ │
 │ └──────────────────────┘ └──────────────────┘ └────────────────────┘ └────────┘ │
 ├──────────────────────────────────────────────────────────────────────────────────┤
-│ [LOG] Click to expand/collapse • 4 Events                         115200 Baud  │
-│ ┌──────────────────────────────────────────────────────────────────────────────┐ │
-│ │ 10:00:01 [CONNECTED] WebSocket connected to 192.168.1.100 (ESP32-MCU)      │ │
-│ │ 10:00:02 [VIDEO]      Stream active at 640x480 @ 30 FPS                    │ │
-│ │ 10:00:05 [TELEMETRY]  Chassis Temp 28.5°C, Dist 45cm, Humidity 65%         │ │
-│ │ 10:00:08 [SAFETY]     Auto-brake threshold set to 30 cm                    │ │
-│ └──────────────────────────────────────────────────────────────────────────────┘ │
+│ [LOG] Click to expand/collapse • 4 Events                                      │
 └──────────────────────────────────────────────────────────────────────────────────┘
                               ┌─────┐
                               │ 💬  │ ← FLOATING BUTTON (bottom-right)
@@ -130,47 +122,15 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 │   │    │  ~~~~ Temp (orange) ~~~~           │    │  │ last 15 minutes of   │ │
 │   │ 25°┤  ---- Humidity (blue) ----         │    │  │ telemetry. Temp is   │ │
 │   │    └────────────────────────────────────┘    │  │ stable at 28.5°C...  │ │
-│   │ 12:00    12:03    12:06    12:12  12:15 LIVE│  │                      │ │
-│   └──────────────────────────────────────────┘    │  │ ┌──────────────────┐ │ │
-│                                                    │  │ │ Tool Call:       │ │ │
-│ ┌──────────────────────────┬─────────────────────┐ │  │ │ create_custom_   │ │ │
-│ │ 🌫 Air Quality &         │ 📏 Obstacle Proximity│ │  │ │ charts [0.12s]   │ │ │
-│ │    Particulate           │    & Sonar           │ │  │ │ {sensors:[temp,  │ │ │
-│ │   CO2: 450 ppm           │   ● CLEAR > 30cm     │ │  │ │  humidity]}      │ │ │
-│ │   PM2.5: 12 µg/m³        │   Sonar: 45 cm       │ │  │ └──────────────────┘ │ │
-│ │ ┌──────────────────┐     │ ┌──────────────────┐ │ │  ├──────────────────────┤ │
-│ │ │  ~~~CO2(emerald)~│     │ │  █ █ █ █ █ █ █  │ │ │  │ 💊 /chart co2 temp  │ │
-│ │ │  - -PM2.5(blue) -│     │ │  █ █ █ █ █ █ █  │ │ │  │    /filter anomalies │ │
-│ │ └──────────────────┘     │ │  █ █ █ █ █ █ █  │ │ │  │    /export csv 15m   │ │
-│ │ CO2:Nominal <600          │ │  NOW ← threshold │ │ │  ├──────────────────────┤ │
-│ │ PM2.5:Clean <25  Gas:Clean│ │ Safety:30cm OPTIMAL│ │  │ [/chart co2 temp -n] │ │
-│ └──────────────────────────┴─────────────────────┘ │  │               [Send] │ │
+│   └──────────────────────────────────────────┘    │  │                      │ │
+│                                                    │  │ ┌──────────────────┐ │ │
+│ 🌫 Air Quality & 📏 Obstacle Proximity             │  │ │ create_custom_   │ │ │
+│   CO2: 450 ppm    Sonar: 45 cm                    │  │ │ charts [0.12s]   │ │ │
 └────────────────────────────────────────────────────┘  └──────────────────────┘ │
-                                                               ┌──────────────┐ │
-                                                               │ ❖ close      │ │
-                                                               └──────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────────┘
-[LOG] 12:14:11 Gemini API tool response OK | 12:12:00 Radio Ping: 18ms   expand ▼
                               ┌─────┐
-                              │ ✖   │ ← FLOATING BUTTON (purple, bottom-right)
+                              │ ✖   │ ← FLOATING BUTTON (purple, returns to Main)
                               └─────┘
 ```
-
-### 3.3 Video Overlay Status Bar (Top Center of Video)
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│   🟢 30.0 FPS   │   5 ms   │  📏 45 cm   │  🌡 28.5 °C   │  💧 65.0 %      │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-| Indicator | Icon | Color Logic | Description |
-|-----------|------|-------------|-------------|
-| `🟢 30.0 FPS` | — | 🟢 ≥25, 🟡 15-24, 🔴 <15 | Live frame rate |
-| `5 ms` | network_ping | White | Network ping to rover |
-| `📏 45 cm` | radar | 🟢 >30, 🟡 15-30, 🔴 <15 | Obstacle distance |
-| `🌡 28.5 °C` | device_thermostat | Orange | Temperature |
-| `💧 65.0 %` | water_drop | Blue | Humidity |
 
 ---
 
@@ -194,29 +154,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
    [IDLE]
 ```
 
-### 4.2 Gimbal Control
-
-```
-   [IDLE] ──────────────────────────────────────►
-      │
-      │ Key Press (I/J/K/L)
-      ▼
-   [GIMBAL MOVING] ────────────────────────────►
-      │
-      │ Key Release
-      ▼
-   [GIMBAL HOLD] ───────────────────────────────►
-      │
-      │ C Key
-      ▼
-   [GIMBAL CENTERING] ─────────────────────────►
-      │
-      │ Send center command (90°, 90°)
-      ▼
-   [IDLE]
-```
-
-### 4.3 Key Mapping
+### 4.2 Key Mapping
 
 | Key | Action | WebSocket Command (JSON) |
 |-----|--------|--------------------------|
@@ -230,9 +168,6 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 | `J` | Pan left | `{"type":"gimbal","pan":pan-5,"tilt":tilt}` |
 | `L` | Pan right | `{"type":"gimbal","pan":pan+5,"tilt":tilt}` |
 | `C` | Center gimbal | `{"type":"gimbal","center":true}` |
-| `Tab` | Autocomplete in chat | — |
-| `Enter` | Send chat message | — |
-| `Shift+Enter` | New line in chat | — |
 
 ---
 
@@ -245,232 +180,30 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 │                                                                  │
 │   ┌─────────────────────┐                                        │
 │   │   MAIN THREAD       │ ◄── PyQt6 Event Loop                  │
-│   │   (UI Updates)      │                                        │
 │   └──────────┬──────────┘                                        │
 │              │                                                   │
 │   ┌──────────┴──────────┐                                        │
-│   │                     │                                        │
 │   ▼                     ▼                                        │
-│   │                                                                 │
-│   ├─────────────────────┼─────────────────────────────────────────┤
-│   │                     │                                         │
-│   ▼                     ▼                                         │
-│                                                                 │
-│ ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│ │ VIDEO       │  │ COMMAND     │  │ TELEMETRY   │  │ AI CHAT     │
-│ │ THREAD      │  │ THREAD      │  │ THREAD      │  │ THREAD      │
-│ │             │  │             │  │             │  │             │
-│ │ WebSocket   │  │ WebSocket   │  │ HTTP POST   │  │ HTTPS       │
-│ │ (ESP32-CAM) │  │ (ESP32-MCU) │  │ (Cloud API) │  │ (Gemini)    │
-│ └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
-│        │                │                │                │
-│        ▼                ▼                ▼                ▼
-│   ┌─────────────────────────────────────────────────────────────┐
-│   │                    ESP32 ROVER                               │
-│   │  ┌─────────────┐  ┌─────────────┐                          │
-│   │  │ ESP32-CAM   │  │ ESP32-MCU   │                          │
-│   │  │ (Camera)    │  │ (Sensors,   │                          │
-│   │  │ WS: Video   │  │  Motors,    │                          │
-│   │  │             │  │  Gimbal)    │                          │
-│   │  │             │  │ WS: Cmd/Tlm │                          │
-│   │  └─────────────┘  └─────────────┘                          │
-│   └─────────────────────────────────────────────────────────────┘
-│                                                                  │
+│ ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│ │ VIDEO       │  │ COMMAND     │  │ TELEMETRY   │              │
+│ │ THREAD      │  │ THREAD      │  │ THREAD      │              │
+│ │ (ESP32-CAM) │  │ (ESP32-MCU) │  │ (Cloud API) │              │
+│ └──────┬──────┘  └──────┬──────┘  └──────┬──────┘              │
+│        │                │                │                      │
+│        ▼                ▼                ▼                      │
+│   ┌─────────────────────────────────────────────────────────┐  │
+│   │                    ESP32 ROVER                           │  │
+│   │  ┌─────────────┐  ┌─────────────┐                      │  │
+│   │  │ ESP32-CAM   │  │ ESP32-MCU   │                      │  │
+│   │  │ WS: Video   │  │ WS: Cmd/Tlm │                      │  │
+│   │  └─────────────┘  └─────────────┘                      │  │
+│   └─────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-| Thread | Responsibility | Protocol |
-|--------|----------------|----------|
-| Main Thread | UI updates, event loop | PyQt6 |
-| Video Thread | Receive video frames from ESP32-CAM | WebSocket (binary) |
-| Command Thread | Send commands to ESP32-MCU | WebSocket (JSON) |
-| Telemetry Thread | POST sensor data to cloud | HTTP REST |
-| AI Chat Thread | Gemini API calls | HTTPS |
-
 ---
 
-## 6. Communication Protocol
-
-| Direction | Protocol | Purpose |
-|-----------|----------|---------|
-| PC → ESP32-CAM | WebSocket | Receive video stream (binary JPEG) |
-| PC ↔ ESP32-MCU | WebSocket | Send commands (JSON), receive telemetry (JSON) |
-| PC → Cloud | HTTP REST | Store/retrieve historical data |
-
-### 6.1 WebSocket Commands (PC → ESP32-MCU, JSON)
-
-**Drive Commands:**
-```json
-{"type": "drive", "speed": 180, "direction": "forward"}
-{"type": "drive", "speed": 180, "direction": "backward"}
-{"type": "steer", "direction": "left"}
-{"type": "steer", "direction": "right"}
-{"type": "stop"}
-```
-
-**Gimbal Commands:**
-```json
-{"type": "gimbal", "pan": 90, "tilt": 90}
-{"type": "gimbal", "center": true}
-```
-
-**Camera Commands:**
-```json
-{"type": "resolution", "width": 640, "height": 480}
-{"type": "flip", "axis": "horizontal"}
-{"type": "flip", "axis": "vertical"}
-{"type": "snapshot"}
-```
-
-### 6.2 Telemetry Data (ESP32-MCU → PC, JSON)
-
-ESP32-MCU sends sensor data via the same WebSocket connection:
-
-```json
-{
-  "type": "telemetry",
-  "temperature": 28.5,
-  "humidity": 65.0,
-  "air_purity": 450,
-  "distance": 45.0
-}
-```
-
-| Field | Unit | Description |
-|-------|------|-------------|
-| `temperature` | °C | Ambient temperature |
-| `humidity` | % | Relative humidity |
-| `air_purity` | PPM | Gas/smoke concentration (MQ-2) |
-| `distance` | cm | Obstacle distance (HC-SR04) |
-
-### 6.3 Video Stream (ESP32-CAM → PC)
-
-Binary JPEG frames sent over WebSocket:
-- Each message is a complete JPEG frame
-- Frame rate: 25-30 FPS at 640x480
-- No text encoding needed (raw binary)
-
----
-
-## 7. Safety Features
-
-### 7.1 Rover-Side Failsafe (HW-008)
-
-- ESP32 firmware maintains last-received packet timestamp
-- If no command received within 1.0 second → emergency motor stop
-- Prevents runaway behavior during network drops
-
-### 7.2 App-Side Connection Monitoring
-
-- Monitors incoming WebSocket streams
-- If packets stop arriving → UI shows "Disconnected"
-- Initiates background reconnection without app restart
-
-### 7.3 Auto-Brake System
-
-- Ultrasonic sensor detects obstacle distance
-- When distance < threshold → warning banner flashes
-- Auto-brake engages (if enabled) to stop motors
-- Configurable threshold: 5cm to 60cm
-
----
-
-## 8. OTA Firmware Updates
-
-- Central OTA Hub: `http://rpi5.local/ota/`
-- Supports all three microcontrollers
-- Version metadata and progress tracking
-- Automatic file renaming: `{device}-{version}-{info}-{client}.bin`
-
-### OTA Headers
-
-```
-X-OTA-Key: shodai-haru-2026-8-25
-Content-Type: multipart/form-data
-```
-
----
-
-## 9. Color Scheme
-
-| Element | Color Name | Hex Code |
-|---------|------------|----------|
-| Background | Charcoal | `#0b1326` |
-| Surface | Dark Navy | `#131b2e` |
-| Surface Container | Navy | `#171f33` |
-| Surface Container Low | Deep Navy | `#0f172a` |
-| Surface Container High | Slate | `#1e293b` |
-| Surface Container Highest | Blue Slate | `#28344e` |
-| Primary | Soft Blue | `#b4c5ff` |
-| Primary Container | Indigo | `#2e3a5f` |
-| Secondary | Light Gray | `#c4c7d4` |
-| Tertiary | Warm Coral | `#ffb596` |
-| Outline | Dim Gray | `#5a5f72` |
-| Outline Variant | Muted Gray | `#3d4257` |
-
-**Font:** IBM Plex Sans, IBM Plex Mono
-
----
-
-## 10. File Structure
-
-```
-robot-desktop-app/
-├── main.py           # Application entry point
-├── app.py            # Main window, UI layout, timers
-├── video_feed.py     # Video receiver thread (WebSocket)
-├── command.py        # Command sender (WebSocket)
-├── sensors.py        # Sensor dashboard + charts
-├── gimbal.py         # Gimbal control panel
-├── ota.py            # Firmware upload
-├── ai_chat.py        # Gemini AI chat interface
-├── charts.py         # Historical graph widgets
-├── cloud_api.py      # Cloud backend API client
-├── worker.py         # Background QThread workers
-├── config.py         # Config load/save
-├── panels.py         # UI component generators
-├── config.json       # Saved settings
-└── docs/
-    ├── HARU-PRD-DESIGN-PROPOSAL.md
-    ├── wireframe.md
-    └── README.md
-```
-
----
-
-## 11. Installation
-
-```bash
-pip install PyQt6 requests matplotlib google-genai websocket-client
-```
-
----
-
-## 12. Usage
-
-```bash
-python main.py
-```
-
----
-
-## 13. User Stories
-
-| Persona | Need | Feature |
-|---------|------|---------|
-| Rover Pilot | Intuitive game-like driving | WASD controls |
-| Rover Pilot | Inspect surroundings without turning | IJKL gimbal |
-| Rover Pilot | Avoid obstacles due to lag | Low-latency FPV video |
-| Safety Officer | Prevent collisions | Obstacle alarm + auto-brake |
-| Safety Officer | Monitor environment | Real-time telemetry |
-| Field Technician | Record discoveries | Snapshot with timestamp |
-| Field Technician | Upgrade firmware wirelessly | OTA update |
-| Data Analyst | Visualize sensor trends | Historical charts |
-| Data Analyst | Query data with natural language | Gemini AI chat |
-
----
-
-## 14. Implementation Plan
+## 6. Implementation Plan
 
 | Phase | Content | Depends on |
 |---|---|---|
@@ -489,19 +222,18 @@ python main.py
 
 ---
 
-## 15. Development Checklist
+## 7. Next Steps
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 1 | ⏳ In Progress | Design proposal (this document) |
-| 2 | ⏸️ Pending | Mentor review |
-| 3 | ⏸️ Pending | Project skeleton |
-| 4 | ⏸️ Pending | Video feed |
-| 5 | ⏸️ Pending | Keyboard controls |
-| 6 | ⏸️ Pending | Telemetry display |
-| 7 | ⏸️ Pending | Gimbal control |
-| 8 | ⏸️ Pending | Cloud integration |
-| 9 | ⏸️ Pending | AI chat |
-| 10 | ⏸️ Pending | OTA updates |
-| 11 | ⏸️ Pending | Safety features |
-| 12 | ⏸️ Pending | Testing & bug fixes |
+1. **Duke reviews this proposal** → Approves or requests changes
+2. **Official API documentation unlocked** → ESP32 WebSocket protocol details
+3. **Implementation begins** → Following Phase 3+ of the plan
+
+---
+
+## 8. Reference Documents
+
+| Document | Purpose |
+|----------|---------|
+| `HARU-PRD-DESIGN-PROPOSAL.md` | Full technical specification (28 sections) |
+| `wireframe.md` | Detailed UI component descriptions |
+| `docs/README.md` | Documentation index |

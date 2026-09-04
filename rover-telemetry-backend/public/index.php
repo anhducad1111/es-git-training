@@ -41,6 +41,10 @@ $router->add('GET', '/api/v1/rovers', function () use ($roverController) {
     return $roverController->list();
 });
 
+$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/latest', function (array $params) use ($roverController) {
+    return $roverController->latest($params);
+});
+
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 $apiPos = strpos($uri, '/api/v1');
 $path = $apiPos !== false ? substr($uri, $apiPos) : $uri;

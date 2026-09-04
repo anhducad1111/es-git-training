@@ -63,11 +63,10 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 | Thread | Responsibility | Protocol |
 |--------|----------------|----------|
 | Main Thread | UI updates, event loop | PyQt6 |
-| Video Thread | Receive video frames from ESP32-CAM | WebSocket (binary) |
-| Command Thread | Send commands to ESP32-MCU | WebSocket (JSON) |
-| Telemetry Thread | POST sensor data to cloud | HTTP REST |
-| Gimbal Thread | Send pan/tilt commands | WebSocket (JSON) |
-| AI Chat Thread | Gemini API calls | HTTPS |
+| Video Thread | Receive video frames from ESP32-CAM | WebSocket (binary, local) |
+| Command Thread | Send commands to ESP32-MCU | WebSocket (text, local) |
+| Telemetry Thread | POST sensor data to RPi5 | HTTP REST (local) |
+| AI Chat Thread | Ollama on RPi5 | HTTP (local) |
 
 ---
 
@@ -108,11 +107,12 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 │   │  📷 640x480 (30 FPS) ▼             │        │  │ [📷 Take Snapshot]     │ │
 │   └─────────────────────────────────────┘        │  │ [🔧 System Diagnostics]│ │
 │                                                  │  │ [⚙ Device Configuration]│
+│                                                  │  │ [🚶 Follow Mode]       │ │
 ├──────────────────────────────────────────────────┤  └────────────────────────┘ │
 │ BOTTOM CONTROLS                                                         │
 │ ┌──────────────────────┐ ┌──────────────────┐ ┌────────────────────┐ ┌────────┐ │
 │ │ Motor Speed          │ │ Auto-Brake [ON]  │ │ Gimbal: Pan 90°   │ │ W/S    │ │
-│ │ 180 (70%) [====]     │ │ Threshold: 30cm  │ │        Tilt 90°   │ │ A/D    │ │
+│ │ 220 (86%) [====]     │ │ Threshold: 30cm  │ │        Tilt 90°   │ │ A/D    │ │
 │ │                      │ │ [====]           │ │ [Center]           │ │[STOP]  │ │
 │ └──────────────────────┘ └──────────────────┘ └────────────────────┘ └────────┘ │
 ├──────────────────────────────────────────────────────────────────────────────────┤
@@ -138,11 +138,11 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────┬────────────────────────────┐
-│ 📊 Historical Sensor Analytics                     │  Gemini 3.5 Sensor Analyst │
+│ 📊 Historical Sensor Analytics                     │  Local AI Sensor Analyst   │
 │   Window: 15m Telemetry Deck                       │  ┌──────────────────────┐ │
-│   Auto-Refresh (5s) [ON]  [+ Add Chart] [Reset]   │  │ ● gemini-3.5 active  │ │
+│   Auto-Refresh (5s) [ON]  [+ Add Chart] [Reset]   │  │ ● Ollama active      │ │
 ├────────────────────────────────────────────────────┤  ├──────────────────────┤ │
-│ 💡 Tip: /chart in Gemini chat to customize plots   │  │ ℹ TELEMETRY CONTEXT  │ │
+│ 💡 Tip: /chart in AI chat to customize plots       │  │ ℹ TELEMETRY CONTEXT  │ │
 │    SYNC_RATE: 100ms • BUFFER: 900pts               │  │ Temp:28.5°C Air:450  │ │
 ├────────────────────────────────────────────────────┤  │ Dist:45cm Batt:94%   │ │
 │                                                    │  ├──────────────────────┤ │
@@ -150,7 +150,7 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 │   Temp: 28.5°C  Humidity: 58.2%RH                 │  │ Show me temp and     │ │
 │   ┌──────────────────────────────────────────┐    │  │ humidity together... │ │
 │   │ 35°┤     ╭────╮                         │    │  ├──────────────────────┤ │
-│   │    │   ╭─╯    ╰──╮    ╭────╮           │    │  │ Gemini 3.5:          │ │
+│   │    │   ╭─╯    ╰──╮    ╭────╮           │    │  │ AI:                  │ │
 │   │ 30°┤──╯          ╰──╯    ╰──           │    │  │ I have analyzed the  │ │
 │   │    │  ~~~~ Temp (orange) ~~~~           │    │  │ last 15 minutes of   │ │
 │   │ 25°┤  ---- Humidity (blue) ----         │    │  │ telemetry. Temp is   │ │
@@ -175,7 +175,7 @@ The application integrates high-speed manual driving controls, 2-axis precision 
                                                                │ ❖ close      │ │
                                                                └──────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────┘
-[LOG] 12:14:11 Gemini API tool response OK | 12:12:00 Radio Ping: 18ms   expand ▼
+[LOG] 12:14:11 Ollama API tool response OK | 12:12:00 Radio Ping: 18ms   expand ▼
                               ┌─────┐
                               │ ✖   │ ← FLOATING BUTTON (purple, bottom-right)
                               └─────┘
@@ -207,49 +207,40 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 | PC → ESP32-MCU | WebSocket | Send commands (JSON), receive telemetry (JSON) |
 | PC → Cloud | HTTP REST | Store/retrieve historical data |
 
-### WebSocket Commands (PC → ESP32-MCU, JSON)
+### WebSocket Commands (PC → ESP32-MCU, Plain Text)
 
 **Drive Commands:**
-```json
-{"type": "drive", "speed": 180, "direction": "forward"}
-{"type": "drive", "speed": 180, "direction": "backward"}
-{"type": "steer", "direction": "left"}
-{"type": "steer", "direction": "right"}
-{"type": "stop"}
+```
+"forward"           # Drive forward at current speed
+"backward"          # Drive backward at current speed
+"left"              # Spin left
+"right"             # Spin right
+"stop"              # Emergency stop
+```
+
+Or with speed/direction:
+```
+"drive:200,0"       # Speed 200, straight forward
+"drive:200,-50"     # Speed 200, turning left
 ```
 
 **Gimbal Commands:**
-```json
-{"type": "gimbal", "pan": 90, "tilt": 90}
-{"type": "gimbal", "center": true}
+```
+"servo:90,90"       # Pan 90°, Tilt 90°
+"servo:90,65"       # Pan 90°, Tilt 65°
 ```
 
 **Camera Commands:**
-```json
-{"type": "resolution", "width": 640, "height": 480}
-{"type": "flip", "axis": "horizontal"}
-{"type": "flip", "axis": "vertical"}
-{"type": "snapshot"}
+```
+"resolution:640,480"    # Set resolution
+"flip:h"                # Flip horizontal
+"flip:v"                # Flip vertical
+"snapshot"              # Capture frame
 ```
 
-### Telemetry Data (ESP32-MCU → PC, JSON)
+### Telemetry Data (ESP32-MCU → PC)
 
-```json
-{
-  "type": "telemetry",
-  "temperature": 28.5,
-  "humidity": 65.0,
-  "air_purity": 450,
-  "distance": 45.0
-}
-```
-
-| Field | Unit | Description |
-|-------|------|-------------|
-| `temperature` | °C | Ambient temperature |
-| `humidity` | % | Relative humidity |
-| `air_purity` | PPM | Gas/smoke concentration (MQ-2) |
-| `distance` | cm | Obstacle distance (HC-SR04) |
+Sensor data received via the same WebSocket connection (format TBD from API docs).
 
 ### Video Stream (ESP32-CAM → PC)
 
@@ -297,9 +288,9 @@ Binary JPEG frames sent over WebSocket:
 
 - Sensor cards: Chassis Core Temp, Ambient Humidity, Air Purity, Obstacle Distance
 - Progress bars with color coding
-- Subsystem Health: ESP32, Motor Drivers, Servos, Battery
+- Subsystem Health: ESP32, Motor Drivers, Servos, Battery (from ESP32 directly)
 - E-STOP button
-- Take Snapshot, System Diagnostics, Device Configuration buttons
+- Take Snapshot, System Diagnostics, Device Configuration, Follow Mode buttons
 
 ### 6.4 Bottom Controls
 
@@ -315,7 +306,7 @@ Binary JPEG frames sent over WebSocket:
   - Temperature & Humidity dual-axis line chart
   - Air Quality & Particulate (CO2 + PM2.5) multi-trend
   - Obstacle Proximity & Sonar bar chart timeline
-- Gemini 3.5 Sensor Analyst chat panel
+- Local AI Sensor Analyst (Ollama) chat panel
 - Telemetry context pill
 - Tool execution cards
 - Suggestion pills (/chart, /filter, /export)
@@ -414,7 +405,7 @@ robot-desktop-app/
 ├── sensors.py        # Sensor dashboard + charts
 ├── gimbal.py         # Gimbal control panel
 ├── ota.py            # Firmware upload
-├── ai_chat.py        # Gemini AI chat interface
+├── ai_chat.py        # Ollama AI chat interface
 ├── charts.py         # Historical graph widgets
 ├── cloud_api.py      # Cloud backend API client
 ├── worker.py         # Background QThread workers
@@ -439,7 +430,7 @@ robot-desktop-app/
   "cam_ip": "192.168.1.101",
   "cloud_api_url": "http://rpi5.local/api/v1",
   "device_uid": "rover-001",
-  "gemini_api_key": "",
+  "ollama_url": "http://rpi5.local:11434/api/generate",
   "center_charts": {},
   "custom_charts": {},
   "custom_charts_normalize": {}
@@ -476,7 +467,7 @@ python main.py
 | Field Technician | Record discoveries | Snapshot with timestamp |
 | Field Technician | Upgrade firmware wirelessly | OTA update |
 | Data Analyst | Visualize sensor trends | Historical charts |
-| Data Analyst | Query data with natural language | Gemini AI chat |
+| Data Analyst | Query data with natural language | Local AI chat (Ollama) |
 
 ---
 
@@ -487,6 +478,6 @@ python main.py
 | PyQt6 | 6.x | Desktop GUI framework |
 | requests | 2.x | HTTP requests |
 | matplotlib | 3.x | Chart rendering |
-| google-genai | 0.3+ | Gemini AI integration |
+| requests | 2.x | HTTP requests (Ollama API) |
 | websocket-client | 1.x | WebSocket communication |
 | json | stdlib | Configuration persistence |

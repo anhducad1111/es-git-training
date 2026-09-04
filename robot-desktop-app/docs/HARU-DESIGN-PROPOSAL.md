@@ -81,15 +81,22 @@ This proposal presents the UI design and implementation plan for the Space Rover
 │   │  📷 640x480 (30 FPS) ▼             │        │  │ [📷 Take Snapshot]     │ │
 │   └─────────────────────────────────────┘        │  │ [🔧 System Diagnostics]│ │
 │                                                  │  │ [⚙ Device Configuration]│
+│                                                  │  │ [🚶 Follow Mode]       │ │
 ├──────────────────────────────────────────────────┤  └────────────────────────┘ │
 │ BOTTOM CONTROLS                                                         │
 │ ┌──────────────────────┐ ┌──────────────────┐ ┌────────────────────┐ ┌────────┐ │
 │ │ Motor Speed          │ │ Auto-Brake [ON]  │ │ Gimbal: Pan 90°   │ │ W/S    │ │
-│ │ 180 (70%) [====]     │ │ Threshold: 30cm  │ │        Tilt 90°   │ │ A/D    │ │
+│ │ 220 (86%) [====]     │ │ Threshold: 30cm  │ │        Tilt 90°   │ │ A/D    │ │
 │ │                      │ │ [====]           │ │ [Center]           │ │[STOP]  │ │
 │ └──────────────────────┘ └──────────────────┘ └────────────────────┘ └────────┘ │
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │ [LOG] Click to expand/collapse • 4 Events                                      │
+│ ┌──────────────────────────────────────────────────────────────────────────────┐ │
+│ │ 10:00:01 [CONNECTED] WebSocket connected to 192.168.1.100 (ESP32-MCU)      │ │
+│ │ 10:00:02 [VIDEO]      Stream active at 640x480 @ 30 FPS                    │ │
+│ │ 10:00:05 [TELEMETRY]  Chassis Temp 28.5°C, Dist 45cm, Humidity 65%         │ │
+│ │ 10:00:08 [SAFETY]     Auto-brake threshold set to 30 cm                    │ │
+│ └──────────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────────┘
                               ┌─────┐
                               │ 💬  │ ← FLOATING BUTTON (bottom-right)
@@ -105,11 +112,11 @@ This proposal presents the UI design and implementation plan for the Space Rover
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────┬────────────────────────────┐
-│ 📊 Historical Sensor Analytics                     │  Gemini 3.5 Sensor Analyst │
+│ 📊 Historical Sensor Analytics                     │  Local AI Sensor Analyst   │
 │   Window: 15m Telemetry Deck                       │  ┌──────────────────────┐ │
-│   Auto-Refresh (5s) [ON]  [+ Add Chart] [Reset]   │  │ ● gemini-3.5 active  │ │
+│   Auto-Refresh (5s) [ON]  [+ Add Chart] [Reset]   │  │ ● Ollama active      │ │
 ├────────────────────────────────────────────────────┤  ├──────────────────────┤ │
-│ 💡 Tip: /chart in Gemini chat to customize plots   │  │ ℹ TELEMETRY CONTEXT  │ │
+│ 💡 Tip: /chart in AI chat to customize plots       │  │ ℹ TELEMETRY CONTEXT  │ │
 │    SYNC_RATE: 100ms • BUFFER: 900pts               │  │ Temp:28.5°C Air:450  │ │
 ├────────────────────────────────────────────────────┤  │ Dist:45cm Batt:94%   │ │
 │                                                    │  ├──────────────────────┤ │
@@ -117,7 +124,7 @@ This proposal presents the UI design and implementation plan for the Space Rover
 │   Temp: 28.5°C  Humidity: 58.2%RH                 │  │ Show me temp and     │ │
 │   ┌──────────────────────────────────────────┐    │  │ humidity together... │ │
 │   │ 35°┤     ╭────╮                         │    │  ├──────────────────────┤ │
-│   │    │   ╭─╯    ╰──╮    ╭────╮           │    │  │ Gemini 3.5:          │ │
+│   │    │   ╭─╯    ╰──╮    ╭────╮           │    │  │ AI:                  │ │
 │   │ 30°┤──╯          ╰──╯    ╰──           │    │  │ I have analyzed the  │ │
 │   │    │  ~~~~ Temp (orange) ~~~~           │    │  │ last 15 minutes of   │ │
 │   │ 25°┤  ---- Humidity (blue) ----         │    │  │ telemetry. Temp is   │ │
@@ -156,18 +163,18 @@ This proposal presents the UI design and implementation plan for the Space Rover
 
 ### 4.2 Key Mapping
 
-| Key | Action | WebSocket Command (JSON) |
-|-----|--------|--------------------------|
-| `W` | Drive forward | `{"type":"drive","speed":180,"direction":"forward"}` |
-| `S` | Drive backward | `{"type":"drive","speed":180,"direction":"backward"}` |
-| `A` | Spin left | `{"type":"steer","direction":"left"}` |
-| `D` | Spin right | `{"type":"steer","direction":"right"}` |
-| `Space` | Emergency stop | `{"type":"stop"}` |
-| `I` | Tilt up | `{"type":"gimbal","pan":pan,"tilt":tilt+5}` |
-| `K` | Tilt down | `{"type":"gimbal","pan":pan,"tilt":tilt-5}` |
-| `J` | Pan left | `{"type":"gimbal","pan":pan-5,"tilt":tilt}` |
-| `L` | Pan right | `{"type":"gimbal","pan":pan+5,"tilt":tilt}` |
-| `C` | Center gimbal | `{"type":"gimbal","center":true}` |
+| Key | Action | WebSocket Command (Plain Text) |
+|-----|--------|--------------------------------|
+| `W` | Drive forward | `"forward"` or `"drive:speed,0"` |
+| `S` | Drive backward | `"backward"` or `"drive:-speed,0"` |
+| `A` | Spin left | `"left"` or `"drive:0,-speed"` |
+| `D` | Spin right | `"right"` or `"drive:0,speed"` |
+| `Space` | Emergency stop | `"stop"` |
+| `I` | Tilt up | `"servo:pan,tilt+5"` |
+| `K` | Tilt down | `"servo:pan,tilt-5"` |
+| `J` | Pan left | `"servo:pan-5,tilt"` |
+| `L` | Pan right | `"servo:pan+5,tilt"` |
+| `C` | Center gimbal | `"servo:90,90"` |
 
 ---
 
@@ -230,7 +237,54 @@ This proposal presents the UI design and implementation plan for the Space Rover
 
 ---
 
-## 8. Reference Documents
+## 8. Duke's Review Notes (Phase 3+)
+
+### 8.1 Communication Protocol
+
+| Priority | Item | Note |
+|----------|------|------|
+| 🔴 Must | WebSocket message format | Use plain text: `"forward"`, `"servo:90,65"`, `"drive:200,-50"` |
+| 🔴 Must | Default speed 220, slider min 150 | 6WD skid-steer chassis cannot turn below PWM 220 |
+
+
+### 8.2 Subsystem Health
+
+| Priority | Item | Note |
+|----------|------|------|
+| 🟡 Should | Subsystem health | Poll `GET /api/telemetry` on ESP32-Car directly |
+
+### 8.3 AI Chat
+
+| Priority | Item | Note |
+|----------|------|------|
+| 🟡 Should | AI Chat | Call Ollama at `http://rpi5.local:11434/api/generate` (local network) |
+| 🟡 Should | Panel name | Rename to "Local AI Sensor Analyst (Ollama)" |
+| 🟡 Should | Models | Use `phi3:mini` (3.8B) or `llama3.2:3b` on RPi5 |
+
+### 8.4 Media & Snapshots
+
+| Priority | Item | Note |
+|----------|------|------|
+| 🟡 Should | Media upload | Snapshot uploads to `POST /api/v1/rovers/{uid}/media` |
+
+### 8.5 Person-Following (Future)
+
+| Priority | Item | Note |
+|----------|------|------|
+| 🟡 Future | Follow Mode button | Add toggle button in sidebar |
+| 🟡 Future | Endpoints | `POST /follow/start`, `POST /follow/stop`, `GET /follow/status` |
+
+
+### 8.6 Architecture Notes
+
+| Item | Note |
+|------|------|
+| Authentication | None in Phase 1 |
+| Clock sync | Gateway applies UTC timestamp on receipt |
+
+---
+
+## 9. Reference Documents
 
 | Document | Purpose |
 |----------|---------|

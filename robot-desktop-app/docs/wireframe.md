@@ -35,11 +35,12 @@
 │   │  📷 640x480 (30 FPS) ▼             │        │  │ [📷 Take Snapshot]     │ │
 │   └─────────────────────────────────────┘        │  │ [🔧 System Diagnostics]│ │
 │                                                  │  │ [⚙ Device Configuration]│
+│                                                  │  │ [🚶 Follow Mode]       │ │
 ├──────────────────────────────────────────────────┤  └────────────────────────┘ │
 │ BOTTOM CONTROLS                                                         │
 │ ┌──────────────────────┐ ┌──────────────────┐ ┌────────────────────┐ ┌────────┐ │
 │ │ Motor Speed          │ │ Auto-Brake [ON]  │ │ Gimbal: Pan 90°   │ │ W/S    │ │
-│ │ 180 (70%) [====]     │ │ Threshold: 30cm  │ │        Tilt 90°   │ │ A/D    │ │
+│ │ 220 (86%) [====]     │ │ Threshold: 30cm  │ │        Tilt 90°   │ │ A/D    │ │
 │ │                      │ │ [====]           │ │ [Center]           │ │[STOP]  │ │
 │ └──────────────────────┘ └──────────────────┘ └────────────────────┘ └────────┘ │
 ├──────────────────────────────────────────────────────────────────────────────────┤
@@ -67,11 +68,11 @@
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────┬────────────────────────────┐
-│ 📊 Historical Sensor Analytics                     │  Gemini 3.5 Sensor Analyst │
+│ 📊 Historical Sensor Analytics                     │  Local AI Sensor Analyst   │
 │   Window: 15m Telemetry Deck                       │  ┌──────────────────────┐ │
-│   Auto-Refresh (5s) [ON]  [+ Add Chart] [Reset]   │  │ ● gemini-3.5 active  │ │
+│   Auto-Refresh (5s) [ON]  [+ Add Chart] [Reset]   │  │ ● Ollama active      │ │
 ├────────────────────────────────────────────────────┤  ├──────────────────────┤ │
-│ 💡 Tip: /chart in Gemini chat to customize plots   │  │ ℹ TELEMETRY CONTEXT  │ │
+│ 💡 Tip: /chart in AI chat to customize plots       │  │ ℹ TELEMETRY CONTEXT  │ │
 │    SYNC_RATE: 100ms • BUFFER: 900pts               │  │ Temp:28.5°C Air:450  │ │
 ├────────────────────────────────────────────────────┤  │ Dist:45cm Batt:94%   │ │
 │                                                    │  ├──────────────────────┤ │
@@ -79,7 +80,7 @@
 │   Temp: 28.5°C  Humidity: 58.2%RH                 │  │ Show me temp and     │ │
 │   ┌──────────────────────────────────────────┐    │  │ humidity together... │ │
 │   │ 35°┤     ╭────╮                         │    │  ├──────────────────────┤ │
-│   │    │   ╭─╯    ╰──╮    ╭────╮           │    │  │ Gemini 3.5:          │ │
+│   │    │   ╭─╯    ╰──╮    ╭────╮           │    │  │ AI:                  │ │
 │   │ 30°┤──╯          ╰──╯    ╰──           │    │  │ I have analyzed the  │ │
 │   │    │  ~~~~ Temp (orange) ~~~~           │    │  │ last 15 minutes of   │ │
 │   │ 25°┤  ---- Humidity (blue) ----         │    │  │ telemetry. Temp is   │ │
@@ -104,7 +105,7 @@
                                                                │ ❖ close      │ │
                                                                └──────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────┘
-[LOG] 12:14:11 Gemini API tool response OK | 12:12:00 Radio Ping: 18ms   expand ▼
+[LOG] 12:14:11 Ollama API tool response OK | 12:12:00 Radio Ping: 18ms   expand ▼
                               ┌─────┐
                               │ ✖   │ ← FLOATING BUTTON (purple, bottom-right)
                               └─────┘
@@ -156,7 +157,7 @@
 | Chart 1: Temp & Humidity | Full Width | 100% × 192px | Dual-axis line chart with live values |
 | Chart 2: Air Quality | Left Half | 50% × 180px | CO2 + PM2.5 multi-trend |
 | Chart 3: Obstacle Proximity | Right Half | 50% × 180px | Sonar bar chart timeline |
-| Gemini Chat Panel | Right | 384px (w-96) | AI analyst chat |
+| Ollama Chat Panel | Right | 384px (w-96) | AI analyst chat |
 | Chat Header | Top of Chat | 100% × 48px | Model name, status, close button |
 | Chat Stream | Middle | Flex | Messages, tool cards, suggestions |
 | Chat Input | Bottom | 100% × auto | Text input + send button |
@@ -185,7 +186,7 @@
 
 | Element | Type | Function |
 |---------|------|----------|
-| `Video Canvas` | Widget | Live MJPEG stream display |
+| `Video Canvas` | Widget | Live video stream display (Binary JPEG over WebSocket) |
 | `Crosshair` | SVG Overlay | Fixed center marker for aiming |
 | `Status Overlay` | Widget (top center) | FPS, Ping, Distance, Temp, Humidity |
 | `Resolution Dropdown` | ComboBox (bottom right) | 640x480 / 1280x720 / 320x240 |
@@ -200,16 +201,17 @@
 | `Ambient Humidity` | Card + Progress Bar | Current % RH |
 | `Air Purity Metric` | Card + Progress Bar | Gas concentration in PPM |
 | `Obstacle Distance` | Card + Progress Bar | Ultrasonic distance in cm |
-| `Subsystem Health` | List | ESP32, Motor Drivers, Servos, Battery |
-| `Take Snapshot` | Button | Save current frame as JPEG |
+| `Subsystem Health` | List | ESP32, Motor Drivers, Servos, Battery (from ESP32 directly) |
+| `Take Snapshot` | Button | Capture frame and upload to `POST /api/v1/rovers/{uid}/media` |
 | `System Diagnostics` | Link | Open diagnostics view |
 | `Device Configuration` | Link | Open config view |
+| `Follow Mode` | Toggle Button | Call `POST http://rpi5.local/follow/start` |
 
 ### Bottom Controls
 
 | Element | Type | Function |
 |---------|------|----------|
-| `Motor Speed` | Slider + Label | PWM power 0-255 (displayed as %) |
+| `Motor Speed` | Slider + Label | PWM power 150-255 (displayed as %), default 220 |
 | `Auto-Brake Toggle` | Switch | Enable/disable automatic braking |
 | `Threshold Slider` | Slider + Label | Safety distance (10cm - 100cm) |
 | `Gimbal Pan` | Slider + Label | Servo angle 0-180° |
@@ -231,18 +233,18 @@
 | `Chart 2: Air Quality` | Multi-Trend Chart | CO2 (emerald) + PM2.5 (blue) dashed line |
 | `Chart 3: Obstacle Proximity` | Bar Chart Timeline | Sonar distance history with threshold marker |
 
-### Gemini Chat Panel (Diagnostics View)
+### Ollama Chat Panel (Diagnostics View)
 
 | Element | Type | Function |
 |---------|------|----------|
-| `Chat Header` | Widget | Model name (gemini-3.5-flash-lite), status, close button |
+| `Chat Header` | Widget | Model name (phi3:mini), status, close button |
 | `Close Button` | Button | Return to Main View |
 | `Telemetry Context Pill` | Card | Current sensor readings attached to context |
-| `Chat Messages` | Scroll Area | User questions + Gemini responses |
+| `Chat Messages` | Scroll Area | User questions + AI responses |
 | `Tool Execution Card` | Card | Shows function calls with args and execution time |
 | `Suggestion Pills` | Buttons | Quick action commands (/chart, /filter, /export) |
 | `Chat Input` | Text Input | Type /chart commands or natural language queries |
-| `Send Button` | Button | Submit message to Gemini |
+| `Send Button` | Button | Submit message to Ollama |
 
 ### Log Panel
 
@@ -285,7 +287,7 @@
 | State | 💬 Button | Left Side | Right Side |
 |-------|-----------|-----------|------------|
 | **Main View** | OFF (💬) Blue | Video Camera | Telemetry Sensors |
-| **Diagnostics View** | ON (✖) Purple | Historical Charts | Gemini Chat Panel |
+| **Diagnostics View** | ON (✖) Purple | Historical Charts | Ollama Chat Panel |
 
 - Click 💬 to open Diagnostics view
 - Click ✖ to close and return to Main View
@@ -330,12 +332,12 @@
 | Air Quality | `co2`, `pm2.5` | Multi-line chart |
 | Obstacle Proximity | `distance` | Bar chart timeline |
 
-### Custom Charts (User Created via Gemini or /chart command)
+### Custom Charts (User Created via Ollama or /chart command)
 
-**Via Gemini Chat:**
+**Via Ollama Chat:**
 ```
 You: Show me gas and battery on one chart
-Gemini: Creating custom chart...
+AI: Creating custom chart...
 → New chart appears with gas + battery lines
 ```
 

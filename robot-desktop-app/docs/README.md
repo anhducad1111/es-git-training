@@ -20,7 +20,7 @@ This folder contains all design and specification documents for the project.
 - Safety features (HW-008, auto-brake)
 - OTA firmware update design
 - Implementation plan (12 phases)
-- Technical reference (workers, config, Gemini AI, charts, cloud API)
+- Technical reference (workers, config, Ollama AI, charts, cloud API)
 
 **Audience:** Duke (Mentor)
 
@@ -34,7 +34,7 @@ This folder contains all design and specification documents for the project.
 
 **Contents:**
 - Main View wireframe (header, video, sidebar, bottom controls, log)
-- Diagnostics View wireframe (analytics deck, charts, Gemini chat)
+- Diagnostics View wireframe (analytics deck, charts, Ollama chat)
 - Video overlay status bar
 - Screen zones summary (Main + Diagnostics)
 - Component descriptions (all zones)

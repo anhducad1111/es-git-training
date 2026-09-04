@@ -71,7 +71,7 @@ Once Duke approves this document:
 | §3 | UI Wireframes | Main View, Diagnostics View, Video Overlay, Screen Zones, Component Descriptions |
 | §4 | Keyboard State Machine | Drive control (WASD), Gimbal control (IJKL), Key mapping table |
 | §5 | Thread Architecture | Thread diagram, responsibilities, signal/slot communication |
-| §6 | Communication Protocol | WebSocket commands (JSON), Telemetry data (JSON), Video stream (binary), Resolution change flow |
+| §6 | Communication Protocol | WebSocket commands (plain text), Telemetry data, Video stream (binary), Resolution change flow |
 | §7 | Safety Features | Rover-side failsafe (HW-008), Connection monitoring, Auto-brake system |
 | §8 | OTA Firmware Updates | OTA Hub, Upload implementation, File naming convention |
 | §9 | Color Scheme | Tailwind color palette, Font families |
@@ -81,13 +81,13 @@ Once Duke approves this document:
 | §13 | User Stories | Persona-based feature requirements |
 | §14 | Implementation Plan | 12-phase development roadmap |
 | §15 | Development Checklist | Phase completion tracking |
-| §16 | Technical Reference — Workers | HTTP Worker, Gemini Worker, Video Receiver, Command Sender code |
+| §16 | Technical Reference — Workers | HTTP Worker, Ollama Worker, Video Receiver, Command Sender code |
 | §17 | Technical Reference — Config | config.json structure, Load/Save functions, Persistence flow |
-| §18 | Technical Reference — Gemini AI | Model config, Function calling, System prompt, Examples |
+| §18 | Technical Reference — Ollama AI | Model config, Function calling, System prompt, Examples |
 | §19 | Technical Reference — Charts | Data flow, Normalization algorithm, Slash commands |
 | §20 | Technical Reference — Drag & Drop | MIME data format, Drop zone handling |
 | §21 | Technical Reference — Keyboard | Key event handling, Gimbal angle tracking |
-| §22 | Technical Reference — ESP32 WebSocket | Command format (JSON), Telemetry format (JSON), Video stream (binary), ACK protocol |
+| §22 | Technical Reference — ESP32 WebSocket | Command format (plain text), Telemetry format, Video stream (binary), ACK protocol |
 | §23 | Technical Reference — Cloud API | POST/GET endpoints with JSON examples |
 | §24 | Technical Reference — OTA | Upload implementation, Headers |
 | §25 | Technical Reference — Dependencies | Package list with versions |
@@ -176,11 +176,12 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 │   │  📷 640x480 (30 FPS) ▼             │        │  │ [📷 Take Snapshot]     │ │
 │   └─────────────────────────────────────┘        │  │ [🔧 System Diagnostics]│ │
 │                                                  │  │ [⚙ Device Configuration]│
+│                                                  │  │ [🚶 Follow Mode]       │ │
 ├──────────────────────────────────────────────────┤  └────────────────────────┘ │
 │ BOTTOM CONTROLS                                                         │
 │ ┌──────────────────────┐ ┌──────────────────┐ ┌────────────────────┐ ┌────────┐ │
 │ │ Motor Speed          │ │ Auto-Brake [ON]  │ │ Gimbal: Pan 90°   │ │ W/S    │ │
-│ │ 180 (70%) [====]     │ │ Threshold: 30cm  │ │        Tilt 90°   │ │ A/D    │ │
+│ │ 220 (86%) [====]     │ │ Threshold: 30cm  │ │        Tilt 90°   │ │ A/D    │ │
 │ │                      │ │ [====]           │ │ [Center]           │ │[STOP]  │ │
 │ └──────────────────────┘ └──────────────────┘ └────────────────────┘ └────────┘ │
 ├──────────────────────────────────────────────────────────────────────────────────┤
@@ -206,11 +207,11 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────┬────────────────────────────┐
-│ 📊 Historical Sensor Analytics                     │  Gemini 3.5 Sensor Analyst │
+│ 📊 Historical Sensor Analytics                     │  Local AI Sensor Analyst   │
 │   Window: 15m Telemetry Deck                       │  ┌──────────────────────┐ │
-│   Auto-Refresh (5s) [ON]  [+ Add Chart] [Reset]   │  │ ● gemini-3.5 active  │ │
+│   Auto-Refresh (5s) [ON]  [+ Add Chart] [Reset]   │  │ ● Ollama active      │ │
 ├────────────────────────────────────────────────────┤  ├──────────────────────┤ │
-│ 💡 Tip: /chart in Gemini chat to customize plots   │  │ ℹ TELEMETRY CONTEXT  │ │
+│ 💡 Tip: /chart in AI chat to customize plots       │  │ ℹ TELEMETRY CONTEXT  │ │
 │    SYNC_RATE: 100ms • BUFFER: 900pts               │  │ Temp:28.5°C Air:450  │ │
 ├────────────────────────────────────────────────────┤  │ Dist:45cm Batt:94%   │ │
 │                                                    │  ├──────────────────────┤ │
@@ -218,7 +219,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 │   Temp: 28.5°C  Humidity: 58.2%RH                 │  │ Show me temp and     │ │
 │   ┌──────────────────────────────────────────┐    │  │ humidity together... │ │
 │   │ 35°┤     ╭────╮                         │    │  ├──────────────────────┤ │
-│   │    │   ╭─╯    ╰──╮    ╭────╮           │    │  │ Gemini 3.5:          │ │
+│   │    │   ╭─╯    ╰──╮    ╭────╮           │    │  │ AI:                  │ │
 │   │ 30°┤──╯          ╰──╯    ╰──           │    │  │ I have analyzed the  │ │
 │   │    │  ~~~~ Temp (orange) ~~~~           │    │  │ last 15 minutes of   │ │
 │   │ 25°┤  ---- Humidity (blue) ----         │    │  │ telemetry. Temp is   │ │
@@ -243,7 +244,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
                                                                │ ❖ close      │ │
                                                                └──────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────┘
-[LOG] 12:14:11 Gemini API tool response OK | 12:12:00 Radio Ping: 18ms   expand ▼
+[LOG] 12:14:11 Ollama API tool response OK | 12:12:00 Radio Ping: 18ms   expand ▼
                               ┌─────┐
                               │ ✖   │ ← FLOATING BUTTON (purple, bottom-right)
                               └─────┘
@@ -291,7 +292,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 | Chart 1: Temp & Humidity | Full Width | 100% × 192px | Dual-axis line chart with live values |
 | Chart 2: Air Quality | Left Half | 50% × 180px | CO2 + PM2.5 multi-trend |
 | Chart 3: Obstacle Proximity | Right Half | 50% × 180px | Sonar bar chart timeline |
-| Gemini Chat Panel | Right | 384px (w-96) | AI analyst chat |
+| Ollama Chat Panel | Right | 384px (w-96) | AI analyst chat |
 | Chat Header | Top of Chat | 100% × 48px | Model name, status, close button |
 | Chat Stream | Middle | Flex | Messages, tool cards, suggestions |
 | Chat Input | Bottom | 100% × auto | Text input + send button |
@@ -318,7 +319,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 
 | Element | Type | Function |
 |---------|------|----------|
-| `Video Canvas` | Widget | Live MJPEG stream display |
+| `Video Canvas` | Widget | Live video stream display (Binary JPEG over WebSocket) |
 | `Crosshair` | SVG Overlay | Fixed center marker for aiming |
 | `Status Overlay` | Widget (top center) | FPS, Ping, Distance, Temp, Humidity |
 | `Resolution Dropdown` | ComboBox (bottom right) | 640x480 / 1280x720 / 320x240 |
@@ -333,16 +334,17 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 | `Ambient Humidity` | Card + Progress Bar | Current % RH |
 | `Air Purity Metric` | Card + Progress Bar | Gas concentration in PPM |
 | `Obstacle Distance` | Card + Progress Bar | Ultrasonic distance in cm |
-| `Subsystem Health` | List | ESP32, Motor Drivers, Servos, Battery |
-| `Take Snapshot` | Button | Save current frame as JPEG |
+| `Subsystem Health` | List | ESP32, Motor Drivers, Servos, Battery (from ESP32 directly) |
+| `Take Snapshot` | Button | Capture frame and upload to `POST /api/v1/rovers/{uid}/media` |
 | `System Diagnostics` | Link | Open diagnostics view |
 | `Device Configuration` | Link | Open config view |
+| `Follow Mode` | Toggle Button | Call `POST http://rpi5.local/follow/start` |
 
 #### BOTTOM CONTROLS
 
 | Element | Type | Function |
 |---------|------|----------|
-| `Motor Speed` | Slider + Label | PWM power 0-255 (displayed as %) |
+| `Motor Speed` | Slider + Label | PWM power 150-255 (displayed as %), default 220 |
 | `Auto-Brake Toggle` | Switch | Enable/disable automatic braking |
 | `Threshold Slider` | Slider + Label | Safety distance (10cm - 100cm) |
 | `Gimbal Pan` | Slider + Label | Servo angle 0-180° |
@@ -417,14 +419,14 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 
 | Element | Type | Function |
 |---------|------|----------|
-| `Chat Header` | Widget | Model name (gemini-3.5-flash-lite), status, close button |
+| `Chat Header` | Widget | Model name (phi3:mini), status, close button |
 | `Close Button` | Button | Return to Main View |
 | `Telemetry Context Pill` | Card | Current sensor readings attached to context |
-| `Chat Messages` | Scroll Area | User questions + Gemini responses |
+| `Chat Messages` | Scroll Area | User questions + AI responses |
 | `Tool Execution Card` | Card | Shows function calls with args and execution time |
 | `Suggestion Pills` | Buttons | Quick action commands (/chart, /filter, /export) |
 | `Chat Input` | Text Input | Type /chart commands or natural language queries |
-| `Send Button` | Button | Submit message to Gemini |
+| `Send Button` | Button | Submit message to Ollama |
 
 #### LOG SCREEN
 
@@ -472,12 +474,12 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 | Temperature & Humidity | `temperature`, `humidity` | Dual-axis line chart |
 | Air Quality | `co2`, `pm1.0`, `pm2.5`, `pm10` | Multi-line chart |
 
-#### Custom Charts (User Created via Gemini or /chart command)
+### Custom Charts (User Created via Ollama or /chart command)
 
-**Via Gemini Chat:**
+**Via Ollama Chat:**
 ```
 You: Show me gas and battery on one chart
-Gemini: Creating custom chart...
+AI: Creating custom chart...
 → New chart appears with gas + battery lines
 ```
 
@@ -562,18 +564,18 @@ Gemini: Creating custom chart...
 
 ### 4.3 Key Mapping
 
-| Key | Action | WebSocket Command (JSON) |
-|-----|--------|--------------------------|
-| `W` | Drive forward | `{"type":"drive","speed":180,"direction":"forward"}` |
-| `S` | Drive backward | `{"type":"drive","speed":180,"direction":"backward"}` |
-| `A` | Spin left | `{"type":"steer","direction":"left"}` |
-| `D` | Spin right | `{"type":"steer","direction":"right"}` |
-| `Space` | Emergency stop | `{"type":"stop"}` |
-| `I` | Tilt up | `{"type":"gimbal","pan":pan,"tilt":tilt+5}` |
-| `K` | Tilt down | `{"type":"gimbal","pan":pan,"tilt":tilt-5}` |
-| `J` | Pan left | `{"type":"gimbal","pan":pan-5,"tilt":tilt}` |
-| `L` | Pan right | `{"type":"gimbal","pan":pan+5,"tilt":tilt}` |
-| `C` | Center gimbal | `{"type":"gimbal","center":true}` |
+| Key | Action | WebSocket Command (Plain Text) |
+|-----|--------|--------------------------------|
+| `W` | Drive forward | `"forward"` or `"drive:speed,0"` |
+| `S` | Drive backward | `"backward"` or `"drive:-speed,0"` |
+| `A` | Spin left | `"left"` or `"drive:0,-speed"` |
+| `D` | Spin right | `"right"` or `"drive:0,speed"` |
+| `Space` | Emergency stop | `"stop"` |
+| `I` | Tilt up | `"servo:pan,tilt+5"` |
+| `K` | Tilt down | `"servo:pan,tilt-5"` |
+| `J` | Pan left | `"servo:pan-5,tilt"` |
+| `L` | Pan right | `"servo:pan+5,tilt"` |
+| `C` | Center gimbal | `"servo:90,90"` |
 | `Tab` | Autocomplete in chat | — |
 | `Enter` | Send chat message | — |
 | `Shift+Enter` | New line in chat | — |
@@ -605,7 +607,7 @@ Gemini: Creating custom chart...
 │ │ THREAD      │  │ THREAD      │  │ THREAD      │  │ THREAD      │
 │ │             │  │             │  │             │  │             │
 │ │ WebSocket   │  │ WebSocket   │  │ HTTP POST   │  │ HTTPS       │
-│ │ (ESP32-CAM) │  │ (ESP32-MCU) │  │ (Cloud API) │  │ (Gemini)    │
+│ │ (ESP32-CAM) │  │ (ESP32-MCU) │  │ (Cloud API) │  │ (Ollama)    │
 │ └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
 │        │                │                │                │
 │        ▼                ▼                ▼                ▼
@@ -629,7 +631,7 @@ Gemini: Creating custom chart...
 | Video Thread | Receive video frames from ESP32-CAM | WebSocket (binary) |
 | Command Thread | Send commands to ESP32-MCU | WebSocket (JSON) |
 | Telemetry Thread | POST sensor data to cloud | HTTP REST |
-| AI Chat Thread | Gemini API calls | HTTPS |
+| AI Chat Thread | Ollama API (local RPi5) | HTTP (local network) |
 
 ---
 
@@ -638,59 +640,48 @@ Gemini: Creating custom chart...
 | Direction | Protocol | Purpose |
 |-----------|----------|---------|
 | PC → ESP32-CAM | WebSocket | Receive video stream (binary JPEG) |
-| PC → ESP32-MCU | WebSocket | Send commands (JSON), receive telemetry (JSON) |
+| PC ↔ ESP32-MCU | WebSocket | Send commands (plain text), receive telemetry |
 | PC → Cloud | HTTP REST | Store/retrieve historical data |
 
-### 6.1 WebSocket Commands (PC → ESP32-MCU, JSON)
+### 6.1 WebSocket Commands (PC → ESP32-MCU, Plain Text)
 
 **Drive Commands:**
-```json
-{"type": "drive", "speed": 180, "direction": "forward"}
-{"type": "drive", "speed": 180, "direction": "backward"}
-{"type": "steer", "direction": "left"}
-{"type": "steer", "direction": "right"}
-{"type": "stop"}
+```
+"forward"           # Drive forward at current speed
+"backward"          # Drive backward at current speed
+"left"              # Spin left
+"right"             # Spin right
+"stop"              # Emergency stop
+```
+
+Or with speed/direction:
+```
+"drive:200,0"       # Speed 200, straight forward
+"drive:200,-50"     # Speed 200, turning left
 ```
 
 **Gimbal Commands:**
-```json
-{"type": "gimbal", "pan": 90, "tilt": 90}
-{"type": "gimbal", "center": true}
+```
+"servo:90,90"       # Pan 90°, Tilt 90°
+"servo:90,65"       # Pan 90°, Tilt 65°
 ```
 
 **Camera Commands:**
-```json
-{"type": "resolution", "width": 640, "height": 480}
-{"type": "flip", "axis": "horizontal"}
-{"type": "flip", "axis": "vertical"}
-{"type": "snapshot"}
+```
+"resolution:640,480"    # Set resolution
+"flip:h"                # Flip horizontal
+"flip:v"                # Flip vertical
+"snapshot"              # Capture frame
 ```
 
 **OTA Command:**
-```json
-{"type": "ota", "version": "1.0.0"}
+```
+"ota:1.0.0"             # Trigger firmware update
 ```
 
-### 6.2 Telemetry Data (ESP32-MCU → PC, JSON)
+### 6.2 Telemetry Data (ESP32-MCU → PC)
 
-ESP32-MCU sends sensor data via the same WebSocket connection:
-
-```json
-{
-  "type": "telemetry",
-  "temperature": 28.5,
-  "humidity": 65.0,
-  "air_purity": 450,
-  "distance": 45.0
-}
-```
-
-| Field | Unit | Description |
-|-------|------|-------------|
-| `temperature` | °C | Ambient temperature |
-| `humidity` | % | Relative humidity |
-| `air_purity` | PPM | Gas/smoke concentration (MQ-2) |
-| `distance` | cm | Obstacle distance (HC-SR04) |
+Sensor data received via the same WebSocket connection (format TBD from API docs).
 
 ### 6.3 Video Stream (ESP32-CAM → PC)
 
@@ -723,14 +714,14 @@ Binary JPEG frames sent over WebSocket:
 │       ▼                                                          │
 │   [DESKTOP APP]                                                  │
 │   1. Update UI Dropdown                                          │
-│   2. Send JSON: {"type":"resolution","width":640,"height":480}  │
+│   2. Send: "resolution:640,480"                                  │
 │   3. Wait for ACK (timeout: 2s)                                  │
 │       │                                                          │
 │       ▼                                                          │
 │   [ESP32-CAM]                                                    │
 │   1. Receive resolution command                                  │
 │   2. Reconfigure camera sensor (~500ms)                          │
-│   3. Send ACK: {"type":"ack","status":"ok"}                     │
+│   3. Send ACK: "ack:ok"                                          │
 │   4. Resume video stream at new resolution                       │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -819,7 +810,7 @@ robot-desktop-app/
 ├── sensors.py        # Sensor dashboard + charts
 ├── gimbal.py         # Gimbal control panel
 ├── ota.py            # Firmware upload
-├── ai_chat.py        # Gemini AI chat interface
+├── ai_chat.py        # Ollama AI chat interface
 ├── charts.py         # Historical graph widgets
 ├── cloud_api.py      # Cloud backend API client
 ├── worker.py         # Background QThread workers
@@ -892,7 +883,7 @@ python main.py
   "cam_ip": "192.168.1.101",
   "cloud_api_url": "http://rpi5.local/api/v1",
   "device_uid": "rover-001",
-  "gemini_api_key": "",
+  "ollama_url": "http://rpi5.local:11434/api/generate",
   "center_charts": {},
   "custom_charts": {},
   "custom_charts_normalize": {}
@@ -978,52 +969,41 @@ class Worker(QThread):
             self.error.emit(str(e))
 ```
 
-### 18.2 Gemini Worker
+### 18.2 Ollama Worker
 
 ```python
-# gemini_worker.py
-class GeminiWorker(QThread):
+# ollama_worker.py
+class OllamaWorker(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
     tool_called = pyqtSignal(str, dict)
     
-    def __init__(self, api_key):
+    def __init__(self, ollama_url):
         super().__init__()
-        self.api_key = api_key
-        self.client = None
-        self.chat = None
-    
-    def init_chat(self):
-        try:
-            self.client = genai.Client(api_key=self.api_key)
-            self.chat = self.client.chats.create(
-                model='gemini-3.5-flash-lite',
-                config={
-                    'tools': [self.create_custom_charts],
-                    'temperature': 0.7,
-                }
-            )
-            return True
-        except Exception as e:
-            self.error.emit(f"Failed to initialize Gemini: {str(e)}")
-            return False
+        self.ollama_url = ollama_url
+        self.model = 'phi3:mini'
+        self.conversation_history = []
     
     def send_message(self, text):
-        if not self.chat:
-            if not self.init_chat():
-                return
         self._pending_message = text
         self.start()
     
     def run(self):
         try:
             if self._pending_message:
-                response = self.chat.send_message(self._pending_message)
-                self._pending_message = None
-                if response.text:
-                    self.finished.emit(response.text)
+                payload = {
+                    'model': self.model,
+                    'prompt': self._pending_message,
+                    'stream': False
+                }
+                response = requests.post(self.ollama_url, json=payload, timeout=30)
+                if response.status_code == 200:
+                    result = response.json()
+                    self.finished.emit(result.get('response', ''))
+                else:
+                    self.error.emit(f"Ollama error: {response.status_code}")
         except Exception as e:
-            self.error.emit(f"Gemini error: {str(e)}")
+            self.error.emit(f"Ollama error: {str(e)}")
 ```
 
 ### 18.3 Video Receiver Thread
@@ -1091,7 +1071,7 @@ class CommandSender:
   "cam_ip": "192.168.1.101",
   "cloud_api_url": "http://rpi5.local/api/v1",
   "device_uid": "rover-001",
-  "gemini_api_key": "",
+  "ollama_url": "http://rpi5.local:11434/api/generate",
   "center_charts": {},
   "custom_charts": {},
   "custom_charts_normalize": {}
@@ -1112,7 +1092,7 @@ DEFAULT_CONFIG = {
     "cam_ip": "192.168.1.101",
     "cloud_api_url": "http://rpi5.local/api/v1",
     "device_uid": "rover-001",
-    "gemini_api_key": "",
+    "ollama_url": "http://rpi5.local:11434/api/generate",
     "center_charts": {},
     "custom_charts": {},
     "custom_charts_normalize": {}
@@ -1180,23 +1160,18 @@ def save_config(config):
 
 ---
 
-## 20. Technical Reference — Gemini AI Integration
+## 20. Technical Reference — Ollama AI Integration
 
 ### 20.1 Model Configuration
 
 ```python
-# gemini_worker.py
-MODEL = 'gemini-3.5-flash-lite'
+# ollama_worker.py
+MODEL = 'phi3:mini'  # or llama3.2:3b
+OLLAMA_URL = 'http://rpi5.local:11434/api/generate'
 
 def init_chat(self):
-    self.client = genai.Client(api_key=self.api_key)
-    self.chat = self.client.chats.create(
-        model=MODEL,
-        config={
-            'tools': [self.create_custom_charts],
-            'temperature': 0.7,
-        }
-    )
+    self.url = OLLAMA_URL
+    self.model = MODEL
 ```
 
 ### 20.2 Function Calling — Chart Creation
@@ -1247,7 +1222,7 @@ Valid sensor keys: co2, pm1.0, pm2.5, pm10, temperature, humidity, pressure, gas
 ```
 User: "Show me temperature and humidity together"
 
-Gemini Response: [Calls create_custom_charts({
+AI Response: [Calls create_custom_charts({
     "Temperature & Humidity": ["temperature", "humidity"]
 })]
 
@@ -1258,7 +1233,7 @@ Result: Single chart with both temperature and humidity lines
 ```
 User: "Compare gas and CO2 on the same scale"
 
-Gemini Response: [Calls create_custom_charts({
+AI Response: [Calls create_custom_charts({
     "Gas vs CO2": ["gas", "co2"]
 }, normalize=True)]
 
@@ -1269,7 +1244,7 @@ Result: Normalized chart (0-1 scale) showing relative trends
 ```
 User: "Create separate charts for each PM sensor"
 
-Gemini Response: [Calls create_custom_charts({
+AI Response: [Calls create_custom_charts({
     "PM1.0": ["pm1.0"],
     "PM2.5": ["pm2.5"],
     "PM10": ["pm10"]
@@ -1527,67 +1502,54 @@ class GimbalController:
 
 ## 24. Technical Reference — ESP32 WebSocket Protocol
 
-### 24.1 Command Format (PC → ESP32-MCU, JSON)
+### 24.1 Command Format (PC → ESP32-MCU, Plain Text)
 
 ```python
-# All commands are JSON objects sent via WebSocket
+# All commands are plain-text strings sent via WebSocket
 
 # Drive commands
-{"type": "drive", "speed": 180, "direction": "forward"}
-{"type": "drive", "speed": 180, "direction": "backward"}
-{"type": "steer", "direction": "left"}
-{"type": "steer", "direction": "right"}
-{"type": "stop"}
+"forward"           # Drive forward at current speed
+"backward"          # Drive backward at current speed
+"left"              # Spin left
+"right"             # Spin right
+"stop"              # Emergency stop
+
+# Or with speed/direction
+"drive:200,0"       # Speed 200, straight forward
+"drive:200,-50"     # Speed 200, turning left
 
 # Gimbal commands
-{"type": "gimbal", "pan": 90, "tilt": 90}
-{"type": "gimbal", "center": true}
+"servo:90,90"       # Pan 90°, Tilt 90°
+"servo:90,65"       # Pan 90°, Tilt 65°
 
 # Camera commands
-{"type": "resolution", "width": 640, "height": 480}
-{"type": "flip", "axis": "horizontal"}
-{"type": "flip", "axis": "vertical"}
-{"type": "snapshot"}
+"resolution:640,480"    # Set resolution
+"flip:h"                # Flip horizontal
+"flip:v"                # Flip vertical
+"snapshot"              # Capture frame
 
 # OTA command
-{"type": "ota", "version": "1.0.0"}
+"ota:1.0.0"             # Trigger firmware update
 ```
 
-### 24.2 Telemetry Format (ESP32-MCU → PC, JSON)
+### 24.2 Telemetry Format (ESP32-MCU → PC)
 
-```python
-# Sensor data is sent as JSON objects via the same WebSocket connection
-{
-  "type": "telemetry",
-  "temperature": 28.5,
-  "humidity": 65.0,
-  "air_purity": 450,
-  "distance": 45.0
-}
-```
-
-| Field | Unit | Description |
-|-------|------|-------------|
-| `temperature` | °C | Ambient temperature |
-| `humidity` | % | Relative humidity |
-| `air_purity` | PPM | Gas/smoke concentration (MQ-2) |
-| `distance` | cm | Obstacle distance (HC-SR04) |
-```
+Sensor data received via the same WebSocket connection (format TBD from API docs).
 
 ### 24.3 Video Stream (ESP32-CAM → PC)
 
 ```python
 # Binary JPEG frames sent over WebSocket
 # Each message is a complete JPEG frame
-# No JSON encoding needed (raw binary)
+# No text encoding needed (raw binary)
 ```
 
 ### 24.4 Resolution Change ACK
 
 ```python
 # ESP32-CAM responds with ACK after changing resolution
-{"type": "ack", "status": "ok", "width": 640, "height": 480}
-{"type": "ack", "status": "fail", "error": "timeout"}
+"ack:ok"            # Success
+"ack:fail"          # Failure
 ```
 
 ---
@@ -1745,7 +1707,7 @@ Example: esp32-car-1.0.0-ota-haru.bin
 | PyQt6 | 6.x | Desktop GUI framework |
 | requests | 2.x | HTTP requests |
 | matplotlib | 3.x | Chart rendering |
-| google-genai | 0.3+ | Gemini AI integration |
+| requests | 2.x | HTTP requests (Ollama API) |
 | websocket | websocket-client | WebSocket communication |
 | json | stdlib | Configuration persistence |
 
@@ -1800,7 +1762,7 @@ Example: esp32-car-1.0.0-ota-haru.bin
 1. Add sensor key to `DEFAULT_CONFIG` in `config.py`
 2. Update sensor cards in `sensors.py`
 3. Add to chart groups in `config.py`
-4. Update system prompt in `gemini_worker.py`
+4. Update system prompt in `ollama_worker.py`
 
 ### 29.2 Adding New Commands
 
@@ -1811,7 +1773,7 @@ Example: esp32-car-1.0.0-ota-haru.bin
 
 ### 29.3 Extending AI Features
 
-1. Add new function to `GeminiWorker` class
+1. Add new function to `OllamaWorker` class
 2. Register with `tools` parameter
 3. Handle `tool_called` signal
 4. Update system prompt
@@ -1827,10 +1789,10 @@ Example: esp32-car-1.0.0-ota-haru.bin
 │                         Complete Data Flow                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌─────────────┐  WebSocket  ┌─────────────┐  WebSocket  ┌─────────┐│
+│  ┌─────────────┐       WebSocket  ┌─────────────┐  WebSocket  ┌─────────┐│
 │  │  Desktop    │ ──────────────> │  ESP32-CAR  │ <──────────── │  ESP32  ││
 │  │  App        │    Commands     │  (Motors)   │   Telemetry   │  CAM    ││
-│  └──────┬──────┘                 └─────────────┘               └─────────┘│
+│  └──────┬──────┘                 └─ ───────────┘               └─────────┘│
 │         │                                                                   │
 │         │ HTTP POST                                                         │
 │         ▼                                                                   │
@@ -1860,7 +1822,7 @@ Example: esp32-car-1.0.0-ota-haru.bin
 │     │                                                                       │
 │     ├──> Gimbal Thread ──> WebSocket ──> ESP32-MCU                               │
 │     │                                                                       │
-│     └──> AI Chat Thread ──> HTTPS ──> Gemini API                            │
+│     └──> AI Chat Thread ──> HTTP (local) ──> Ollama API (RPi5)              │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

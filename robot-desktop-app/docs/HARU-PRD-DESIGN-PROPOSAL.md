@@ -8,6 +8,95 @@
 
 ---
 
+## What Is a Design Proposal?
+
+A **Design Proposal** is a planning document created **before writing any code**. It defines:
+
+- **What** the application will look like (UI wireframes)
+- **How** it will work (architecture, protocols, state machines)
+- **When** each feature will be built (implementation plan)
+
+### Why Write It First?
+
+1. **Catches design mistakes early** — Fixing a wireframe is cheaper than rewriting code
+2. **Gets mentor approval** — Ensures everyone agrees on the approach before implementation
+3. **Serves as reference** — Developer can follow the plan during coding
+4. **Documents decisions** — Records why certain choices were made
+
+### How This Fits the PRD Workflow
+
+```
+PRD (Product Requirement Document)
+        │
+        ▼
+┌─────────────────────────────────┐
+│  Phase 1: Design Proposal      │ ◄── YOU ARE HERE
+│  (This document)               │
+└───────────────┬─────────────────┘
+                │
+                ▼
+┌─────────────────────────────────┐
+│  Phase 2: Mentor Review        │
+│  Duke reviews & approves       │
+└───────────────┬─────────────────┘
+                │
+                ▼
+┌─────────────────────────────────┐
+│  Phase 3: Official API Docs    │
+│  Duke unlocks ESP32/RPi5 APIs  │
+└───────────────┬─────────────────┘
+                │
+                ▼
+┌─────────────────────────────────┐
+│  Phase 4+: Implementation      │
+│  Write Python code             │
+└─────────────────────────────────┘
+```
+
+### What Happens After Approval?
+
+Once Duke approves this document:
+1. Official API documentation is unlocked (ESP32 commands, RPi5 endpoints)
+2. Implementation begins following the §14 Implementation Plan
+3. This document serves as the reference during coding
+
+---
+
+## Document Index
+
+| Section | Title | Contents |
+|---------|-------|----------|
+| §1 | Purpose | Deliverable overview, what this document contains |
+| §2 | System Architecture | High-level system diagram (ESP32 ↔ Desktop ↔ Cloud) |
+| §3 | UI Wireframes | Main View, Diagnostics View, Video Overlay, Screen Zones, Component Descriptions |
+| §4 | Keyboard State Machine | Drive control (WASD), Gimbal control (IJKL), Key mapping table |
+| §5 | Thread Architecture | Thread diagram, responsibilities, signal/slot communication |
+| §6 | Communication Protocol | WebSocket commands (JSON), Telemetry data (JSON), Video stream (binary), Resolution change flow |
+| §7 | Safety Features | Rover-side failsafe (HW-008), Connection monitoring, Auto-brake system |
+| §8 | OTA Firmware Updates | OTA Hub, Upload implementation, File naming convention |
+| §9 | Color Scheme | Tailwind color palette, Font families |
+| §10 | File Structure | Project directory layout |
+| §11 | Installation | pip install commands |
+| §12 | Usage | How to run the application |
+| §13 | User Stories | Persona-based feature requirements |
+| §14 | Implementation Plan | 12-phase development roadmap |
+| §15 | Development Checklist | Phase completion tracking |
+| §16 | Technical Reference — Workers | HTTP Worker, Gemini Worker, Video Receiver, Command Sender code |
+| §17 | Technical Reference — Config | config.json structure, Load/Save functions, Persistence flow |
+| §18 | Technical Reference — Gemini AI | Model config, Function calling, System prompt, Examples |
+| §19 | Technical Reference — Charts | Data flow, Normalization algorithm, Slash commands |
+| §20 | Technical Reference — Drag & Drop | MIME data format, Drop zone handling |
+| §21 | Technical Reference — Keyboard | Key event handling, Gimbal angle tracking |
+| §22 | Technical Reference — ESP32 WebSocket | Command format (JSON), Telemetry format (JSON), Video stream (binary), ACK protocol |
+| §23 | Technical Reference — Cloud API | POST/GET endpoints with JSON examples |
+| §24 | Technical Reference — OTA | Upload implementation, Headers |
+| §25 | Technical Reference — Dependencies | Package list with versions |
+| §26 | Technical Reference — Troubleshooting | ESP32, Cloud, Performance issues |
+| §27 | Technical Reference — Dev Guide | Adding sensors, commands, AI features |
+| §28 | Technical Reference — Data Flow | Complete system and thread communication diagrams |
+
+---
+
 ## 1. Purpose
 
 This is the Phase 1 deliverable requested in PRD §6. It contains:
@@ -20,7 +109,6 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 6. Safety features
 7. OTA firmware update design
 8. Implementation plan
-9. Questions for Duke
 
 **Note:** Cloud API integration details will be added in Phase 3 after receiving the official API documentation from Duke.
 
@@ -29,25 +117,25 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 ## 2. System Architecture
 
 ```
-                  [ ESP32 Rover ]
-                    │       ▲
-   UDP (Port 5005)  │       │  UDP (Port 5006)
-   Command Out      │       │  Video & Sensors In
-                    ▼       │
-            ┌──────────────────────────┐
-            │   Desktop App            │
-            │   (PyQt6 + QThreads)     │
-            └───────┬──────────┬───────┘
-                    │          │
-                    ▼          ▼
-             [ Live UI ]   [ HTTP POST ]
-                            │
-                            ▼
-                    ┌──────────────────────────┐
-                    │   Cloud Backend          │
-                    │   (Raspberry Pi 5)       │
-                    └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    PyQt6 Desktop App                         │
+└──────┬──────────────────┬──────────────────┬────────────────┘
+       │                  │                  │
+  WebSocket         WebSocket            HTTP REST
+  (Video)           (Commands/            (Cloud API)
+                     Telemetry)
+       │                  │                  │
+       ▼                  ▼                  ▼
+┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+│ ESP32-CAM   │   │ ESP32-MCU   │   │  Cloud API  │
+│ (Camera)    │   │ (Sensors,   │   │   (RPi5)    │
+│ Binary JPEG │   │  Motors,    │   │ Historical  │
+│ frames      │   │  Gimbal)    │   │ Data        │
+│ ws://?:?/ws │   │ ws://?:?/ws │   │ HTTP REST   │
+└─────────────┘   └─────────────┘   └─────────────┘
 ```
+
+> **Note:** WebSocket addresses will be provided by supervisor during implementation.
 
 ---
 
@@ -98,7 +186,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │ [LOG] Click to expand/collapse • 4 Events                         115200 Baud  │
 │ ┌──────────────────────────────────────────────────────────────────────────────┐ │
-│ │ 10:00:01 [CONNECTED] UDP Port 5005 bound to 192.168.1.100 (ACK in 4.2ms)   │ │
+│ │ 10:00:01 [CONNECTED] WebSocket connected to 192.168.1.100 (ESP32-MCU)             │ │
 │ │ 10:00:02 [VIDEO]      Stream active at 640x480 @ 30 FPS                    │ │
 │ │ 10:00:05 [TELEMETRY]  Chassis Temp 28.5°C, Dist 45cm, Humidity 65%         │ │
 │ │ 10:00:08 [SAFETY]     Auto-brake threshold set to 30 cm                    │ │
@@ -279,7 +367,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 **Log Categories:**
 | Category | Color | Example |
 |----------|-------|---------|
-| CONNECTED | Green | `UDP Port 5005 bound (ACK in 4.2ms)` |
+| CONNECTED | Green | `WebSocket connected (ACK in 4.2ms)` |
 | VIDEO | Blue | `Stream active at 640x480 @ 30 FPS` |
 | TELEMETRY | White | `Chassis Temp 28.5°C, Dist 45cm` |
 | SAFETY | Orange | `Auto-brake threshold set to 30 cm` |
@@ -474,18 +562,18 @@ Gemini: Creating custom chart...
 
 ### 4.3 Key Mapping
 
-| Key | Action | UDP Command |
-|-----|--------|-------------|
-| `W` | Drive forward | `DRIVE:{speed}:FORWARD` |
-| `S` | Drive backward | `DRIVE:{speed}:BACKWARD` |
-| `A` | Spin left | `STEER:LEFT` |
-| `D` | Spin right | `STEER:RIGHT` |
-| `Space` | Emergency stop | `STOP` |
-| `I` | Tilt up | `GIMBAL:{pan}:{tilt+5}` |
-| `K` | Tilt down | `GIMBAL:{pan}:{tilt-5}` |
-| `J` | Pan left | `GIMBAL:{pan-5}:{tilt}` |
-| `L` | Pan right | `GIMBAL:{pan+5}:{tilt}` |
-| `C` | Center gimbal | `CENTER` |
+| Key | Action | WebSocket Command (JSON) |
+|-----|--------|--------------------------|
+| `W` | Drive forward | `{"type":"drive","speed":180,"direction":"forward"}` |
+| `S` | Drive backward | `{"type":"drive","speed":180,"direction":"backward"}` |
+| `A` | Spin left | `{"type":"steer","direction":"left"}` |
+| `D` | Spin right | `{"type":"steer","direction":"right"}` |
+| `Space` | Emergency stop | `{"type":"stop"}` |
+| `I` | Tilt up | `{"type":"gimbal","pan":pan,"tilt":tilt+5}` |
+| `K` | Tilt down | `{"type":"gimbal","pan":pan,"tilt":tilt-5}` |
+| `J` | Pan left | `{"type":"gimbal","pan":pan-5,"tilt":tilt}` |
+| `L` | Pan right | `{"type":"gimbal","pan":pan+5,"tilt":tilt}` |
+| `C` | Center gimbal | `{"type":"gimbal","center":true}` |
 | `Tab` | Autocomplete in chat | — |
 | `Enter` | Send chat message | — |
 | `Shift+Enter` | New line in chat | — |
@@ -513,20 +601,23 @@ Gemini: Creating custom chart...
 │   ▼                     ▼                                         │
 │                                                                 │
 │ ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│ │ VIDEO       │  │ TELEMETRY   │  │ COMMAND     │  │ GIMBAL      │
+│ │ VIDEO       │  │ COMMAND     │  │ TELEMETRY   │  │ AI CHAT     │
 │ │ THREAD      │  │ THREAD      │  │ THREAD      │  │ THREAD      │
 │ │             │  │             │  │             │  │             │
-│ │ recv UDP    │  │ HTTP GET    │  │ UDP send    │  │ UDP send    │
-│ │ port 5006   │  │ every 1s    │  │ on keypress │  │ on keypress │
+│ │ WebSocket   │  │ WebSocket   │  │ HTTP POST   │  │ HTTPS       │
+│ │ (ESP32-CAM) │  │ (ESP32-MCU) │  │ (Cloud API) │  │ (Gemini)    │
 │ └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
 │        │                │                │                │
 │        ▼                ▼                ▼                ▼
 │   ┌─────────────────────────────────────────────────────────────┐
 │   │                    ESP32 ROVER                               │
-│   │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
-│   │  │ esp32_car   │  │ esp32_cam   │  │ esp32_monitor│        │
-│   │  │ (Motors)    │  │ (Camera)    │  │ (Sensors)   │        │
-│   │  └─────────────┘  └─────────────┘  └─────────────┘        │
+│   │  ┌─────────────┐  ┌─────────────┐                          │
+│   │  │ ESP32-CAM   │  │ ESP32-MCU   │                          │
+│   │  │ (Camera)    │  │ (Sensors,   │                          │
+│   │  │ WS: Video   │  │  Motors,    │                          │
+│   │  │             │  │  Gimbal)    │                          │
+│   │  │             │  │ WS: Cmd/Tlm │                          │
+│   │  └─────────────┘  └─────────────┘                          │
 │   └─────────────────────────────────────────────────────────────┘
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -535,138 +626,115 @@ Gemini: Creating custom chart...
 | Thread | Responsibility | Protocol |
 |--------|----------------|----------|
 | Main Thread | UI updates, event loop | PyQt6 |
-| Video Thread | Receive live video feed | UDP Port 5006 |
-| Command Thread | Send driving commands | UDP Port 5005 |
-| Telemetry Thread | Send sensor data to cloud | HTTP POST |
-| Gimbal Thread | Send pan/tilt commands | UDP Port 5005 |
+| Video Thread | Receive video frames from ESP32-CAM | WebSocket (binary) |
+| Command Thread | Send commands to ESP32-MCU | WebSocket (JSON) |
+| Telemetry Thread | POST sensor data to cloud | HTTP REST |
 | AI Chat Thread | Gemini API calls | HTTPS |
 
 ---
 
 ## 6. Communication Protocol
 
-| Direction | Protocol | Port | Purpose |
-|-----------|----------|------|---------|
-| PC → ESP32 | UDP | 5005 | Low-latency control commands |
-| ESP32 → PC | UDP | 5006 | Real-time MJPEG video + sensors |
-| PC → Cloud | HTTP | REST API | Historical data storage |
+| Direction | Protocol | Purpose |
+|-----------|----------|---------|
+| PC → ESP32-CAM | WebSocket | Receive video stream (binary JPEG) |
+| PC → ESP32-MCU | WebSocket | Send commands (JSON), receive telemetry (JSON) |
+| PC → Cloud | HTTP REST | Store/retrieve historical data |
 
-### 6.1 UDP Commands (Port 5005)
+### 6.1 WebSocket Commands (PC → ESP32-MCU, JSON)
 
-| Command | Format | Description |
-|---------|--------|-------------|
-| `DRIVE` | `DRIVE:{speed}:{direction}` | Move with PWM speed |
-| `STEER` | `STEER:{direction}` | Spin left/right |
-| `STOP` | `STOP` | Emergency stop |
-| `GIMBAL` | `GIMBAL:{pan}:{tilt}` | Set servo angles |
-| `CENTER` | `CENTER` | Reset gimbal to 90°/90° |
-| `RESOLUTION` | `RES:{width}:{height}` | Set camera resolution |
-| `FLIP` | `FLIP:{h/v}` | Flip camera orientation |
-| `SNAPSHOT` | `SNAPSHOT` | Capture frame |
-| `OTA` | `OTA:{version}` | Trigger firmware update |
-
-### 6.2 Telemetry Data (Port 5006)
-
-| Field | Format | Description |
-|-------|--------|-------------|
-| `temp` | `TEMP:{value}` | Temperature in °C |
-| `humi` | `HUMI:{value}` | Humidity in % |
-| `gas` | `GAS:{value}` | Gas concentration in ppm |
-| `dist` | `DIST:{value}` | Obstacle distance in cm |
-| `video` | JPEG bytes | Video frame data |
-
-### 6.3 Resolution Change Architecture
-
-#### Resolution Options
-
-| Resolution | Width | Height | FPS | Use Case |
-|------------|-------|--------|-----|----------|
-| `640x480` | 640 | 480 | 30 FPS | Standard Fluid (default) |
-| `800x600` | 800 | 600 | 25 FPS | Balanced quality |
-| `1280x720` | 1280 | 720 | 15-20 FPS | High Detail |
-
-#### Resolution Change Flow
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         RESOLUTION CHANGE FLOW                                   │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│   ┌─────────────┐                                                               │
-│   │  USER       │                                                               │
-│   │  selects    │                                                               │
-│   │  resolution │                                                               │
-│   └──────┬──────┘                                                               │
-│          │                                                                       │
-│          ▼                                                                       │
-│   ┌─────────────────────────────────────────────────────────────────────────┐   │
-│   │  DESKTOP APP                                                            │   │
-│   │  1. Update UI Dropdown Selection                                        │   │
-│   │  2. Send UDP Command to ESP32-CAM (RES:640:480)                        │   │
-│   │  3. Stop Current Video Stream                                           │   │
-│   │  4. Wait for ESP32-CAM Response (timeout: 2s)                          │   │
-│   │     - ACK received: Resume video thread                                 │   │
-│   │     - Timeout: Show error, retry or revert                             │   │
-│   │  5. Update Stream Diagnostics                                           │   │
-│   └─────────────────────────────────────────────────────────────────────────┘   │
-│          │                                                                       │
-│          ▼                                                                       │
-│   ┌─────────────────────────────────────────────────────────────────────────┐   │
-│   │  ESP32-CAM                                                              │   │
-│   │  1. Receive RES command on UDP Port 5005                                │   │
-│   │  2. Stop Camera Stream                                                  │   │
-│   │  3. Reconfigure Camera Sensor                                           │   │
-│   │  4. Send ACK to Desktop App (ACK:RES:{width}:{height}:OK)             │   │
-│   │  5. Resume Camera Stream at new resolution                              │   │
-│   └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+**Drive Commands:**
+```json
+{"type": "drive", "speed": 180, "direction": "forward"}
+{"type": "drive", "speed": 180, "direction": "backward"}
+{"type": "steer", "direction": "left"}
+{"type": "steer", "direction": "right"}
+{"type": "stop"}
 ```
 
-#### Resolution Change State Machine
+**Gimbal Commands:**
+```json
+{"type": "gimbal", "pan": 90, "tilt": 90}
+{"type": "gimbal", "center": true}
+```
+
+**Camera Commands:**
+```json
+{"type": "resolution", "width": 640, "height": 480}
+{"type": "flip", "axis": "horizontal"}
+{"type": "flip", "axis": "vertical"}
+{"type": "snapshot"}
+```
+
+**OTA Command:**
+```json
+{"type": "ota", "version": "1.0.0"}
+```
+
+### 6.2 Telemetry Data (ESP32-MCU → PC, JSON)
+
+ESP32-MCU sends sensor data via the same WebSocket connection:
+
+```json
+{
+  "type": "telemetry",
+  "temperature": 28.5,
+  "humidity": 65.0,
+  "air_purity": 450,
+  "distance": 45.0
+}
+```
+
+| Field | Unit | Description |
+|-------|------|-------------|
+| `temperature` | °C | Ambient temperature |
+| `humidity` | % | Relative humidity |
+| `air_purity` | PPM | Gas/smoke concentration (MQ-2) |
+| `distance` | cm | Obstacle distance (HC-SR04) |
+
+### 6.3 Video Stream (ESP32-CAM → PC)
+
+Binary JPEG frames sent over WebSocket:
+- Each message is a complete JPEG frame
+- Frame rate: 25-30 FPS at 640x480
+- No text encoding needed (raw binary)
+
+### 6.4 Cloud API (PC → RPi5, HTTP REST)
+
+**Base Path:** `/api/v1`
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/api/v1/telemetry` | Send sensor data to cloud |
+| `GET` | `/api/v1/rovers/{id}/latest` | Get latest reading (<30ms) |
+| `GET` | `/api/v1/rovers/{id}/readings` | Get last N records or time range |
+| `GET` | `/api/v1/rovers/{id}/summary` | Get aggregated statistics |
+| `GET` | `/api/v1/health` | Service health check |
+
+### 6.5 Resolution Change Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                RESOLUTION CHANGE STATE MACHINE                   │
+│                RESOLUTION CHANGE FLOW                            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│   [STREAMING] ──────────────────────────────────────────────────►│
-│      │                                                           │
-│      │ User selects new resolution                               │
-│      ▼                                                           │
-│   [CHANGING] ───────────────────────────────────────────────────►│
-│      │                                                           │
-│      │ Send RES command                                          │
-│      │ Stop video thread                                         │
-│      ▼                                                           │
-│   [WAITING_ACK] ────────────────────────────────────────────────►│
-│      │                                                           │
-│      ├─ ACK received ───────────────────────────────────────────►│
-│      │   │                                                       │
-│      │   ▼                                                       │
-│      │ [STREAMING] (new resolution)                              │
-│      │                                                           │
-│      └─ Timeout (2s) ───────────────────────────────────────────►│
-│          │                                                       │
-│          ▼                                                       │
-│      [ERROR] ───────────────────────────────────────────────────►│
-│          │                                                       │
-│          │ Show error in log                                     │
-│          │ Revert to previous resolution                         │
-│          ▼                                                       │
-│      [STREAMING] (old resolution)                                │
+│   [USER] selects resolution                                      │
+│       │                                                          │
+│       ▼                                                          │
+│   [DESKTOP APP]                                                  │
+│   1. Update UI Dropdown                                          │
+│   2. Send JSON: {"type":"resolution","width":640,"height":480}  │
+│   3. Wait for ACK (timeout: 2s)                                  │
+│       │                                                          │
+│       ▼                                                          │
+│   [ESP32-CAM]                                                    │
+│   1. Receive resolution command                                  │
+│   2. Reconfigure camera sensor (~500ms)                          │
+│   3. Send ACK: {"type":"ack","status":"ok"}                     │
+│   4. Resume video stream at new resolution                       │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
-
-#### Error Handling
-
-| Error | Detection | Recovery |
-|-------|-----------|----------|
-| No ACK received | Timeout (2s) | Revert to previous resolution |
-| ACK:FAIL received | Parse response | Show error, keep old resolution |
-| Stream corrupted | Frame decode error | Request keyframe, retry |
-| Connection lost | No frames for 5s | Show "Disconnected" status |
 
 ---
 
@@ -680,7 +748,7 @@ Gemini: Creating custom chart...
 
 ### 7.2 App-Side Connection Monitoring
 
-- Monitors incoming UDP streams
+- Monitors incoming WebSocket streams
 - If packets stop arriving → UI shows "Disconnected"
 - Initiates background reconnection without app restart
 
@@ -746,8 +814,8 @@ Content-Type: multipart/form-data
 robot-desktop-app/
 ├── main.py           # Application entry point
 ├── app.py            # Main window, UI layout, timers
-├── video_feed.py     # Video receiver thread (UDP 5006)
-├── command.py        # Command sender (UDP 5005)
+├── video_feed.py     # Video receiver thread (WebSocket)
+├── command.py        # Command sender (WebSocket)
 ├── sensors.py        # Sensor dashboard + charts
 ├── gimbal.py         # Gimbal control panel
 ├── ota.py            # Firmware upload
@@ -1457,53 +1525,69 @@ class GimbalController:
 
 ---
 
-## 24. Technical Reference — ESP32 UDP Protocol
+## 24. Technical Reference — ESP32 WebSocket Protocol
 
-### 24.1 Command Format (PC → ESP32, Port 5005)
+### 24.1 Command Format (PC → ESP32-MCU, JSON)
 
 ```python
-# All commands are UTF-8 encoded strings sent via UDP
+# All commands are JSON objects sent via WebSocket
 
 # Drive commands
-"DRIVE:180:FORWARD"    # Speed 180, forward
-"DRIVE:180:BACKWARD"   # Speed 180, backward
-"STEER:LEFT"           # Spin left
-"STEER:RIGHT"          # Spin right
-"STOP"                 # Emergency stop
+{"type": "drive", "speed": 180, "direction": "forward"}
+{"type": "drive", "speed": 180, "direction": "backward"}
+{"type": "steer", "direction": "left"}
+{"type": "steer", "direction": "right"}
+{"type": "stop"}
 
 # Gimbal commands
-"GIMBAL:90:90"         # Pan 90°, Tilt 90°
-"CENTER"               # Reset to 90°, 90°
+{"type": "gimbal", "pan": 90, "tilt": 90}
+{"type": "gimbal", "center": true}
 
 # Camera commands
-"RES:640:480"          # Set resolution
-"FLIP:h"               # Flip horizontal
-"FLIP:v"               # Flip vertical
-"SNAPSHOT"             # Capture frame
+{"type": "resolution", "width": 640, "height": 480}
+{"type": "flip", "axis": "horizontal"}
+{"type": "flip", "axis": "vertical"}
+{"type": "snapshot"}
 
 # OTA command
-"OTA:1.0.0"            # Trigger firmware update
+{"type": "ota", "version": "1.0.0"}
 ```
 
-### 24.2 Telemetry Format (ESP32 → PC, Port 5006)
+### 24.2 Telemetry Format (ESP32-MCU → PC, JSON)
 
 ```python
-# Sensor data is sent as text strings
-"TEMP:25.4"            # Temperature in °C
-"HUMI:65.2"            # Humidity in %
-"GAS:450"              # Gas concentration in ppm
-"DIST:34.5"            # Obstacle distance in cm
-
-# Video data is sent as raw JPEG bytes
-# Each packet contains one complete JPEG frame
+# Sensor data is sent as JSON objects via the same WebSocket connection
+{
+  "type": "telemetry",
+  "temperature": 28.5,
+  "humidity": 65.0,
+  "air_purity": 450,
+  "distance": 45.0
+}
 ```
 
-### 24.3 Resolution Change ACK
+| Field | Unit | Description |
+|-------|------|-------------|
+| `temperature` | °C | Ambient temperature |
+| `humidity` | % | Relative humidity |
+| `air_purity` | PPM | Gas/smoke concentration (MQ-2) |
+| `distance` | cm | Obstacle distance (HC-SR04) |
+```
+
+### 24.3 Video Stream (ESP32-CAM → PC)
+
+```python
+# Binary JPEG frames sent over WebSocket
+# Each message is a complete JPEG frame
+# No JSON encoding needed (raw binary)
+```
+
+### 24.4 Resolution Change ACK
 
 ```python
 # ESP32-CAM responds with ACK after changing resolution
-"ACK:RES:640:480:OK"   # Success
-"ACK:RES:640:480:FAIL" # Failure
+{"type": "ack", "status": "ok", "width": 640, "height": 480}
+{"type": "ack", "status": "fail", "error": "timeout"}
 ```
 
 ---
@@ -1662,7 +1746,7 @@ Example: esp32-car-1.0.0-ota-haru.bin
 | requests | 2.x | HTTP requests |
 | matplotlib | 3.x | Chart rendering |
 | google-genai | 0.3+ | Gemini AI integration |
-| socket | stdlib | UDP communication |
+| websocket | websocket-client | WebSocket communication |
 | json | stdlib | Configuration persistence |
 
 ---
@@ -1673,13 +1757,13 @@ Example: esp32-car-1.0.0-ota-haru.bin
 
 **Car Not Responding:**
 1. Check ESP32-CAR IP is correct in config
-2. Verify UDP port 5005 is open
+2. Verify WebSocket connection to ESP32-MCU
 3. Check firewall settings
 4. Test with: `echo -n "STOP" | nc -u <car_ip> 5005`
 
 **Video Feed Not Working:**
 1. Verify ESP32-CAM IP is correct
-2. Check UDP port 5006 is bound
+2. Check WebSocket connection to ESP32-CAM
 3. Ensure JPEG encoding is enabled
 4. Test with: `nc -lu <cam_ip> 5006 > test.jpg`
 
@@ -1743,7 +1827,7 @@ Example: esp32-car-1.0.0-ota-haru.bin
 │                         Complete Data Flow                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌─────────────┐    UDP 5005     ┌─────────────┐    UDP 5006    ┌─────────┐│
+│  ┌─────────────┐  WebSocket  ┌─────────────┐  WebSocket  ┌─────────┐│
 │  │  Desktop    │ ──────────────> │  ESP32-CAR  │ <──────────── │  ESP32  ││
 │  │  App        │    Commands     │  (Motors)   │   Telemetry   │  CAM    ││
 │  └──────┬──────┘                 └─────────────┘               └─────────┘│
@@ -1768,13 +1852,13 @@ Example: esp32-car-1.0.0-ota-haru.bin
 │                                                                             │
 │  Main Thread                                                                │
 │     │                                                                       │
-│     ├──> Command Thread ──> UDP 5005 ──> ESP32                              │
+│     ├──> Command Thread ──> WebSocket ──> ESP32-MCU                              │
 │     │                                                                       │
-│     ├──> Video Thread <── UDP 5006 <── ESP32-CAM                            │
+│     ├──> Video Thread <── WebSocket <── ESP32-CAM                            │
 │     │                                                                       │
 │     ├──> Telemetry Thread ──> HTTP POST ──> Cloud                           │
 │     │                                                                       │
-│     ├──> Gimbal Thread ──> UDP 5005 ──> ESP32                               │
+│     ├──> Gimbal Thread ──> WebSocket ──> ESP32-MCU                               │
 │     │                                                                       │
 │     └──> AI Chat Thread ──> HTTPS ──> Gemini API                            │
 │                                                                             │

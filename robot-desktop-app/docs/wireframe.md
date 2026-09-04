@@ -45,7 +45,7 @@
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │ [LOG] Click to expand/collapse • 4 Events                         115200 Baud  │
 │ ┌──────────────────────────────────────────────────────────────────────────────┐ │
-│ │ 10:00:01 [CONNECTED] UDP Port 5005 bound to 192.168.1.100 (ACK in 4.2ms)   │ │
+│ │ 10:00:01 [CONNECTED] WebSocket connected to 192.168.1.100 (ESP32-MCU)             │ │
 │ │ 10:00:02 [VIDEO]      Stream active at 640x480 @ 30 FPS                    │ │
 │ │ 10:00:05 [TELEMETRY]  Chassis Temp 28.5°C, Dist 45cm, Humidity 65%         │ │
 │ │ 10:00:08 [SAFETY]     Auto-brake threshold set to 30 cm                    │ │
@@ -260,7 +260,7 @@
 **Log Categories:**
 | Category | Color | Example |
 |----------|-------|---------|
-| CONNECTED | Green | `UDP Port 5005 bound (ACK in 4.2ms)` |
+| CONNECTED | Green | `WebSocket connected (ACK in 4.2ms)` |
 | VIDEO | Blue | `Stream active at 640x480 @ 30 FPS` |
 | TELEMETRY | White | `Chassis Temp 28.5°C, Dist 45cm` |
 | SAFETY | Orange | `Auto-brake threshold set to 30 cm` |
@@ -445,7 +445,7 @@ Gemini: Creating custom chart...
 │ │ VIDEO       │  │ TELEMETRY   │  │ COMMAND     │  │ GIMBAL      │
 │ │ THREAD      │  │ THREAD      │  │ THREAD      │  │ THREAD      │
 │ │             │  │             │  │             │  │             │
-│ │ recv UDP    │  │ HTTP GET    │  │ UDP send    │  │ UDP send    │
+│ │ WebSocket   │  │ HTTP GET    │  │ WebSocket   │  │ WebSocket   │
 │ │ port 5006   │  │ every 1s    │  │ on keypress │  │ on keypress │
 │ └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
 │        │                │                │                │

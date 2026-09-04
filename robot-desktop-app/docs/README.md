@@ -15,7 +15,7 @@ This folder contains all design and specification documents for the project.
 - UI wireframes (Main View + Diagnostics View)
 - Keyboard state machines (Drive + Gimbal)
 - Thread architecture diagram
-- Communication protocol (UDP commands, telemetry)
+- Communication protocol (WebSocket commands, telemetry)
 - Feature requirements
 - Safety features (HW-008, auto-brake)
 - OTA firmware update design

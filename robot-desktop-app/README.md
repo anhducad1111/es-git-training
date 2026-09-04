@@ -4,6 +4,31 @@ A real-time IoT rover teleoperation system featuring a PyQt6 Windows desktop con
 
 ---
 
+## docs/ — Design & Specification Documents
+
+The `docs/` folder contains all planning and design documents created **before writing code**. These documents define the application's architecture, UI layout, and implementation plan.
+
+```
+docs/
+├── HARU-PRD-DESIGN-PROPOSAL.md   # Phase 1 design proposal (submitted to Duke for approval)
+├── wireframe.md                   # UI wireframes, component descriptions, architecture diagrams
+└── README.md                      # Documentation index and file reference
+```
+
+| File | Purpose | When to Use |
+|------|---------|-------------|
+| `HARU-PRD-DESIGN-PROPOSAL.md` | Complete design proposal with wireframes, protocols, implementation plan | Submit to Duke for Phase 1 approval |
+| `wireframe.md` | Detailed UI specification with visual wireframes and component tables | Reference during coding |
+| `README.md` | Documentation index explaining each file's purpose | Quick reference for docs folder |
+
+**Workflow:**
+1. Read `HARU-PRD-DESIGN-PROPOSAL.md` → Submit to Duke for review
+2. Duke approves → Official API docs unlocked
+3. Use `wireframe.md` → Reference during implementation
+4. Code begins → Follow §14 Implementation Plan in proposal
+
+---
+
 ## 1. Executive Summary
 
 The **Space Rover Desktop Teleoperation Cockpit** is the primary command and control hub used by human operators to remotely pilot the Space Rover in real-time.
@@ -15,24 +40,22 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 ## 2. System Architecture
 
 ```
-                  [ ESP32 Rover ]
-                    │       ▲
-   UDP (Port 5005)  │       │  UDP (Port 5006)
-   Command Out      │       │  Video & Sensors In
-                    ▼       │
-            ┌──────────────────────────┐
-            │   Desktop App            │
-            │   (PyQt6 + QThreads)     │
-            └───────┬──────────┬───────┘
-                    │          │
-                    ▼          ▼
-             [ Live UI ]   [ HTTP POST ]
-                            │
-                            ▼
-                    ┌──────────────────────────┐
-                    │   Cloud Backend          │
-                    │   (Raspberry Pi 5)       │
-                    └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    PyQt6 Desktop App                         │
+└──────┬──────────────────┬──────────────────┬────────────────┘
+       │                  │                  │
+  WebSocket         WebSocket            HTTP REST
+  (Video)           (Commands/            (Cloud API)
+                     Telemetry)
+       │                  │                  │
+       ▼                  ▼                  ▼
+┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+│ ESP32-CAM   │   │ ESP32-MCU   │   │  Cloud API  │
+│ (Camera)    │   │ (Sensors,   │   │   (RPi5)    │
+│ Binary JPEG │   │  Motors,    │   │ Historical  │
+│ frames      │   │  Gimbal)    │   │ Data        │
+│ ws://?:?/ws │   │ ws://?:?/ws │   │ HTTP REST   │
+└─────────────┘   └─────────────┘   └─────────────┘
 ```
 
 ### Thread Architecture
@@ -40,10 +63,10 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 | Thread | Responsibility | Protocol |
 |--------|----------------|----------|
 | Main Thread | UI updates, event loop | PyQt6 |
-| Video Thread | Receive live video feed | UDP Port 5006 |
-| Command Thread | Send driving commands | UDP Port 5005 |
-| Telemetry Thread | Send sensor data to cloud | HTTP POST |
-| Gimbal Thread | Send pan/tilt commands | UDP Port 5005 |
+| Video Thread | Receive video frames from ESP32-CAM | WebSocket (binary) |
+| Command Thread | Send commands to ESP32-MCU | WebSocket (JSON) |
+| Telemetry Thread | POST sensor data to cloud | HTTP REST |
+| Gimbal Thread | Send pan/tilt commands | WebSocket (JSON) |
 | AI Chat Thread | Gemini API calls | HTTPS |
 
 ---
@@ -95,7 +118,7 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │ [LOG] Click to expand/collapse • 4 Events                         115200 Baud  │
 │ ┌──────────────────────────────────────────────────────────────────────────────┐ │
-│ │ 10:00:01 [CONNECTED] UDP Port 5005 bound to 192.168.1.100 (ACK in 4.2ms)   │ │
+│ │ 10:00:01 [CONNECTED] WebSocket connected to 192.168.1.100 (ESP32-MCU)             │ │
 │ │ 10:00:02 [VIDEO]      Stream active at 640x480 @ 30 FPS                    │ │
 │ │ 10:00:05 [TELEMETRY]  Chassis Temp 28.5°C, Dist 45cm, Humidity 65%         │ │
 │ │ 10:00:08 [SAFETY]     Auto-brake threshold set to 30 cm                    │ │
@@ -178,35 +201,62 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 
 ## 4. Communication Protocol
 
-| Direction | Protocol | Port | Purpose |
-|-----------|----------|------|---------|
-| PC → ESP32 | UDP | 5005 | Low-latency control commands |
-| ESP32 → PC | UDP | 5006 | Real-time MJPEG video + sensors |
-| PC → Cloud | HTTP | REST API | Historical data storage |
+| Direction | Protocol | Purpose |
+|-----------|----------|---------|
+| PC → ESP32-CAM | WebSocket | Receive video stream (binary JPEG) |
+| PC → ESP32-MCU | WebSocket | Send commands (JSON), receive telemetry (JSON) |
+| PC → Cloud | HTTP REST | Store/retrieve historical data |
 
-### UDP Commands (Port 5005)
+### WebSocket Commands (PC → ESP32-MCU, JSON)
 
-| Command | Format | Description |
-|---------|--------|-------------|
-| `DRIVE` | `DRIVE:{speed}:{direction}` | Move with PWM speed |
-| `STEER` | `STEER:{direction}` | Spin left/right |
-| `STOP` | `STOP` | Emergency stop |
-| `GIMBAL` | `GIMBAL:{pan}:{tilt}` | Set servo angles |
-| `CENTER` | `CENTER` | Reset gimbal to 90°/90° |
-| `RESOLUTION` | `RES:{width}:{height}` | Set camera resolution |
-| `FLIP` | `FLIP:{h/v}` | Flip camera orientation |
-| `SNAPSHOT` | `SNAPSHOT` | Capture frame |
-| `OTA` | `OTA:{version}` | Trigger firmware update |
+**Drive Commands:**
+```json
+{"type": "drive", "speed": 180, "direction": "forward"}
+{"type": "drive", "speed": 180, "direction": "backward"}
+{"type": "steer", "direction": "left"}
+{"type": "steer", "direction": "right"}
+{"type": "stop"}
+```
 
-### Telemetry Data (Port 5006)
+**Gimbal Commands:**
+```json
+{"type": "gimbal", "pan": 90, "tilt": 90}
+{"type": "gimbal", "center": true}
+```
 
-| Field | Format | Description |
-|-------|--------|-------------|
-| `temp` | `TEMP:{value}` | Temperature in °C |
-| `humi` | `HUMI:{value}` | Humidity in % |
-| `gas` | `GAS:{value}` | Gas concentration in ppm |
-| `dist` | `DIST:{value}` | Obstacle distance in cm |
-| `video` | JPEG bytes | Video frame data |
+**Camera Commands:**
+```json
+{"type": "resolution", "width": 640, "height": 480}
+{"type": "flip", "axis": "horizontal"}
+{"type": "flip", "axis": "vertical"}
+{"type": "snapshot"}
+```
+
+### Telemetry Data (ESP32-MCU → PC, JSON)
+
+```json
+{
+  "type": "telemetry",
+  "temperature": 28.5,
+  "humidity": 65.0,
+  "air_purity": 450,
+  "distance": 45.0
+}
+```
+
+| Field | Unit | Description |
+|-------|------|-------------|
+| `temperature` | °C | Ambient temperature |
+| `humidity` | % | Relative humidity |
+| `air_purity` | PPM | Gas/smoke concentration (MQ-2) |
+| `distance` | cm | Obstacle distance (HC-SR04) |
+
+### Video Stream (ESP32-CAM → PC)
+
+Binary JPEG frames sent over WebSocket:
+- Each message is a complete JPEG frame
+- Frame rate: 25-30 FPS at 640x480
+- No text encoding needed (raw binary)
 
 ---
 
@@ -324,7 +374,7 @@ The application integrates high-speed manual driving controls, 2-axis precision 
 
 ### App-Side Connection Monitoring
 
-- Monitors incoming UDP streams
+- Monitors incoming WebSocket streams
 - If packets stop arriving → UI shows "Disconnected"
 - Initiates background reconnection without app restart
 
@@ -359,8 +409,8 @@ Content-Type: multipart/form-data
 robot-desktop-app/
 ├── main.py           # Application entry point
 ├── app.py            # Main window, UI layout, timers
-├── video_feed.py     # Video receiver thread (UDP 5006)
-├── command.py        # Command sender (UDP 5005)
+├── video_feed.py     # Video receiver thread (WebSocket)
+├── command.py        # Command sender (WebSocket)
 ├── sensors.py        # Sensor dashboard + charts
 ├── gimbal.py         # Gimbal control panel
 ├── ota.py            # Firmware upload
@@ -438,5 +488,5 @@ python main.py
 | requests | 2.x | HTTP requests |
 | matplotlib | 3.x | Chart rendering |
 | google-genai | 0.3+ | Gemini AI integration |
-| socket | stdlib | UDP communication |
+| websocket-client | 1.x | WebSocket communication |
 | json | stdlib | Configuration persistence |

@@ -1,0 +1,6 @@
+phpunit.phar
+.env
+.phpunit.result.cache
+storage/*.lastrun
+storage/media/*
+!storage/media/.gitkeep

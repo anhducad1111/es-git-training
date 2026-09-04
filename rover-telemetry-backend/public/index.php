@@ -53,6 +53,11 @@ $router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/summary', fun
     return $roverController->summary($params, $_GET);
 });
 
+$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/export', function (array $params) use ($roverController, $config) {
+    $unbufferedPdo = Database::newConnection($config, buffered: false);
+    return $roverController->export($params, $_GET, $unbufferedPdo);
+});
+
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 $apiPos = strpos($uri, '/api/v1');
 $path = $apiPos !== false ? substr($uri, $apiPos) : $uri;

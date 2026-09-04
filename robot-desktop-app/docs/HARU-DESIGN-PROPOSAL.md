@@ -98,12 +98,9 @@ This proposal presents the UI design and implementation plan for the Space Rover
 │ │ 10:00:08 [SAFETY]     Auto-brake threshold set to 30 cm                    │ │
 │ └──────────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────────┘
-                              ┌─────┐
-                              │ 💬  │ ← FLOATING BUTTON (bottom-right)
-                              └─────┘
 ```
 
-### 3.2 Diagnostics View (💬 Active)
+### 3.2 Diagnostics View
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -134,9 +131,6 @@ This proposal presents the UI design and implementation plan for the Space Rover
 │ 🌫 Air Quality & 📏 Obstacle Proximity             │  │ │ create_custom_   │ │ │
 │   CO2: 450 ppm    Sonar: 45 cm                    │  │ │ charts [0.12s]   │ │ │
 └────────────────────────────────────────────────────┘  └──────────────────────┘ │
-                              ┌─────┐
-                              │ ✖   │ ← FLOATING BUTTON (purple, returns to Main)
-                              └─────┘
 ```
 
 ---
@@ -267,15 +261,21 @@ This proposal presents the UI design and implementation plan for the Space Rover
 |----------|------|------|
 | 🟡 Should | Media upload | Snapshot uploads to `POST /api/v1/rovers/{uid}/media` |
 
-### 8.5 Person-Following (Future)
+### 8.5 Cloud API
+
+| Item | Value |
+|------|-------|
+| Base URL | `http://192.168.1.116/es-git-training/rover-telemetry-backend/public/api` |
+| Endpoints | 17 endpoints (telemetry, rovers, media, system, config) |
+
+### 8.6 Person-Following (Future)
 
 | Priority | Item | Note |
 |----------|------|------|
 | 🟡 Future | Follow Mode button | Add toggle button in sidebar |
 | 🟡 Future | Endpoints | `POST /follow/start`, `POST /follow/stop`, `GET /follow/status` |
 
-
-### 8.6 Architecture Notes
+### 8.7 Architecture Notes
 
 | Item | Note |
 |------|------|

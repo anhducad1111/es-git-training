@@ -194,12 +194,9 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 │ │ 10:00:08 [SAFETY]     Auto-brake threshold set to 30 cm                    │ │
 │ └──────────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────────┘
-                              ┌─────┐
-                              │ 💬  │ ← FLOATING BUTTON (bottom-right)
-                              └─────┘
 ```
 
-### 3.2 AI Chat View (💬 Active — Diagnostics Panel)
+### 3.2 AI Chat View (Diagnostics Panel)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -246,9 +243,6 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
                                                                └──────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────┘
 [LOG] 12:14:11 Ollama API tool response OK | 12:12:00 Radio Ping: 18ms   expand ▼
-                              ┌─────┐
-                              │ ✖   │ ← FLOATING BUTTON (purple, bottom-right)
-                              └─────┘
 ```
 
 ### 3.3 Video Overlay Status Bar (Top Center of Video)
@@ -376,15 +370,6 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 | SAFETY | Orange | `Auto-brake threshold set to 30 cm` |
 | ERROR | Red | `Connection lost to rover` |
 
-#### FLOATING CHAT BUTTON
-
-| Element | Type | Function |
-|---------|------|----------|
-| `💬 Chat` | Circular Button (40×40) | Toggle AI chat + graphs view |
-
-**Position:** Bottom-right corner (fixed, not overlapping sidebar)
-**Styling:** Blue (`#3b82f6`), hover scale effect, tooltip on hover
-
 #### BOTTOM PANEL
 
 | Element | Type | Function |
@@ -392,16 +377,6 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 | `Speed Slider` | Slider | Motor PWM power (150-255) |
 | `Speed Value` | Label | Current speed value |
 | `Keys Reference` | Label | Keyboard shortcuts reminder |
-
-#### FLOATING CHAT BUTTON
-
-| Element | Type | Function |
-|---------|------|----------|
-| `💬 Chat` | Circular Button (40×40) | Toggle to Diagnostics view |
-
-**Position:** Bottom-right corner (fixed, not overlapping sidebar)
-**Styling:** Blue (`#3b82f6`), hover scale effect, tooltip on hover
-**States:** 💬 (inactive) → ✖ (active, returns to Main View)
 
 #### ANALYTICS DECK (Diagnostics View — Left Side)
 
@@ -455,18 +430,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 | DRIVE / GIMBAL / STOP | White | `#FFFFFF` |
 | SNAPSHOT / OTA | Cyan | `#00BCD4` |
 
-### 3.6 Floating Button & Panel Toggle Behavior
-
-| State | 💬 Button | Left Side | Right Side |
-|-------|-----------|-----------|------------|
-| **Default** | OFF (💬) | Video Camera | Telemetry Sensors |
-| **AI Chat** | ON (✖) | Historical Graphs | AI Chat Panel |
-
-- Click 💬 to open AI Chat view
-- Click ✖ to close and return to Default view
-- Floating button stays at bottom-right corner (fixed position)
-
-### 3.7 Chart Customization (Like haru-app2)
+### 3.6 Chart Customization (Like haru-app2)
 
 #### Default Charts (Always Visible)
 
@@ -1602,9 +1566,33 @@ Sensor data received via the same WebSocket connection (format TBD from API docs
 
 ## 25. Technical Reference — Cloud API Integration
 
+**Base URL:** `http://192.168.1.116/es-git-training/rover-telemetry-backend/public/api`
+
 **Note:** Cloud API integration is optional and for reference only. Haru's desktop app primarily communicates directly with ESP32.
 
-### 25.1 Telemetry POST
+### 25.1 API Endpoints
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/api/v1/telemetry` | Ingest one telemetry record |
+| `GET` | `/api/v1/rovers` | List known rovers |
+| `GET` | `/api/v1/rovers/{device_uid}/latest` | Single latest reading |
+| `GET` | `/api/v1/rovers/{device_uid}/readings` | Last N records, or a time range |
+| `GET` | `/api/v1/rovers/{device_uid}/summary` | Aggregated statistics |
+| `GET` | `/api/v1/rovers/{device_uid}/export` | CSV or JSON export |
+| `GET` | `/api/v1/health` | Service and database health |
+| `GET` | `/api/v1/system` | Gateway host metrics, current |
+| `GET` | `/api/v1/system/history` | Gateway host metrics over time |
+| `GET` | `/api/v1/rovers/{device_uid}/events` | Threshold and brake events |
+| `GET` | `/api/v1/validation-errors/summary` | Rejected payload counts by code |
+| `GET` | `/api/v1/config/sensor-limits` | Validation ranges as data |
+| `PUT` | `/api/v1/config/sensor-limits/{field}` | Update one validation range |
+| `POST` | `/api/v1/rovers/{device_uid}/media` | Upload a photo or video |
+| `GET` | `/api/v1/rovers/{device_uid}/media` | List media records |
+| `GET` | `/api/v1/rovers/{device_uid}/media/{id}` | Serve one media file |
+| `DELETE` | `/api/v1/rovers/{device_uid}/media/{id}` | Delete a media record and its file |
+
+### 25.2 Telemetry POST
 
 **Endpoint:** `POST /api/v1/telemetry`
 

@@ -52,14 +52,11 @@
 │ │ 10:00:08 [SAFETY]     Auto-brake threshold set to 30 cm                    │ │
 │ └──────────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────────┘
-                              ┌─────┐
-                              │ 💬  │ ← FLOATING BUTTON (bottom-right)
-                              └─────┘
 ```
 
 ---
 
-## Screen Layout — Diagnostics View (💬 Active)
+## Screen Layout — Diagnostics View
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -106,9 +103,6 @@
                                                                └──────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────┘
 [LOG] 12:14:11 Ollama API tool response OK | 12:12:00 Radio Ping: 18ms   expand ▼
-                              ┌─────┐
-                              │ ✖   │ ← FLOATING BUTTON (purple, bottom-right)
-                              └─────┘
 ```
 
 ---
@@ -268,29 +262,7 @@
 | SAFETY | Orange | `Auto-brake threshold set to 30 cm` |
 | ERROR | Red | `Connection lost to rover` |
 
-### Floating Chat Button
-
-| Element | Type | Function |
-|---------|------|----------|
-| `💬 Chat` | Circular Button | Toggle to Diagnostics view |
-
-**Position:** Bottom-right corner (fixed, not overlapping sidebar)
-**Styling:**
-- Main View: Blue (`#3b82f6`), 40×40px
-- Diagnostics View: Purple (`#9333ea`), 52×52px, close icon
-**States:** 💬 (inactive) → ✖ (active, returns to Main View)
-
 ---
-
-## Floating Button & Panel Toggle Behavior
-
-| State | 💬 Button | Left Side | Right Side |
-|-------|-----------|-----------|------------|
-| **Main View** | OFF (💬) Blue | Video Camera | Telemetry Sensors |
-| **Diagnostics View** | ON (✖) Purple | Historical Charts | Ollama Chat Panel |
-
-- Click 💬 to open Diagnostics view
-- Click ✖ to close and return to Main View
 - Floating button stays at bottom-right corner (fixed position)
 
 ---

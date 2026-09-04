@@ -9,6 +9,7 @@ use RoverTelemetry\Database;
 use RoverTelemetry\Router;
 use RoverTelemetry\Support\ApiException;
 use RoverTelemetry\Controllers\TelemetryController;
+use RoverTelemetry\Controllers\RoverController;
 
 header('Content-Type: application/json; charset=UTF-8');
 
@@ -25,6 +26,7 @@ try {
 
 $router = new Router();
 $telemetryController = new TelemetryController($pdo);
+$roverController = new RoverController($pdo, $config);
 
 $router->add('POST', '/api/v1/telemetry', function () use ($telemetryController) {
     $raw = file_get_contents('php://input');
@@ -33,6 +35,10 @@ $router->add('POST', '/api/v1/telemetry', function () use ($telemetryController)
         throw new ApiException(400, 'MALFORMED_PAYLOAD', 'Request body must be valid JSON');
     }
     return $telemetryController->ingest($body);
+});
+
+$router->add('GET', '/api/v1/rovers', function () use ($roverController) {
+    return $roverController->list();
 });
 
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';

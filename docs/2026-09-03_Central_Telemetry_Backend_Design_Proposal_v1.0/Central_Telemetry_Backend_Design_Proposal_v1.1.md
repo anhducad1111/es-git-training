@@ -1,8 +1,8 @@
 # Central Telemetry & Data Management Backend
 ## Design Proposal — Database Schema, API Contract, and Implementation Plan
 
-**Document version:** v1.0
-**Date:** 2026-09-03
+**Document version:** v1.1
+**Date:** 2026-09-04 (originally 2026-09-03)
 **Author:** Shodai Tokura (Backend & Data Engineer Intern)
 
 **Supersedes:** Earth Rover Cloud System Technical Requirements v0.1 / v0.3 / v0.4 / v0.5. Those documents assumed a cloud-hosted FastAPI service with mission-scoped storage and an undetermined sensor list. This document replaces them in full, per the PRD.
@@ -111,17 +111,21 @@ Normal path:
 Rover                  PHP API              Validator                MariaDB
   |                       |                     |                       |
   |-- POST /telemetry ---->                     |                       |
+  |                       |-- stamp recorded_at = now() UTC              |
   |                       |-- validate fields -->                       |
   |                       <-------------- valid |                       |
   |                       |                     |                       |
   |                       |-- get or create rover by device_uid -------->
   |                       <---------------------------------- device_id |
-  |                       |-- INSERT ... ON DUPLICATE KEY UPDATE ------->
+  |                       |-- UPDATE rovers SET last_seen_at ----------->
+  |                       |-- INSERT INTO telemetry_readings ----------->
   |                       <------------------------------ affected rows |
   <---------- 201 Created |                     |                       |
 ```
 
-The rover lookup is a separate round trip because an unrecognized `device_uid` may need to be registered before the reading can reference it. Whether that registration is automatic or rejected is still to be confirmed; the rest of the sequence is unaffected either way.
+The rover lookup is a separate round trip because an unrecognized `device_uid` may need to be registered before the reading can reference it. Registration is automatic (§5.3). `last_seen_at` (§5.3) is updated in the same transaction as the reading insert.
+
+`[Duke, 2026-09-04]` `recorded_at` is stamped by the gateway on receipt, not sent by the rover, because the ESP32 build has no hardware RTC and would otherwise report a wrong or 1970-epoch time after every reboot. One consequence: a retried POST after a network drop lands at a different receipt time than the original attempt, so it no longer collides with it on the primary key. Rather than adding a second key to detect and collapse such retries, a retry is accepted as a second, distinct row — see §5.4's note on this and §6.2's response. This is why the insert is a plain `INSERT`, not `INSERT ... ON DUPLICATE KEY UPDATE` as in the original proposal.
 
 Validation failure path:
 
@@ -165,7 +169,7 @@ The last-N, time-range, and export endpoints follow the same three-hop path; onl
 
 The job runs every minute, recomputing the last few `minute` buckets; on the hour it also recomputes `hour` buckets, and after midnight local time it recomputes the previous day. The same job also writes one `gateway_metrics` sample (§5.7). One cron entry covers all three granularities and the host sampler. The last two buckets are recomputed rather than only the most recent one, so telemetry that arrives late — after a rover reconnects and flushes a queue — is still reflected in the summary.
 
-`INSERT ... ON DUPLICATE KEY UPDATE` is used rather than `REPLACE INTO`, matching the ingest path. `REPLACE` deletes and re-inserts the row, doubling the write and triggering foreign-key delete behaviour for no benefit.
+`INSERT ... ON DUPLICATE KEY UPDATE` is used here rather than `REPLACE INTO`, since a bucket for the same `(device_id, granularity, bucket_start)` is recomputed in place every run. `REPLACE` deletes and re-inserts the row, doubling the write and triggering foreign-key delete behaviour for no benefit. (This is unlike the ingest path itself, §4.1, which now uses a plain `INSERT` since `recorded_at` no longer provides a natural dedup key — see §5.4.)
 
 ```
   cron                  retention job                              MariaDB
@@ -190,6 +194,8 @@ Deletion runs in bounded batches so the ingest path is never blocked by a long-h
 | UQ device_uid    VARCHAR  |
 |    name          VARCHAR  |
 |    firmware_ver  VARCHAR  |
+|    enabled_sensors SET    |
+|    last_seen_at  DATETIME3|
 |    created_at    DATETIME |
 +-------------+-------------+
               |
@@ -235,6 +241,29 @@ Deletion runs in bounded batches so the ingest path is never blocked by a long-h
 |    ingest_rate_min  INT   |
 |    database_size_mb FLOAT |
 +---------------------------+
+
++---------------------------+
+|       media_files         |   (rovers 1--N media_files)
++---------------------------+
+| PK id             BIGINT  |
+| FK device_id      BIGINT  |
+|    media_type     ENUM    |
+|    file_path      VARCHAR |
+|    captured_at    DATETIME3|
+|    file_size_bytes INT    |
+|    mime_type      VARCHAR |
+|    original_filename VARCHAR|
+|    file_hash      CHAR(64)|
++---------------------------+
+
++---------------------------+
+|      sensor_limits        |   (config, no rover FK)
++---------------------------+
+| PK field         VARCHAR  |
+|    min_value     FLOAT    |
+|    max_value     FLOAT    |
+|    updated_at    DATETIME |
++---------------------------+
 ```
 
 ### 5.2 Storage conventions
@@ -249,9 +278,15 @@ InnoDB engine, `utf8mb4` character set, all timestamps stored in UTC. `DATETIME(
 | device_uid | VARCHAR(64) | NOT NULL, UNIQUE | The PRD's "Device Identifier", as sent by the rover |
 | name | VARCHAR(100) | NULL | Human-readable display name |
 | firmware_version | VARCHAR(30) | NULL | Reported firmware version |
+| enabled_sensors | SET('temperature_c','humidity_pct','gas_ppm','distance_cm') | NOT NULL, DEFAULT all four | Which sensors this specific rover actually carries |
+| last_seen_at | DATETIME(3) | NULL | Timestamp of the most recent successful ingest for this rover |
 | created_at | DATETIME | DEFAULT CURRENT_TIMESTAMP | First registration time |
 
+`[Duke, 2026-09-04]` `last_seen_at` is updated in the same transaction as every successful `INSERT ... ON DUPLICATE KEY UPDATE` into `telemetry_readings` (§4.1). It exists because `GET /rovers` (§6.3) is polled every second by the dashboard and previously had to derive each rover's status with a correlated subquery against `telemetry_readings` per request; reading one column off `rovers` is cheaper at that polling rate. `telemetry_readings` remains the source of truth for the reading itself — `last_seen_at` is a denormalized copy kept only for this lookup.
+
 `[Proposed]` An unknown `device_uid` arriving in valid telemetry is registered automatically. This supports the PRD's fleet model ("one or multiple rovers", §3.5) without a manual provisioning step, which matters for the load-test tool that simulates multiple devices. If Duke prefers a closed fleet where unknown devices are rejected, this becomes a one-line change.
+
+`[Proposed]` `enabled_sensors` exists because not every rover build has every sensor installed yet. It tells the validator which fields are actually required for this device, per §5.4 and §6.2, instead of every rover being held to the full five-field payload regardless of what hardware it carries. A rover auto-registered on first contact (above) is assumed to carry all four sensors until an administrator narrows it, since the alternative — guessing which sensors are absent from a single payload — is not reliable.
 
 ### 5.4 telemetry_readings
 
@@ -261,20 +296,22 @@ The core table. **One row per telemetry record**, with one column per sensor fie
 |---|---|---|---|
 | device_id | BIGINT UNSIGNED | PK part 1, FK → rovers.id | — |
 | recorded_at | DATETIME(3) | PK part 2 | UTC, millisecond precision |
-| temperature_c | FLOAT | NOT NULL | °C |
-| humidity_pct | FLOAT | NOT NULL | % |
-| gas_ppm | FLOAT | NOT NULL | ppm |
-| distance_cm | FLOAT | NOT NULL | cm |
+| temperature_c | FLOAT | NULL | °C |
+| humidity_pct | FLOAT | NULL | % |
+| gas_ppm | FLOAT | NULL | ppm |
+| distance_cm | FLOAT | NULL | cm |
 | auto_brake | TINYINT(1) | NOT NULL | 0 = inactive, 1 = engaged |
+
+**Sensor columns are nullable, keyed to `rovers.enabled_sensors` (§5.3).** Not every rover build has every sensor installed. A field is required in the payload, and rejected with `MISSING_FIELD` if absent, only when it is listed in that rover's `enabled_sensors`; for a sensor the rover does not carry, the field is optional and stored as `NULL` rather than rejected or defaulted to zero. `NULL` means "not fitted on this rover," which is a different fact from `0`, a real reading, or an out-of-range rejection — collapsing them would make a missing gas sensor look identical to a gas reading of zero. `auto_brake` stays `NOT NULL` because it drives a safety behavior rather than reporting a sensor class that varies per build.
 
 **Composite primary key `(device_id, recorded_at)`.** This single choice satisfies four separate requirements:
 
 1. **Latest snapshot in under 30 ms (PRD §4).** `WHERE device_id = ? ORDER BY recorded_at DESC LIMIT 1` is a backward seek to the end of one clustered-index range. Cost is independent of table size.
 2. **Indexed by device and timestamp (PRD §3.2).** The requirement is satisfied by the clustered index itself; no secondary index is needed, so no secondary index has to be maintained on every insert.
 3. **Range and last-N queries (PRD §3.3).** Both are contiguous scans within the same clustered range.
-4. **Idempotency.** A device cannot produce two readings at the same instant, so the natural key is genuinely unique. A retransmitted record collides by definition and is absorbed with `INSERT ... ON DUPLICATE KEY UPDATE`, with no duplicate-detection column and no application-side pre-check.
+4. **No retry deduplication, by decision rather than by design gap.** `recorded_at` is stamped by the gateway on receipt (§4.1), not set by the rover, since the ESP32 build has no RTC. This means the composite key is no longer a natural dedup key: a retried POST after a dropped connection lands at a new receipt time and is stored as a second, distinct row rather than colliding with the original. `[Duke, 2026-09-04]` This is an accepted tradeoff, not an oversight — building real idempotency back in would mean adding a client-generated sequence number and a second unique key, which is more machinery than the retry case currently justifies. If retried-record duplication turns out to matter in practice, that is the fix to make later.
 
-**No surrogate `id` column.** The natural key is complete and is also the primary access path. An auto-increment ID would add 8 bytes per row and change nothing about how the table is read.
+**No surrogate `id` column.** The composite key is still the primary access path — `WHERE device_id = ? ORDER BY recorded_at DESC LIMIT 1` for the latest-snapshot query (point 1 above) is unaffected by dropping the dedup guarantee. An auto-increment ID would add 8 bytes per row and change nothing about how the table is read.
 
 **Why `FLOAT` and not `DOUBLE`.** The physical sensors resolve to roughly 0.1 °C, 0.1 %, 1 ppm, and 0.3 cm. `FLOAT` carries about 7 significant digits, which is one to two orders of magnitude more precision than the hardware produces. Using `DOUBLE` for all four fields would add 16 bytes per row — roughly a third of the row — to store noise.
 
@@ -290,16 +327,18 @@ Precomputed aggregates, so long-range reporting never scans the raw table (PRD �
 | granularity | ENUM('minute','hour','day') | PK part 2 | Bucket size |
 | bucket_start | DATETIME | PK part 3 | Bucket start, UTC |
 | sample_count | INT UNSIGNED | NOT NULL | Rows aggregated into this bucket |
-| temp_min / temp_avg / temp_max | FLOAT | NOT NULL | °C |
-| hum_min / hum_avg / hum_max | FLOAT | NOT NULL | % |
-| gas_min / gas_avg / gas_max | FLOAT | NOT NULL | ppm |
-| dist_min / dist_avg / dist_max | FLOAT | NOT NULL | cm |
+| temp_min / temp_avg / temp_max | FLOAT | NULL | °C |
+| hum_min / hum_avg / hum_max | FLOAT | NULL | % |
+| gas_min / gas_avg / gas_max | FLOAT | NULL | ppm |
+| dist_min / dist_avg / dist_max | FLOAT | NULL | cm |
 | obstacle_events | INT UNSIGNED | NOT NULL | Obstacle encounters in this bucket |
 | computed_at | DATETIME | NOT NULL | When this row was last recomputed |
 
 A `minute` granularity exists so that mid-range charts (6 hours, 24 hours) have a usable point count. Without it there is a resolution gap: 6 hours of raw data is 21,600 points at the fastest transmission interval — too many to plot — while 6 hours of hourly summaries is 6 points, which is not a chart. Minute buckets give 360 and 1,440 points for those two ranges. See §6.5.
 
 `sample_count` is stored so a consumer can tell a quiet hour with three samples from a full hour with thousands, and so partial buckets are visible rather than silently misleading.
+
+**The min/avg/max columns are nullable, matching the `NULL` sensor columns in `telemetry_readings` (§5.4).** `AVG()`, `MIN()`, and `MAX()` already ignore `NULL` inputs in SQL, so a bucket built entirely from readings where `gas_ppm` is `NULL` — a rover with no gas sensor — naturally aggregates to `gas_min/avg/max = NULL`, rather than to a misleading zero. `sample_count` still counts rows, not non-null values per column, since it exists to describe the bucket as a whole (§5.5 above), not each sensor separately.
 
 `obstacle_events` counts **rising edges** of `auto_brake` (transitions from 0 to 1), not the number of rows where `auto_brake = 1`. A single obstacle encounter that holds the brake for 20 seconds is one event, not twenty rows' worth. This is a proposed interpretation.
 
@@ -342,9 +381,43 @@ At one row per minute the table grows by 1,440 rows — roughly 70 KB — per da
 
 `ingest_rate_per_min` is stored rather than recomputed at read time. Counting rows in `telemetry_readings` for an arbitrary past minute is a range scan per point; charting six hours of it would mean 360 such scans. Storing the count once at sample time reduces that to a single sequential read.
 
-### 5.8 Validation ranges
+### 5.8 media_files
 
-PRD §3.1 requires rejection of physically impossible readings. Proposed bounds, based on the sensor classes typical for this build:
+`[Proposed]` Stores the filesystem or object-storage path to a photo or video captured by a rover, not the binary itself. This keeps large media out of MariaDB, consistent with §2.2's exclusion of video capture and storage from this backend's core scope; the table exists so a path can be recorded if and when a capture mechanism is added elsewhere.
+
+| Column | Type | Constraint | Purpose |
+|---|---|---|---|
+| id | BIGINT UNSIGNED | PK, AUTO_INCREMENT | Record ID |
+| device_id | BIGINT UNSIGNED | NOT NULL, FK → rovers.id | Rover that captured the media |
+| media_type | ENUM('photo','video') | NOT NULL | Distinguishes still images from video clips |
+| file_path | VARCHAR(255) | NOT NULL | Path on the gateway filesystem or object store |
+| captured_at | DATETIME(3) | NOT NULL | UTC, millisecond precision, matching `telemetry_readings` |
+| file_size_bytes | INT UNSIGNED | NOT NULL, DEFAULT 0 | File size in bytes |
+| mime_type | VARCHAR(50) | NOT NULL, DEFAULT `image/jpeg` | e.g. `image/jpeg`, `video/mp4` |
+| original_filename | VARCHAR(200) | NULL | Filename as uploaded, before the storage-path convention (§5.8.1) is applied |
+| file_hash | CHAR(64) | NULL | SHA-256 of the file contents, for integrity verification |
+
+`[Duke, 2026-09-04]` These four columns close a gap flagged in Phase 1 review: without them there was no way to detect a truncated upload, tell files apart by original name, or know a video's size before streaming it. `file_size_bytes` and `mime_type` default rather than reject when absent, because the upload endpoint (§6.13) can derive both from the uploaded file itself; `original_filename` and `file_hash` stay nullable since older or externally-placed files may not have either.
+
+A secondary index on `(device_id, captured_at)` supports "media for rover X in time range Y" lookups, the same access pattern as telemetry.
+
+### 5.8.1 Media storage path convention
+
+`[Duke, 2026-09-04]` Files are written under a fixed directory structure, and `media_files.file_path` stores the resulting path:
+
+```
+/var/rover-media/{device_uid}/{YYYY}/{MM}/{DD}/{timestamp}_{filename}
+```
+
+Example: `/var/rover-media/esp32_car/2026/09/04/10-00-00-123_snapshot.jpg`
+
+Partitioning by device and date keeps any one directory from accumulating an unbounded number of files, and makes it possible to locate a rover's media for a given day without a database lookup, e.g. during manual inspection or backup.
+
+### 5.9 Validation ranges
+
+PRD §3.1 requires rejection of physically impossible readings. `[Proposed]` Rather than hard-coding these bounds, they are stored in a `sensor_limits` table and read by the validator at request time (with an in-process cache refreshed on write, so a limit change does not add a query to the ingest path). This is what makes the ranges editable from the System view (§11.3) without a deployment: an administrator adjusts a value in the UI, the UI calls the update endpoint in §6.11, and the next ingest request is validated against the new bound.
+
+Seed values, based on the sensor classes typical for this build:
 
 | Field | Accepted range | Rationale |
 |---|---|---|
@@ -355,9 +428,18 @@ PRD §3.1 requires rejection of physically impossible readings. Proposed bounds,
 | auto_brake | 0 or 1 | Boolean |
 | recorded_at | not more than 60 s in the future, not more than 7 days in the past | Guards against unsynchronized rover clocks |
 
-These bounds must be confirmed against the actual hardware before implementation. The clock-skew bound in particular is a proposal with no PRD basis; it exists because a rover with an unset RTC will otherwise write readings dated 1970 into the middle of the timeseries.
+These seed values must be confirmed against the actual hardware before implementation. The clock-skew bound in particular is a proposal with no PRD basis; it exists because a rover with an unset RTC will otherwise write readings dated 1970 into the middle of the timeseries. `auto_brake` and the `recorded_at` clock-skew rule are boolean/structural checks rather than a stored min/max, so they stay in validator code rather than in `sensor_limits`; only the four numeric sensor fields are editable through the table.
 
-### 5.9 Reference DDL
+| Column | Type | Constraint | Purpose |
+|---|---|---|---|
+| field | VARCHAR(30) | PK | Sensor column name, e.g. `temperature_c` |
+| min_value | FLOAT | NOT NULL | Lower bound, inclusive |
+| max_value | FLOAT | NOT NULL | Upper bound, inclusive |
+| updated_at | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP | Last change, shown in the admin UI |
+
+A changed limit is not retroactive: readings already stored keep whatever was valid when they were ingested, and only new writes are checked against the updated bound.
+
+### 5.10 Reference DDL
 
 ```sql
 CREATE DATABASE IF NOT EXISTS rover_telemetry
@@ -368,6 +450,9 @@ CREATE TABLE rovers (
   device_uid       VARCHAR(64)  NOT NULL,
   name             VARCHAR(100) NULL,
   firmware_version VARCHAR(30)  NULL,
+  enabled_sensors  SET('temperature_c','humidity_pct','gas_ppm','distance_cm')
+                   NOT NULL DEFAULT 'temperature_c,humidity_pct,gas_ppm,distance_cm',
+  last_seen_at     DATETIME(3)  NULL,
   created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_rover_device_uid (device_uid)
@@ -376,12 +461,13 @@ CREATE TABLE rovers (
 CREATE TABLE telemetry_readings (
   device_id     BIGINT UNSIGNED NOT NULL,
   recorded_at   DATETIME(3)     NOT NULL,
-  temperature_c FLOAT           NOT NULL,
-  humidity_pct  FLOAT           NOT NULL,
-  gas_ppm       FLOAT           NOT NULL,
-  distance_cm   FLOAT           NOT NULL,
+  temperature_c FLOAT           NULL,
+  humidity_pct  FLOAT           NULL,
+  gas_ppm       FLOAT           NULL,
+  distance_cm   FLOAT           NULL,
   auto_brake    TINYINT(1)      NOT NULL DEFAULT 0,
   PRIMARY KEY (device_id, recorded_at),
+  KEY ix_reading_brake (device_id, auto_brake, recorded_at),
   CONSTRAINT fk_reading_rover FOREIGN KEY (device_id) REFERENCES rovers(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -390,10 +476,10 @@ CREATE TABLE telemetry_summaries (
   granularity     ENUM('minute','hour','day') NOT NULL,
   bucket_start    DATETIME          NOT NULL,
   sample_count    INT UNSIGNED      NOT NULL,
-  temp_min FLOAT NOT NULL, temp_avg FLOAT NOT NULL, temp_max FLOAT NOT NULL,
-  hum_min  FLOAT NOT NULL, hum_avg  FLOAT NOT NULL, hum_max  FLOAT NOT NULL,
-  gas_min  FLOAT NOT NULL, gas_avg  FLOAT NOT NULL, gas_max  FLOAT NOT NULL,
-  dist_min FLOAT NOT NULL, dist_avg FLOAT NOT NULL, dist_max FLOAT NOT NULL,
+  temp_min FLOAT NULL, temp_avg FLOAT NULL, temp_max FLOAT NULL,
+  hum_min  FLOAT NULL, hum_avg  FLOAT NULL, hum_max  FLOAT NULL,
+  gas_min  FLOAT NULL, gas_avg  FLOAT NULL, gas_max  FLOAT NULL,
+  dist_min FLOAT NULL, dist_avg FLOAT NULL, dist_max FLOAT NULL,
   obstacle_events INT UNSIGNED      NOT NULL DEFAULT 0,
   computed_at     DATETIME          NOT NULL,
   PRIMARY KEY (device_id, granularity, bucket_start),
@@ -421,6 +507,35 @@ CREATE TABLE validation_errors (
   PRIMARY KEY (id),
   KEY ix_validation_time (received_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE media_files (
+  id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  device_id         BIGINT UNSIGNED NOT NULL,
+  media_type        ENUM('photo','video') NOT NULL,
+  file_path         VARCHAR(255) NOT NULL,
+  captured_at       DATETIME(3)  NOT NULL,
+  file_size_bytes   INT UNSIGNED NOT NULL DEFAULT 0,
+  mime_type         VARCHAR(50)  NOT NULL DEFAULT 'image/jpeg',
+  original_filename VARCHAR(200) NULL,
+  file_hash         CHAR(64)     NULL,
+  PRIMARY KEY (id),
+  KEY ix_media_device_time (device_id, captured_at),
+  CONSTRAINT fk_media_rover FOREIGN KEY (device_id) REFERENCES rovers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE sensor_limits (
+  field       VARCHAR(30) NOT NULL,
+  min_value   FLOAT       NOT NULL,
+  max_value   FLOAT       NOT NULL,
+  updated_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (field)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO sensor_limits (field, min_value, max_value) VALUES
+  ('temperature_c', -40,  85),
+  ('humidity_pct',    0, 100),
+  ('gas_ppm',         0, 10000),
+  ('distance_cm',     2, 400);
 ```
 
 ---
@@ -432,20 +547,25 @@ CREATE TABLE validation_errors (
 
 ### 6.1 Endpoint summary
 
-| Method | Endpoint | Purpose | PRD reference |
-|---|---|---|---|
-| POST | `/api/v1/telemetry` | Ingest one telemetry record | §3.1 |
-| GET | `/api/v1/rovers` | List known rovers | §3.3 |
-| GET | `/api/v1/rovers/{device_uid}/latest` | Single latest reading | §3.3 Live Feed |
-| GET | `/api/v1/rovers/{device_uid}/readings` | Last N records, or a time range | §3.3 |
-| GET | `/api/v1/rovers/{device_uid}/summary` | Aggregated statistics | §3.3 |
-| GET | `/api/v1/rovers/{device_uid}/export` | CSV or JSON export | §3.3 |
-| GET | `/api/v1/health` | Service and database health | §3.4 |
-| GET | `/api/v1/system` | Gateway host metrics, current | §3.4 |
-| GET | `/api/v1/system/history` | Gateway host metrics over time | §3.4 |
-| GET | `/api/v1/rovers/{device_uid}/events` | Threshold and brake events | §3.3 |
-| GET | `/api/v1/validation-errors/summary` | Rejected payload counts by code | §3.1 |
-| GET | `/api/v1/config/sensor-limits` | Validation ranges as data | §3.1 |
+| No. | Method | Endpoint | Purpose | PRD reference |
+|---|---|---|---|---|
+| 1 | POST | `/api/v1/telemetry` | Ingest one telemetry record | §3.1 |
+| 2 | GET | `/api/v1/rovers` | List known rovers | §3.3 |
+| 3 | GET | `/api/v1/rovers/{device_uid}/latest` | Single latest reading | §3.3 Live Feed |
+| 4 | GET | `/api/v1/rovers/{device_uid}/readings` | Last N records, or a time range | §3.3 |
+| 5 | GET | `/api/v1/rovers/{device_uid}/summary` | Aggregated statistics | §3.3 |
+| 6 | GET | `/api/v1/rovers/{device_uid}/export` | CSV or JSON export | §3.3 |
+| 7 | GET | `/api/v1/health` | Service and database health | §3.4 |
+| 8 | GET | `/api/v1/system` | Gateway host metrics, current | §3.4 |
+| 9 | GET | `/api/v1/system/history` | Gateway host metrics over time | §3.4 |
+| 10 | GET | `/api/v1/rovers/{device_uid}/events` | Threshold and brake events | §3.3 |
+| 11 | GET | `/api/v1/validation-errors/summary` | Rejected payload counts by code | §3.1 |
+| 12 | GET | `/api/v1/config/sensor-limits` | Validation ranges as data | §3.1 |
+| 13 | PUT | `/api/v1/config/sensor-limits/{field}` | Update one validation range | §3.1 |
+| 14 | POST | `/api/v1/rovers/{device_uid}/media` | Upload a photo or video | §3.1 |
+| 15 | GET | `/api/v1/rovers/{device_uid}/media` | List media records | §3.3 |
+| 16 | GET | `/api/v1/rovers/{device_uid}/media/{id}` | Serve one media file | §3.3 |
+| 17 | DELETE | `/api/v1/rovers/{device_uid}/media/{id}` | Delete a media record and its file | §3.3 |
 
 `[Proposed]` Rovers are addressed in the path by `device_uid` — the identifier the rover firmware and the Desktop client already hold — rather than by the internal `rovers.id`. This keeps one identifier across ingestion and query (the POST body carries `device_uid` too), removes the lookup round trip a client would otherwise need on startup, and makes access logs readable. The numeric `id` remains internal: it is what `telemetry_readings` stores as a foreign key, since an 8-byte integer per row is cheaper than repeating a 64-character string. The API resolves `device_uid` to `id` once per request.
 
@@ -456,7 +576,6 @@ CREATE TABLE validation_errors (
 ```json
 {
   "device_uid": "rover-001",
-  "recorded_at": "2026-09-03T10:00:00.123Z",
   "temperature_c": 25.4,
   "humidity_pct": 61.2,
   "gas_ppm": 128.0,
@@ -465,9 +584,9 @@ CREATE TABLE validation_errors (
 }
 ```
 
-All fields are required. A missing field is rejected rather than defaulted, per PRD §4 ("payloads with ... missing keys are cleanly rejected").
+`device_uid` and `auto_brake` are always required. Of the four sensor fields, only the ones listed in that rover's `enabled_sensors` (§5.3) are required; a missing required field is rejected rather than defaulted, per PRD §4 ("payloads with ... missing keys are cleanly rejected"). A sensor field the rover does not carry may simply be omitted from the payload — it is stored as `NULL` (§5.4), not treated as a missing-field error. A sensor field that **is** in `enabled_sensors` but omitted is still `MISSING_FIELD`; a device cannot silently stop reporting a sensor it is registered as carrying.
 
-`[To confirm]` Whether the rover sets `recorded_at` itself or the gateway timestamps on arrival depends on whether the rover has a synchronized clock. The payload above assumes the rover sets it. If it does not, the field is dropped and the gateway uses its own clock, which is simpler but loses the acquisition-versus-receipt distinction.
+`[Duke, 2026-09-04]` `recorded_at` is not sent by the rover and is not accepted in the request body. The ESP32 build has no hardware RTC, so a rover-supplied timestamp would be wrong or epoch-dated after every reboot; the gateway stamps `recorded_at` itself on receipt (§4.1). This resolves the earlier `[To confirm]` on this point, at the cost of losing the acquisition-versus-receipt distinction and of retries no longer deduplicating (§5.4).
 
 **Response 201 Created**
 
@@ -475,12 +594,11 @@ All fields are required. A missing field is rejected rather than defaulted, per 
 {
   "success": true,
   "device_uid": "rover-001",
-  "recorded_at": "2026-09-03T10:00:00.123Z",
-  "duplicate": false
+  "recorded_at": "2026-09-03T10:00:00.123Z"
 }
 ```
 
-`duplicate: true` indicates the record already existed and was overwritten with identical content. This is reported as success, not as an error, so a rover retrying after a network drop does not enter a failure loop.
+`recorded_at` here is the gateway-stamped receipt time, echoed back so the rover (or its logs) can correlate the request with the stored row. There is no `duplicate` field: since `recorded_at` is no longer rover-supplied, a retried POST is indistinguishable from a new reading and is stored as a separate row rather than detected and merged (§5.4).
 
 **Response 422 Unprocessable Entity** — validation failure. The payload is written to `validation_errors` and the service continues.
 
@@ -508,7 +626,7 @@ All fields are required. A missing field is rejected rather than defaulted, per 
 ]
 ```
 
-`status` is derived from the age of the last reading: `ONLINE` within 15 s, `DEGRADED` within 60 s, `OFFLINE` beyond that or with no readings. Thresholds are configuration values, to be set once the real transmission interval is fixed within the PRD's 1–5 s range.
+`status` is derived from the age of `rovers.last_seen_at` (§5.3): `ONLINE` within 15 s, `DEGRADED` within 60 s, `OFFLINE` beyond that or with `last_seen_at` still `NULL`. Thresholds are configuration values, to be set once the real transmission interval is fixed within the PRD's 1–5 s range. Reading `last_seen_at` off `rovers` avoids a correlated subquery against `telemetry_readings` for every rover on every poll, which matters because this endpoint is polled at 1 s intervals by the dashboard's fleet list.
 
 ### 6.4 GET /api/v1/rovers/{device_uid}/latest
 
@@ -527,7 +645,7 @@ The high-frequency endpoint. Target: under 30 ms (PRD §4).
 }
 ```
 
-`age_seconds` is included so a polling dashboard can tell a live value from a frozen one without doing clock arithmetic against a possibly skewed client clock. Returns 404 if the rover has never reported.
+`age_seconds` is included so a polling dashboard can tell a live value from a frozen one without doing clock arithmetic against a possibly skewed client clock. Returns 404 if the rover has never reported. A sensor field not in this rover's `enabled_sensors` is returned as `null` rather than omitted from the JSON, so a client can tell "not fitted" apart from a field it forgot to ask for.
 
 ### 6.5 GET /api/v1/rovers/{device_uid}/readings
 
@@ -653,6 +771,8 @@ rover-001,2026-09-03T10:00:00.123Z,25.4,61.2,128.0,34.5,0
 
 `[Proposed]` The export streams rows to the response as they are read from an unbuffered query, rather than building the whole file in memory. On a Pi 5 this is the difference between exporting a week of data and running out of PHP memory. This constrains the implementation to `PDO::MYSQL_ATTR_USE_BUFFERED_QUERY = false` for this endpoint.
 
+`[Duke, 2026-09-04]` A large streamed export can run past PHP's default `max_execution_time`, which would cut the response off mid-file. The export handler calls `set_time_limit(0)` to disable the execution timeout for this request only — scoped to the export handler, not a global `php.ini` change, so it does not mask a runaway query anywhere else in the API.
+
 ### 6.8 GET /api/v1/health
 
 ```json
@@ -757,18 +877,79 @@ These three exist to serve elements of the reference dashboard (§11.5). None re
 
 Deriving rather than storing is deliberate: an event table would have to be kept consistent with the readings it describes, and would duplicate information already present. The cost is a scan of the requested window, which is bounded because the window is.
 
-**`GET /api/v1/config/sensor-limits`** — the ranges from §5.8, served as data so the dashboard's limit bars and the validator cannot drift apart.
+**`GET /api/v1/config/sensor-limits`** — the ranges from `sensor_limits` (§5.9), served as data so the dashboard's limit bars and the validator cannot drift apart.
 
 ```json
 {
-  "temperature_c": { "min": -40, "max": 85 },
-  "humidity_pct":  { "min": 0,   "max": 100 },
-  "gas_ppm":       { "min": 0,   "max": 10000 },
-  "distance_cm":   { "min": 2,   "max": 400 }
+  "temperature_c": { "min": -40, "max": 85,  "updated_at": "2026-09-03T00:00:00Z" },
+  "humidity_pct":  { "min": 0,   "max": 100, "updated_at": "2026-09-03T00:00:00Z" },
+  "gas_ppm":       { "min": 0,   "max": 10000, "updated_at": "2026-09-03T00:00:00Z" },
+  "distance_cm":   { "min": 2,   "max": 400, "updated_at": "2026-09-03T00:00:00Z" }
 }
 ```
 
-### 6.12 Standard error response
+**`PUT /api/v1/config/sensor-limits/{field}`** — updates one field's bounds. This is what the System view's limit editor (§11.3) calls; it is the mechanism referenced in §5.9 that makes validation ranges changeable without a deployment.
+
+```json
+{ "min": -30, "max": 80 }
+```
+
+`min` and `max` are both required and `min` must be less than `max`; a request naming a field not present in `sensor_limits` returns `NOT_FOUND`. On success the row's `updated_at` is refreshed and the response echoes the stored value:
+
+```json
+{ "field": "temperature_c", "min": -30, "max": 80, "updated_at": "2026-09-04T08:15:00Z" }
+```
+
+`[To confirm]` This endpoint changes ingest behavior for every rover immediately and has no authentication in the first version (§11.6), so anyone who can reach the API can widen or narrow validation. Whether this needs an auth gate before going live is a question for the same review as the rest of §11.6's "Auth: None" decision.
+
+### 6.12 Media endpoints
+
+`[Duke, 2026-09-04]` These four endpoints close the gap left in the original proposal: `media_files` (§5.8) existed in the schema with nothing to write to or read from it. They give the desktop client (Haru) a place to send rover snapshots and let the dashboard list and display them.
+
+**`POST /api/v1/rovers/{device_uid}/media`** — uploads one photo or video as `multipart/form-data`. The file is streamed to disk under the path convention in §5.8.1 as it is received, not buffered fully in memory first, for the same reason the export endpoint streams (§6.7). `file_size_bytes` and `mime_type` are read from the upload itself; `media_type` is inferred from `mime_type` (an `image/*` MIME type stores as `photo`, `video/*` as `video`); `original_filename` is the client-supplied filename; `file_hash` is computed server-side while streaming, so the client cannot influence what gets stored as the file's integrity check.
+
+Response 201 Created:
+
+```json
+{
+  "id": 4821,
+  "device_uid": "rover-001",
+  "media_type": "photo",
+  "file_path": "/var/rover-media/rover-001/2026/09/04/10-00-00-123_snapshot.jpg",
+  "captured_at": "2026-09-04T10:00:00.123Z",
+  "file_size_bytes": 184320,
+  "mime_type": "image/jpeg"
+}
+```
+
+**`GET /api/v1/rovers/{device_uid}/media`** — lists media records for a rover, most recent first.
+
+| Parameter | Example | Required | Meaning |
+|---|---|---|---|
+| media_type | `photo` / `video` | no | Filter by type |
+| start | `2026-09-04T00:00:00Z` | no | Range start on `captured_at` |
+| end | `2026-09-04T23:59:59Z` | no | Range end on `captured_at` |
+| limit | `50` | no | Default 100, maximum 500 |
+
+```json
+{
+  "device_uid": "rover-001",
+  "count": 1,
+  "media": [
+    { "id": 4821, "media_type": "photo", "captured_at": "2026-09-04T10:00:00.123Z", "file_size_bytes": 184320, "mime_type": "image/jpeg" }
+  ]
+}
+```
+
+This listing response omits `file_path` deliberately: the path is a gateway filesystem detail, not something a client should construct URLs from directly. A client fetches the binary through the endpoint below instead.
+
+**`GET /api/v1/rovers/{device_uid}/media/{id}`** — streams the file itself, with `Content-Type` set from the stored `mime_type` and `Content-Length` from `file_size_bytes`. Returns `NOT_FOUND` if the id does not belong to this rover.
+
+**`DELETE /api/v1/rovers/{device_uid}/media/{id}`** — removes the row and the underlying file together, so the two never drift out of sync (a row with no file, or a file with no row). Returns 204 No Content on success, `NOT_FOUND` if the id does not belong to this rover.
+
+`[To confirm]` Like the sensor-limits update endpoint (§6.11), none of these four has authentication in the first version — anyone who can reach the API can upload, list, view, or delete media. This is the same open question as §11.6's "Auth: None" decision and is not resolved separately here.
+
+### 6.13 Standard error response
 
 ```json
 {
@@ -872,6 +1053,8 @@ Deletion runs in batches rather than as a single large `DELETE`, to avoid a long
 
 No code is written until this document is approved (PRD §6).
 
+`[Proposed]` The backend API (Phases 3–11) is built and verified in full before any dashboard work (Phases 12–13) begins. The dashboard in §11 is a client of this API; building it against an endpoint set that is still changing would mean redoing UI work every time the contract shifts, whereas building it last means every endpoint it calls is already implemented and tested.
+
 | Phase | Content | Depends on |
 |---|---|---|
 | 1 | This design document, submitted for review | — |
@@ -881,8 +1064,14 @@ No code is written until this document is approved (PRD §6).
 | 5 | Query endpoints: latest, readings, export (API-01…03, API-05) | Phase 4 |
 | 6 | Aggregation job and summary endpoint (DB-03, API-04) | Phase 4 |
 | 7 | Health and system endpoints, plus the host sampler (SYS-01…03) | Phase 3 |
-| 8 | Simulator and load-test suite (QA-01, QA-02) | Phase 5 |
-| 9 | Verification run and results document | Phases 4–8 |
+| 8 | Media endpoints: upload, list, serve, delete (§6.12) | Phase 3 |
+| 9 | Sensor-limits config endpoints: GET / PUT (§6.11) | Phase 3 |
+| 10 | Simulator and load-test suite (QA-01, QA-02) | Phase 5 |
+| 11 | Backend verification run and results document (§10) | Phases 4–10 |
+| 12 | Web dashboard implementation (§11): Live, History, System views | Phase 11 |
+| 13 | Dashboard verification against the live, already-tested API | Phase 12 |
+
+Phase 12 assumes this backend role also builds the dashboard; §2.2 notes that ownership is still to be confirmed with Duke. If it belongs to the Desktop client owner instead, Phases 12–13 drop from this plan and §11 stands as the API usage reference for whoever builds it — the backend-first ordering for Phases 3–11 is unaffected either way.
 
 ---
 
@@ -891,7 +1080,7 @@ No code is written until this document is approved (PRD §6).
 | ID | Test | Method | Pass criterion | Requirement |
 |---|---|---|---|---|
 | T01 | Ingest and confirm | POST a valid record | 201 returned, row present in DB | ING-01, ING-05 |
-| T02 | Field completeness | POST and read back | All seven fields round-trip unchanged, millisecond precision preserved | ING-02, DB-01 |
+| T02 | Field completeness | POST and read back | All submitted fields round-trip unchanged; gateway-stamped `recorded_at` is present with millisecond precision | ING-02, DB-01 |
 | T03 | Range validation | POST temperature 150, distance −5 | 422 with `OUT_OF_RANGE`, no row written | ING-03 |
 | T04 | Malformed payload | POST invalid JSON and a payload missing a key | 400 / 422, row in `validation_errors`, service still serving | ING-04 |
 | T05 | Range and last-N query | Insert 200 records, query `limit=50` and a 1-minute range | Correct count, chronological order, no gap interpolation | API-02, API-03 |
@@ -903,7 +1092,7 @@ No code is written until this document is approved (PRD §6).
 | T08b | Gateway history | Run the sampler repeatedly, then query a range | Points returned in order; a period with the sampler stopped appears as a gap, not a flat line | SYS-03 |
 | T09 | Latency | 100 sequential `GET /latest` calls against a table of 1,000,000 rows | p95 under 30 ms | API-01, DB-02 |
 | T10 | Load | 1000 rapid POSTs from the simulator, multiple devices | Stored row count equals sent count, zero loss, p95 latency recorded | QA-01, QA-02 |
-| T11 | Idempotency | Re-POST an identical record | Row count unchanged, `duplicate: true` | ING-01 |
+| T11 | Retry behavior | Re-POST the same payload twice | Two rows stored, with different `recorded_at` (gateway-stamped); no dedup is expected | §4.1, §5.4 |
 | T12 | Retention | Run `retention.php` against seeded old data | Raw rows older than the window removed, summaries intact | §8.4 |
 
 T09 runs against a pre-seeded million-row table rather than an empty one, because the point of the test is to show that latency is independent of table size.
@@ -978,7 +1167,7 @@ An earlier draft of this section claimed the dashboard required no new endpoints
 |---|---|---|
 | Rejected payload counts (Live sidebar, System panel) | Read back `validation_errors` by code | `GET /validation-errors/summary` |
 | Recent events list (Live) | Threshold crossings, brake engagements, reconnections | `GET /rovers/{device_uid}/events` |
-| Sensor limit bars (Live) | The validation ranges in §5.8, as data | `GET /config/sensor-limits` |
+| Sensor limit bars (Live), limit editor (System) | The validation ranges in §5.9, as data, editable in place | `GET /config/sensor-limits`, `PUT /config/sensor-limits/{field}` |
 | Gap list and query stats (History) | Gap detection and cost reporting | Extra fields on `GET /rovers/{device_uid}/readings` |
 
 None of them requires a new table. The events feed is derived from `telemetry_readings` at query time rather than stored, so no event log has to be maintained or kept consistent with the readings it describes.
@@ -1005,10 +1194,12 @@ None of them requires a new table. The events feed is derived from `telemetry_re
 | Primary key | `(device_id, recorded_at)` composite, clustered, no surrogate ID |
 | Secondary indexes on readings | None required |
 | Numeric type | FLOAT — matched to sensor resolution, not to maximum precision |
-| Deduplication | `INSERT ... ON DUPLICATE KEY UPDATE` against the natural key |
+| Deduplication | None — `recorded_at` is gateway-stamped, not rover-supplied, so retries store as separate rows (revised 2026-09-04 per Duke review) |
+| Rover status | `rovers.last_seen_at`, updated on every ingest, read directly by `GET /rovers` (revised 2026-09-04 per Duke review) |
+| Media | `media_files` + upload/list/serve/delete endpoints in §6.12 (added 2026-09-04 per Duke review) |
 | Aggregation | Cron job each minute, recomputing the last few buckets at minute, hour, and day granularity |
 | Summary storage | `telemetry_summaries`, one table for minute, hourly, and daily granularity |
-| Validation | At the boundary, before the write; rejections logged to a table |
+| Validation | At the boundary, before the write; rejections logged to a table; ranges stored in `sensor_limits` and editable via `PUT /config/sensor-limits/{field}`, not hard-coded |
 | Export | Streamed unbuffered query, not built in memory |
 | Gateway metrics | Read live from `/proc` and `/sys`, and sampled once per minute into `gateway_metrics` for charting |
 | Retention | Proposed 90 days raw, summaries indefinite — to confirm |
@@ -1018,3 +1209,12 @@ None of them requires a new table. The events feed is derived from `telemetry_re
 | Teleoperation | Direct browser-to-rover UDP, outside this backend (§11.4) |
 
 > All items marked `[Proposed]` reflect the intern's design position and are submitted for approval. Items marked `[To confirm]` cannot be resolved without mentor input. Implementation begins only after Phase 2 approval, per PRD §6.
+
+---
+
+## 13. Revision History
+
+| Version | Date | Summary |
+|---|---|---|
+| v1.0 | 2026-09-03 | Initial Phase 1 submission. |
+| v1.1 | 2026-09-04 | Revisions from Duke's Phase 1 mentor review (`DUKE-REVIEW-PHASE1.md`): added `media_files` metadata columns and a storage-path convention (§5.8, §5.8.1); added four media upload/list/serve/delete endpoints (§6.12); removed `recorded_at` from the ingest request body — the gateway now stamps it on receipt since the ESP32 build has no RTC — which also means retried POSTs are no longer deduplicated (§4.1, §5.4, §6.2); added `rovers.last_seen_at`, updated on every ingest and read directly by `GET /rovers` instead of a per-request subquery (§5.3, §6.3); added a covering index on `telemetry_readings(device_id, auto_brake, recorded_at)` for the `/events` endpoint; noted `set_time_limit(0)` scoped to the export handler (§6.7); added sequential numbering to the endpoint summary table (§6.1); added `sensor_limits` as a DB-backed, UI-editable table with a `PUT` endpoint (§5.9, §6.11); made the four sensor columns in `telemetry_readings` and `telemetry_summaries` nullable, keyed to a new `rovers.enabled_sensors`, to represent rovers with sensors not yet installed (§5.3–§5.5).

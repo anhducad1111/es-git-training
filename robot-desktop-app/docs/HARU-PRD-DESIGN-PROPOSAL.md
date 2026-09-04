@@ -67,7 +67,7 @@ Once Duke approves this document:
 | Section | Title | Contents |
 |---------|-------|----------|
 | §1 | Purpose | Deliverable overview, what this document contains |
-| §2 | System Architecture | High-level system diagram (ESP32 ↔ Desktop ↔ Cloud) |
+| §2 | System Architecture | High-level system diagram (ESP32 ↔ Desktop ↔ RPi5) |
 | §3 | UI Wireframes | Main View, Diagnostics View, Video Overlay, Screen Zones, Component Descriptions |
 | §4 | Keyboard State Machine | Drive control (WASD), Gimbal control (IJKL), Key mapping table |
 | §5 | Thread Architecture | Thread diagram, responsibilities, signal/slot communication |
@@ -78,22 +78,23 @@ Once Duke approves this document:
 | §10 | File Structure | Project directory layout |
 | §11 | Installation | pip install commands |
 | §12 | Usage | How to run the application |
-| §13 | User Stories | Persona-based feature requirements |
-| §14 | Implementation Plan | 12-phase development roadmap |
-| §15 | Development Checklist | Phase completion tracking |
-| §16 | Technical Reference — Workers | HTTP Worker, Ollama Worker, Video Receiver, Command Sender code |
-| §17 | Technical Reference — Config | config.json structure, Load/Save functions, Persistence flow |
-| §18 | Technical Reference — Ollama AI | Model config, Function calling, System prompt, Examples |
-| §19 | Technical Reference — Charts | Data flow, Normalization algorithm, Slash commands |
-| §20 | Technical Reference — Drag & Drop | MIME data format, Drop zone handling |
-| §21 | Technical Reference — Keyboard | Key event handling, Gimbal angle tracking |
-| §22 | Technical Reference — ESP32 WebSocket | Command format (plain text), Telemetry format, Video stream (binary), ACK protocol |
-| §23 | Technical Reference — Cloud API | POST/GET endpoints with JSON examples |
-| §24 | Technical Reference — OTA | Upload implementation, Headers |
-| §25 | Technical Reference — Dependencies | Package list with versions |
-| §26 | Technical Reference — Troubleshooting | ESP32, Cloud, Performance issues |
-| §27 | Technical Reference — Dev Guide | Adding sensors, commands, AI features |
-| §28 | Technical Reference — Data Flow | Complete system and thread communication diagrams |
+| §13 | Configuration | Config file structure |
+| §14 | User Stories | Persona-based feature requirements |
+| §15 | Implementation Plan | 12-phase development roadmap |
+| §16 | Development Checklist | Phase completion tracking |
+| §17 | Technical Reference — Workers | HTTP Worker, Ollama Worker, Video Receiver, Command Sender code |
+| §18 | Technical Reference — Config | config.json structure, Load/Save functions, Persistence flow |
+| §19 | Technical Reference — Ollama AI | Model config, Function calling, System prompt, Examples |
+| §20 | Technical Reference — Charts | Data flow, Normalization algorithm, Slash commands |
+| §21 | Technical Reference — Drag & Drop | MIME data format, Drop zone handling |
+| §22 | Technical Reference — Keyboard | Key event handling, Gimbal angle tracking |
+| §23 | Technical Reference — ESP32 WebSocket | Command format (plain text), Telemetry format, Video stream (binary), ACK protocol |
+| §24 | Technical Reference — Cloud API | POST/GET endpoints with JSON examples |
+| §25 | Technical Reference — OTA | Upload implementation, Headers |
+| §26 | Technical Reference — Dependencies | Package list with versions |
+| §27 | Technical Reference — Troubleshooting | ESP32, Network, Performance issues |
+| §28 | Technical Reference — Dev Guide | Adding sensors, commands, AI features |
+| §29 | Technical Reference — Data Flow | Complete system and thread communication diagrams |
 
 ---
 
@@ -127,10 +128,10 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
        │                  │                  │
        ▼                  ▼                  ▼
 ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-│ ESP32-CAM   │   │ ESP32-MCU   │   │  Cloud API  │
-│ (Camera)    │   │ (Sensors,   │   │   (RPi5)    │
-│ Binary JPEG │   │  Motors,    │   │ Historical  │
-│ frames      │   │  Gimbal)    │   │ Data        │
+│ ESP32-CAM   │   │ ESP32-MCU   │   │  RPi5       │
+│ (Camera)    │   │ (Sensors,   │   │ (Ollama AI, │
+│ Binary JPEG │   │  Motors,    │   │  Follow Mode│
+│ frames      │   │  Gimbal)    │   │  Cloud API) │
 │ ws://?:?/ws │   │ ws://?:?/ws │   │ HTTP REST   │
 └─────────────┘   └─────────────┘   └─────────────┘
 ```
@@ -388,7 +389,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 
 | Element | Type | Function |
 |---------|------|----------|
-| `Speed Slider` | Slider | Motor PWM power (80-255) |
+| `Speed Slider` | Slider | Motor PWM power (150-255) |
 | `Speed Value` | Label | Current speed value |
 | `Keys Reference` | Label | Keyboard shortcuts reminder |
 
@@ -415,7 +416,7 @@ This is the Phase 1 deliverable requested in PRD §6. It contains:
 | `Chart 2: Air Quality` | Multi-Trend Chart | CO2 (emerald) + PM2.5 (blue) dashed line |
 | `Chart 3: Obstacle Proximity` | Bar Chart Timeline | Sonar distance history with threshold marker |
 
-#### GEMINI CHAT PANEL (Diagnostics View — Right Side)
+#### OLLAMA CHAT PANEL (Diagnostics View — Right Side)
 
 | Element | Type | Function |
 |---------|------|----------|
@@ -606,8 +607,8 @@ AI: Creating custom chart...
 │ │ VIDEO       │  │ COMMAND     │  │ TELEMETRY   │  │ AI CHAT     │
 │ │ THREAD      │  │ THREAD      │  │ THREAD      │  │ THREAD      │
 │ │             │  │             │  │             │  │             │
-│ │ WebSocket   │  │ WebSocket   │  │ HTTP POST   │  │ HTTPS       │
-│ │ (ESP32-CAM) │  │ (ESP32-MCU) │  │ (Cloud API) │  │ (Ollama)    │
+│ │ WebSocket   │  │ WebSocket   │  │ HTTP GET    │  │ HTTP        │
+│ │ (ESP32-CAM) │  │ (ESP32-MCU) │  │ (ESP32-CAR) │  │ (Ollama)    │
 │ └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
 │        │                │                │                │
 │        ▼                ▼                ▼                ▼
@@ -629,8 +630,8 @@ AI: Creating custom chart...
 |--------|----------------|----------|
 | Main Thread | UI updates, event loop | PyQt6 |
 | Video Thread | Receive video frames from ESP32-CAM | WebSocket (binary) |
-| Command Thread | Send commands to ESP32-MCU | WebSocket (JSON) |
-| Telemetry Thread | POST sensor data to cloud | HTTP REST |
+| Command Thread | Send commands to ESP32-MCU | WebSocket (Plain Text) |
+| Telemetry Thread | Poll sensor data from ESP32-CAR | HTTP GET |
 | AI Chat Thread | Ollama API (local RPi5) | HTTP (local network) |
 
 ---
@@ -641,7 +642,8 @@ AI: Creating custom chart...
 |-----------|----------|---------|
 | PC → ESP32-CAM | WebSocket | Receive video stream (binary JPEG) |
 | PC ↔ ESP32-MCU | WebSocket | Send commands (plain text), receive telemetry |
-| PC → Cloud | HTTP REST | Store/retrieve historical data |
+| PC → ESP32-CAR | HTTP GET | Poll subsystem health (optional) |
+| PC → RPi5 | HTTP REST | Cloud API for historical data (optional) |
 
 ### 6.1 WebSocket Commands (PC → ESP32-MCU, Plain Text)
 
@@ -691,6 +693,8 @@ Binary JPEG frames sent over WebSocket:
 - No text encoding needed (raw binary)
 
 ### 6.4 Cloud API (PC → RPi5, HTTP REST)
+
+**Note:** Cloud API integration is optional and for reference only. Haru's desktop app primarily communicates directly with ESP32.
 
 **Base Path:** `/api/v1`
 
@@ -812,15 +816,15 @@ robot-desktop-app/
 ├── ota.py            # Firmware upload
 ├── ai_chat.py        # Ollama AI chat interface
 ├── charts.py         # Historical graph widgets
-├── cloud_api.py      # Cloud backend API client
 ├── worker.py         # Background QThread workers
 ├── config.py         # Config load/save
 ├── panels.py         # UI component generators
 ├── config.json       # Saved settings
 └── docs/
     ├── HARU-PRD-DESIGN-PROPOSAL.md
+    ├── HARU-DESIGN-PROPOSAL.md
     ├── wireframe.md
-    └── ...
+    └── README.md
 ```
 
 ---
@@ -884,6 +888,7 @@ python main.py
   "cloud_api_url": "http://rpi5.local/api/v1",
   "device_uid": "rover-001",
   "ollama_url": "http://rpi5.local:11434/api/generate",
+  "follow_mode_url": "http://rpi5.local/follow/start",
   "center_charts": {},
   "custom_charts": {},
   "custom_charts_normalize": {}
@@ -917,11 +922,12 @@ python main.py
 | 5 | Keyboard input handling and command sender | Phase 3 |
 | 6 | Telemetry sidebar and sensor display | Phase 4, 5 |
 | 7 | Gimbal control panel | Phase 5 |
-| 8 | Cloud API integration | Phase 6 |
-| 9 | AI chat and historical graphs | Phase 8 |
-| 10 | OTA firmware upload | Phase 8 |
+| 8 | Ollama AI chat integration | Phase 3 |
+| 9 | Historical graphs and chart system | Phase 6 |
+| 10 | OTA firmware upload | Phase 5 |
 | 11 | Safety features (auto-brake, alarms) | Phase 6 |
-| 12 | Integration testing and bug fixes | Phases 4-11 |
+| 12 | Follow Mode integration | Phase 8 |
+| 13 | Integration testing and bug fixes | Phases 4-12 |
 
 ---
 
@@ -931,9 +937,10 @@ python main.py
 - [ ] **Phase 2:** Keyboard state machine mapping
 - [ ] **Phase 3:** Multi-threaded architecture diagram
 - [ ] **Phase 4:** Desktop application prototype
-- [ ] **Phase 5:** Cloud API integration
+- [ ] **Phase 5:** Ollama AI chat integration
 - [ ] **Phase 6:** Safety testing (HW-008 compliance)
-- [ ] **Phase 7:** End-to-end integration testing
+- [ ] **Phase 7:** Follow Mode integration
+- [ ] **Phase 8:** End-to-end integration testing
 
 
 
@@ -1010,53 +1017,83 @@ class OllamaWorker(QThread):
 
 ```python
 # video_feed.py
+import websocket
+import threading
+
 class VideoReceiverThread(QThread):
     frame_received = pyqtSignal(bytes)
     
-    def __init__(self, port=5006):
+    def __init__(self, ws_url):
         super().__init__()
-        self.port = port
+        self.ws_url = ws_url
         self.running = False
+        self.ws = None
     
     def run(self):
         self.running = True
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(("0.0.0.0", self.port))
-        sock.settimeout(1.0)
-        
-        while self.running:
-            try:
-                data, addr = sock.recvfrom(65536)
-                self.frame_received.emit(data)
-            except socket.timeout:
-                continue
-            except Exception as e:
-                print(f"Video receive error: {e}")
-        
-        sock.close()
+        self.ws = websocket.WebSocketApp(
+            self.ws_url,
+            on_message=self._on_message,
+            on_error=self._on_error,
+            on_close=self._on_close
+        )
+        self.ws.run_forever()
+    
+    def _on_message(self, message):
+        if isinstance(message, bytes):
+            self.frame_received.emit(message)
+    
+    def _on_error(self, error):
+        print(f"WebSocket error: {error}")
+    
+    def _on_close(self):
+        print("WebSocket closed")
     
     def stop(self):
         self.running = False
+        if self.ws:
+            self.ws.close()
 ```
 
 ### 18.4 Command Sender
 
 ```python
 # command.py
-import socket
+import websocket
+import threading
 
 class CommandSender:
-    def __init__(self, car_ip, port=5005):
-        self.car_ip = car_ip
-        self.port = port
+    def __init__(self, ws_url):
+        self.ws_url = ws_url
+        self.ws = None
+        self.connected = False
+    
+    def connect(self):
+        self.ws = websocket.WebSocketApp(
+            self.ws_url,
+            on_open=self._on_open,
+            on_error=self._on_error,
+            on_close=self._on_close
+        )
+        threading.Thread(target=self.ws.run_forever, daemon=True).start()
+    
+    def _on_open(self, ws):
+        self.connected = True
+        print("WebSocket connected")
+    
+    def _on_error(self, error):
+        print(f"WebSocket error: {error}")
+    
+    def _on_close(self):
+        self.connected = False
+        print("WebSocket closed")
     
     def send(self, command: str):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.sendto(command.encode("utf-8"), (self.car_ip, self.port))
-            sock.close()
-        except Exception as e:
-            print(f"Error sending {command}: {e}")
+        if self.ws and self.connected:
+            try:
+                self.ws.send(command)
+            except Exception as e:
+                print(f"Error sending {command}: {e}")
 ```
 
 ---
@@ -1072,6 +1109,7 @@ class CommandSender:
   "cloud_api_url": "http://rpi5.local/api/v1",
   "device_uid": "rover-001",
   "ollama_url": "http://rpi5.local:11434/api/generate",
+  "follow_mode_url": "http://rpi5.local/follow/start",
   "center_charts": {},
   "custom_charts": {},
   "custom_charts_normalize": {}
@@ -1093,6 +1131,7 @@ DEFAULT_CONFIG = {
     "cloud_api_url": "http://rpi5.local/api/v1",
     "device_uid": "rover-001",
     "ollama_url": "http://rpi5.local:11434/api/generate",
+    "follow_mode_url": "http://rpi5.local/follow/start",
     "center_charts": {},
     "custom_charts": {},
     "custom_charts_normalize": {}
@@ -1450,21 +1489,28 @@ def keyPressEvent(self, event):
         return super().keyPressEvent(event)
     
     key_map = {
-        Qt.Key.Key_W: "DRIVE:{speed}:FORWARD",
-        Qt.Key.Key_S: "DRIVE:{speed}:BACKWARD",
-        Qt.Key.Key_A: "STEER:LEFT",
-        Qt.Key.Key_D: "STEER:RIGHT",
-        Qt.Key.Key_Space: "STOP",
-        Qt.Key.Key_I: "GIMBAL:{pan}:{tilt_up}",
-        Qt.Key.Key_K: "GIMBAL:{pan}:{tilt_down}",
-        Qt.Key.Key_J: "GIMBAL:{pan_left}:{tilt}",
-        Qt.Key.Key_L: "GIMBAL:{pan_right}:{tilt}",
-        Qt.Key.Key_C: "CENTER",
+        Qt.Key.Key_W: "forward",
+        Qt.Key.Key_S: "backward",
+        Qt.Key.Key_A: "left",
+        Qt.Key.Key_D: "right",
+        Qt.Key.Key_Space: "stop",
+        Qt.Key.Key_I: "servo",
+        Qt.Key.Key_K: "servo",
+        Qt.Key.Key_J: "servo",
+        Qt.Key.Key_L: "servo",
+        Qt.Key.Key_C: "servo",
     }
     
     command = key_map.get(event.key())
     if command:
-        self.send_command(command)
+        if command == "stop":
+            self.send_command("stop")
+        elif command == "servo":
+            # Gimbal handled by GimbalController
+            direction = self._get_gimbal_direction(event.key())
+            self.send_command(self.gimbal.move(direction))
+        else:
+            self.send_command(command)
     else:
         super().keyPressEvent(event)
 ```
@@ -1490,12 +1536,12 @@ class GimbalController:
         elif direction == "right":
             self.pan = min(self.pan + self.step, self.max_angle)
         
-        return f"GIMBAL:{self.pan}:{self.tilt}"
+        return f"servo:{self.pan},{self.tilt}"
     
     def center(self):
         self.pan = 90
         self.tilt = 90
-        return "CENTER"
+        return "servo:90,90"
 ```
 
 ---
@@ -1555,6 +1601,8 @@ Sensor data received via the same WebSocket connection (format TBD from API docs
 ---
 
 ## 25. Technical Reference — Cloud API Integration
+
+**Note:** Cloud API integration is optional and for reference only. Haru's desktop app primarily communicates directly with ESP32.
 
 ### 25.1 Telemetry POST
 
@@ -1707,8 +1755,7 @@ Example: esp32-car-1.0.0-ota-haru.bin
 | PyQt6 | 6.x | Desktop GUI framework |
 | requests | 2.x | HTTP requests |
 | matplotlib | 3.x | Chart rendering |
-| requests | 2.x | HTTP requests (Ollama API) |
-| websocket | websocket-client | WebSocket communication |
+| websocket-client | 1.x | WebSocket communication |
 | json | stdlib | Configuration persistence |
 
 ---
@@ -1721,25 +1768,25 @@ Example: esp32-car-1.0.0-ota-haru.bin
 1. Check ESP32-CAR IP is correct in config
 2. Verify WebSocket connection to ESP32-MCU
 3. Check firewall settings
-4. Test with: `echo -n "STOP" | nc -u <car_ip> 5005`
+4. Test with: `echo -n "stop" | nc -w 2 <car_ip> 5005`
 
 **Video Feed Not Working:**
 1. Verify ESP32-CAM IP is correct
 2. Check WebSocket connection to ESP32-CAM
 3. Ensure JPEG encoding is enabled
-4. Test with: `nc -lu <cam_ip> 5006 > test.jpg`
+4. Test WebSocket connection
 
-### 28.2 Cloud API Issues
+### 28.2 Network Issues
 
 **Connection Refused:**
-- Check if RPi5 is running
-- Verify API URL is correct
-- Test with: `curl http://rpi5.local/api/v1/health`
+- Check if ESP32 is powered on
+- Verify IP addresses are correct in config
+- Test with: `ping <esp32_ip>`
 
-**Invalid JSON Response:**
-- Check server logs
-- Verify API endpoint exists
-- Ensure proper HTTP headers
+**WebSocket Not Connecting:**
+- Verify WebSocket URL format: `ws://<ip>:<port>/ws`
+- Check if port is open
+- Test with: `nc -zv <esp32_ip> <port>`
 
 ### 28.3 Performance Issues
 
@@ -1789,18 +1836,17 @@ Example: esp32-car-1.0.0-ota-haru.bin
 │                         Complete Data Flow                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌─────────────┐       WebSocket  ┌─────────────┐  WebSocket  ┌─────────┐│
-│  │  Desktop    │ ──────────────> │  ESP32-CAR  │ <──────────── │  ESP32  ││
-│  │  App        │    Commands     │  (Motors)   │   Telemetry   │  CAM    ││
-│  └──────┬──────┘                 └─ ───────────┘               └─────────┘│
+│  ┌─────────────┐       WebSocket  ┌─────────────┐  WebSocket  ┌─────────┐ │
+│  │  Desktop    │ ──────────────> │  ESP32-CAR  │ <─────────── │  ESP32  │ │
+│  │  App        │    Commands     │  (Motors)   │  Telemetry   │  CAM    │ │
+│  └──────┬──────┘                 └─────────────┘              └─────────┘ │
 │         │                                                                   │
-│         │ HTTP POST                                                         │
+│         │ HTTP GET                                                          │
 │         ▼                                                                   │
-│  ┌─────────────┐                                                            │
-│  │  Cloud      │                                                            │
-│  │  Backend    │                                                            │
-│  │  (RPi5)     │                                                            │
-│  └─────────────┘                                                            │
+│  ┌─────────────┐       HTTP POST  ┌─────────────┐                          │
+│  │  RPi5       │ <────────────── │  Desktop    │                          │
+│  │  (Ollama)   │   AI Chat       │  App        │                          │
+│  └─────────────┘                  └─────────────┘                          │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1814,15 +1860,15 @@ Example: esp32-car-1.0.0-ota-haru.bin
 │                                                                             │
 │  Main Thread                                                                │
 │     │                                                                       │
-│     ├──> Command Thread ──> WebSocket ──> ESP32-MCU                              │
+│     ├──> Command Thread ──> WebSocket ──> ESP32-MCU (Plain Text)            │
 │     │                                                                       │
-│     ├──> Video Thread <── WebSocket <── ESP32-CAM                            │
+│     ├──> Video Thread <── WebSocket <── ESP32-CAM (Binary JPEG)             │
 │     │                                                                       │
-│     ├──> Telemetry Thread ──> HTTP POST ──> Cloud                           │
+│     ├──> Telemetry Thread ──> HTTP GET ──> ESP32-CAR /api/telemetry         │
 │     │                                                                       │
-│     ├──> Gimbal Thread ──> WebSocket ──> ESP32-MCU                               │
+│     ├──> AI Chat Thread ──> HTTP (local) ──> Ollama API (RPi5)              │
 │     │                                                                       │
-│     └──> AI Chat Thread ──> HTTP (local) ──> Ollama API (RPi5)              │
+│     └──> Follow Mode ──> HTTP POST ──> RPi5 /follow/start                   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

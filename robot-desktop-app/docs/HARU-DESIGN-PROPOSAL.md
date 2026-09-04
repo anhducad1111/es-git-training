@@ -291,3 +291,5 @@ This proposal presents the UI design and implementation plan for the Space Rover
 | `HARU-PRD-DESIGN-PROPOSAL.md` | Full technical specification (28 sections) |
 | `wireframe.md` | Detailed UI component descriptions |
 | `docs/README.md` | Documentation index |
+
+> **Note:** If any part of this proposal plan is vague, please refer to `HARU-PRD-DESIGN-PROPOSAL.md` for detailed specifications.

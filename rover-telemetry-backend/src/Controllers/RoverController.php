@@ -69,6 +69,43 @@ final class RoverController
         ];
     }
 
+    public function readings(array $params, array $query): array
+    {
+        $rover = $this->rovers->findByDeviceUid($params['device_uid']);
+        if ($rover === null) {
+            throw new ApiException(404, 'NOT_FOUND', "Unknown device_uid '{$params['device_uid']}'");
+        }
+
+        $limit = isset($query['limit']) ? (int) $query['limit'] : 100;
+        if ($limit < 1 || $limit > 5000) {
+            throw new ApiException(400, 'INVALID_PARAMETER', 'limit must be between 1 and 5000');
+        }
+        $order = strtolower($query['order'] ?? 'desc') === 'asc' ? 'asc' : 'desc';
+
+        $rows = $this->telemetry->lastNReadings((int) $rover['id'], $limit, $order);
+
+        return [
+            'status' => 200,
+            'body' => [
+                'device_uid' => $rover['device_uid'],
+                'count' => count($rows),
+                'readings' => array_map([$this, 'formatReadingRow'], $rows),
+            ],
+        ];
+    }
+
+    private function formatReadingRow(array $row): array
+    {
+        return [
+            'recorded_at' => (new \DateTimeImmutable($row['recorded_at'], new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.v\Z'),
+            'temperature_c' => $row['temperature_c'] !== null ? (float) $row['temperature_c'] : null,
+            'humidity_pct' => $row['humidity_pct'] !== null ? (float) $row['humidity_pct'] : null,
+            'gas_ppm' => $row['gas_ppm'] !== null ? (float) $row['gas_ppm'] : null,
+            'distance_cm' => $row['distance_cm'] !== null ? (float) $row['distance_cm'] : null,
+            'auto_brake' => (bool) $row['auto_brake'],
+        ];
+    }
+
     private function statusFor(?string $lastSeenAt, \DateTimeImmutable $now): string
     {
         if ($lastSeenAt === null) {

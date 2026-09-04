@@ -1,0 +1,10 @@
+{
+    "name": "enable-startup/rover-telemetry-backend",
+    "description": "Central Telemetry & Data Management Backend",
+    "type": "project",
+    "autoload": {
+        "psr-4": {
+            "RoverTelemetry\\": "src/"
+        }
+    }
+}

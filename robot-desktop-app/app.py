@@ -1,7 +1,7 @@
 from datetime import datetime
 import requests
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
-from PyQt6.QtGui import QPixmap, QImage, QFont, QColor, QPalette
+from PyQt6.QtGui import QPixmap, QImage, QFont, QColor, QPalette, QTextOption
 from PyQt6.QtWidgets import (
     QApplication,
     QGroupBox,
@@ -20,8 +20,9 @@ from PyQt6.QtWidgets import (
 )
 from config import load_config, save_config
 from cloud_api import CloudAPI
-from stubs.stub_video import StubVideoThread
-from stubs.stub_telemetry import StubTelemetryThread
+from rover_ws import RoverWebSocket
+from mjpeg_receiver import MJPEGReceiver
+from telemetry_poller import TelemetryPoller
 
 
 DARK_STYLE = """
@@ -111,6 +112,17 @@ class VideoCanvas(QLabel):
         )
         self.setPixmap(scaled)
 
+    def update_frame_jpeg(self, jpeg_data):
+        pixmap = QPixmap()
+        pixmap.loadFromData(jpeg_data, "JPEG")
+        if not pixmap.isNull():
+            scaled = pixmap.scaled(
+                self.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self.setPixmap(scaled)
+
 
 class SensorCard(QWidget):
     def __init__(self, name, unit, icon="", min_val=0, max_val=100):
@@ -189,14 +201,17 @@ class RoverTeleopApp(QWidget):
 
         self._video_thread = None
         self._telemetry_thread = None
+        self._rover_ws = None
+        self._mjpeg_receiver = None
+        self._telemetry_poller = None
 
         self.init_ui()
         self.connect_signals()
-        self.start_stubs()
+        self.start_connections()
 
     def init_ui(self):
         self.setWindowTitle("Rover Teleop Cockpit v2.4.0")
-        self.setMinimumSize(1400, 800)
+        self.setMinimumSize(1400, 900)
         self.setStyleSheet(DARK_STYLE)
 
         main_layout = QVBoxLayout(self)
@@ -584,7 +599,7 @@ class RoverTeleopApp(QWidget):
 
     def _create_log_panel(self):
         widget = QWidget()
-        widget.setFixedHeight(100)
+        widget.setFixedHeight(140)
         widget.setStyleSheet("background-color: #0f172a; border-top: 1px solid #334155;")
         layout = QVBoxLayout()
         layout.setContentsMargins(16, 4, 16, 4)
@@ -604,6 +619,7 @@ class RoverTeleopApp(QWidget):
         self._log_display = QTextEdit()
         self._log_display.setReadOnly(True)
         self._log_display.setStyleSheet("background-color: #0f172a; border: none; color: #94a3b8; font-size: 11px;")
+        self._log_display.setWordWrapMode(QTextOption.WrapMode.WrapAnywhere)
         layout.addWidget(self._log_display)
 
         widget.setLayout(layout)
@@ -612,72 +628,119 @@ class RoverTeleopApp(QWidget):
     def connect_signals(self):
         self.log_message.connect(self._add_log)
 
-    def start_stubs(self):
-        self._video_thread = StubVideoThread()
-        self._video_thread.frame_received.connect(self._video_canvas.update_frame)
-        self._video_thread.start()
+    def start_connections(self):
+        self._stop_real_connections()
 
-        self._telemetry_thread = StubTelemetryThread()
-        self._telemetry_thread.data_received.connect(self._update_telemetry)
-        self._telemetry_thread.start()
+        ws_url = f"ws://{self._config['car_ip']}:81/"
+        self._rover_ws = RoverWebSocket(ws_url)
+        self._rover_ws.connected.connect(self._on_rover_connected)
+        self._rover_ws.disconnected.connect(self._on_rover_disconnected)
+        self._rover_ws.message_received.connect(self._on_rover_message)
+        self._rover_ws.error.connect(self._on_rover_error)
+        self._rover_ws.start()
 
-        self._add_log("CONNECTED", "Stub connections active (simulated)")
+        stream_url = f"http://{self._config['cam_ip']}/640x480.mjpeg"
+        self._mjpeg_receiver = MJPEGReceiver(stream_url)
+        self._mjpeg_receiver.frame_received.connect(self._video_canvas.update_frame_jpeg)
+        self._mjpeg_receiver.connected.connect(self._on_camera_connected)
+        self._mjpeg_receiver.disconnected.connect(self._on_camera_disconnected)
+        self._mjpeg_receiver.error.connect(self._on_camera_error)
+        self._mjpeg_receiver.start()
+
+        self._telemetry_poller = TelemetryPoller(self._config['car_ip'])
+        self._telemetry_poller.data_received.connect(self._on_telemetry_data)
+        self._telemetry_poller.error.connect(self._on_telemetry_error)
+        self._telemetry_poller.start()
+
+        self._add_log("MODE", "Connecting to REAL ESP32 hardware...")
 
         self._cloud_api = CloudAPI()
         self._test_cloud_connection()
-        self._test_rover_connection()
-        self._test_camera_connection()
+
+    def _stop_real_connections(self):
+        if self._rover_ws:
+            self._rover_ws.stop()
+            self._rover_ws = None
+        if self._mjpeg_receiver:
+            self._mjpeg_receiver.stop()
+            self._mjpeg_receiver = None
+        if self._telemetry_poller:
+            self._telemetry_poller.stop()
+            self._telemetry_poller = None
+
+    def _on_rover_connected(self):
+        self._add_log("ROVER", f"WebSocket connected - ws://{self._config['car_ip']}:81/")
+
+    def _on_rover_disconnected(self):
+        self._add_log("ROVER", "WebSocket disconnected")
+
+    def _on_rover_message(self, data):
+        msg_type = data.get("type", "")
+        if msg_type == "status":
+            self._add_log("ROVER", f"Status: {data.get('msg', '')}")
+        elif msg_type == "imu":
+            self._add_log("IMU", f"Yaw: {data.get('yaw_rate', 0)}°/s")
+
+    def _on_rover_error(self, error):
+        self._add_log("ROVER", f"Error: {error[:80]}")
+
+    def _on_camera_connected(self):
+        self._add_log("CAMERA", f"MJPEG stream connected - http://{self._config['cam_ip']}/640x480.mjpeg")
+
+    def _on_camera_disconnected(self):
+        self._add_log("CAMERA", "MJPEG stream disconnected")
+
+    def _on_camera_error(self, error):
+        self._add_log("CAMERA", f"Error: {error[:80]}")
+
+    def _on_telemetry_data(self, data):
+        self._update_telemetry(data)
+        self._send_to_cloud(data)
+
+    def _on_telemetry_error(self, error):
+        self._add_log("TELEMETRY", f"Error: {error[:60]}")
 
     def _update_telemetry(self, data):
-        self._temp_card.update_value(f"{data['temperature']}°C", data['temperature'] / 60 * 100)
-        self._humidity_card.update_value(f"{data['humidity']}%", data['humidity'])
-        self._gas_card.update_value(f"{int(data['gas'])} PPM", data['gas'] / 1000 * 100)
-        self._distance_card.update_value(f"{data['distance']} cm", data['distance'] / 200 * 100)
-        self._link_label.setText(f"Link: {data['link_quality']}%")
-        self._battery_label.setText(f"{data['battery_voltage']}V")
+        temp = data.get("temperature", 0)
+        humidity = data.get("humidity", 0)
+        gas = data.get("gas", 0)
+        distance = data.get("distance", 0)
+
+        self._temp_card.update_value(f"{temp}°C", temp / 60 * 100)
+        self._humidity_card.update_value(f"{humidity}%", humidity)
+        self._gas_card.update_value(f"{int(gas)} PPM", gas / 1000 * 100)
+        self._distance_card.update_value(f"{distance} cm", distance / 200 * 100)
+
+    def _send_to_cloud(self, data):
+        if not self._cloud_api:
+            return
+        try:
+            payload = {
+                "device_id": "esp32_car",
+                "temperature": data.get("temperature", 0),
+                "humidity": data.get("humidity", 0),
+                "gas": data.get("gas", 0),
+            }
+            result = self._cloud_api.post_telemetry(payload)
+            if "error" in result:
+                pass
+        except Exception:
+            pass
 
     def _test_cloud_connection(self):
         try:
             result = self._cloud_api.get_rovers()
             if "error" in result:
                 if "timed out" in result["error"] or "ConnectTimeout" in result["error"]:
-                    self._add_log("CLOUD", "Server not reachable (timeout) - server may be offline")
+                    self._add_log("CLOUD", f"Server offline (timeout) - {self._cloud_api._base_url}")
                 elif "NameResolutionError" in result["error"] or "resolve" in result["error"]:
-                    self._add_log("CLOUD", "Cannot resolve hostname - check server address")
+                    self._add_log("CLOUD", f"Cannot resolve hostname - {self._cloud_api._base_url}")
                 else:
                     self._add_log("CLOUD", f"Connection failed: {result['error'][:80]}")
             else:
-                self._add_log("CLOUD", "Connected to cloud API OK")
+                self._add_log("CLOUD", f"Connected to cloud API OK - {self._cloud_api._base_url}")
         except Exception as e:
             self._add_log("CLOUD", f"Connection failed: {e}")
-
-    def _test_rover_connection(self):
-        try:
-            resp = requests.get(f"http://{self._config['car_ip']}/api/telemetry", timeout=5)
-            if resp.status_code == 200:
-                self._add_log("ROVER", f"Connected to ESP32-Car OK ({self._config['car_ip']})")
-            else:
-                self._add_log("ROVER", f"ESP32-Car responded with status {resp.status_code}")
-        except requests.exceptions.Timeout:
-            self._add_log("ROVER", f"ESP32-Car timeout ({self._config['car_ip']}) - rover may be offline")
-        except requests.exceptions.ConnectionError:
-            self._add_log("ROVER", f"Cannot connect to ESP32-Car ({self._config['car_ip']})")
-        except Exception as e:
-            self._add_log("ROVER", f"Connection failed: {e}")
-
-    def _test_camera_connection(self):
-        try:
-            resp = requests.get(f"http://{self._config['cam_ip']}/resolutions.csv", timeout=5)
-            if resp.status_code == 200:
-                self._add_log("CAMERA", f"Connected to ESP32-Cam OK ({self._config['cam_ip']})")
-            else:
-                self._add_log("CAMERA", f"ESP32-Cam responded with status {resp.status_code}")
-        except requests.exceptions.Timeout:
-            self._add_log("CAMERA", f"ESP32-Cam timeout ({self._config['cam_ip']}) - camera may be offline")
-        except requests.exceptions.ConnectionError:
-            self._add_log("CAMERA", f"Cannot connect to ESP32-Cam ({self._config['cam_ip']})")
-        except Exception as e:
-            self._add_log("CAMERA", f"Connection failed: {e}")
 
     def _on_speed_change(self, value):
         self._current_speed = value
@@ -726,6 +789,9 @@ class RoverTeleopApp(QWidget):
         timestamp = datetime.now().strftime("%H:%M:%S")
         self._commands_log.append((timestamp, command))
         self._add_log("CMD", command)
+
+        if self._rover_ws and self._rover_ws.is_connected:
+            self._rover_ws.send(command)
 
     def _add_log(self, category, message):
         timestamp = datetime.now().strftime("%H:%M:%S")

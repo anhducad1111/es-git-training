@@ -1,3 +1,4 @@
+import threading
 import time
 import requests
 from collections import deque
@@ -9,21 +10,29 @@ class LatestSlot:
     def __init__(self):
         self._item = None
         self._has_item = False
-        self._lock = __import__('threading').Lock()
-    
+        self._lock = threading.Lock()
+        self._event = threading.Event()
+
     def publish(self, item):
         with self._lock:
             self._item = item
             self._has_item = True
-    
+        self._event.set()
+
     def take(self):
         with self._lock:
             if self._has_item:
                 item = self._item
                 self._item = None
                 self._has_item = False
+                self._event.clear()
                 return item
             return None
+
+    def wait_and_take(self, timeout=None):
+        if self._event.wait(timeout):
+            return self.take()
+        return None
 
 
 class ReceiveThread(QThread):
@@ -107,7 +116,7 @@ class DecodeThread(QThread):
     def run(self):
         self._running = True
         while self._running:
-            raw = self.raw_slot.take()
+            raw = self.raw_slot.wait_and_take(timeout=0.5)
             if raw:
                 image = QImage()
                 image.loadFromData(raw, "JPEG")
@@ -122,8 +131,6 @@ class DecodeThread(QThread):
                 if now - self._last_stats_time >= 1.0:
                     self._emit_stats(now)
                     self._last_stats_time = now
-            else:
-                self.msleep(5)
 
     def _emit_stats(self, now):
         fps = 0

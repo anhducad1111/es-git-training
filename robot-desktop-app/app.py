@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
@@ -270,7 +271,16 @@ class RoverTeleopApp(QWidget):
         self._send_command("servo:90,90")
 
     def _take_snapshot(self):
-        self._add_log("SNAPSHOT", "Frame captured (stub)")
+        pixmap = self._video_canvas.pixmap()
+        if pixmap is None or pixmap.isNull():
+            self._add_log("SNAPSHOT", "No frame to capture")
+            return
+        snapshot_dir = os.path.join(os.path.dirname(__file__), "snapshot")
+        os.makedirs(snapshot_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filepath = os.path.join(snapshot_dir, f"{timestamp}.png")
+        pixmap.save(filepath)
+        self._add_log("SNAPSHOT", f"Saved: {filepath}")
 
     def _toggle_view(self):
         if self._view_mode == "main":

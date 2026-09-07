@@ -27,14 +27,15 @@ class LatestSlot:
 
 
 class ReceiveThread(QThread):
+    connected = pyqtSignal()
+    disconnected = pyqtSignal()
+    error = pyqtSignal(str)
+
     def __init__(self, stream_url, raw_slot):
         super().__init__()
         self.stream_url = stream_url
         self.raw_slot = raw_slot
         self._running = False
-        self.connected = pyqtSignal()
-        self.disconnected = pyqtSignal()
-        self.error = pyqtSignal(str)
 
     def run(self):
         self._running = True

@@ -737,7 +737,6 @@ class RoverTeleopApp(QWidget):
         self._video_receiver.connected.connect(self._on_camera_connected)
         self._video_receiver.disconnected.connect(self._on_camera_disconnected)
         self._video_receiver.error.connect(self._on_camera_error)
-        self._video_receiver.stats_updated.connect(self._on_video_stats)
         self._video_receiver.start()
 
         self._telemetry_poller = TelemetryPoller(self._config['car_ip'])

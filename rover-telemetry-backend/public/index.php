@@ -14,6 +14,7 @@ use RoverTelemetry\Controllers\RoverLatestController;
 use RoverTelemetry\Controllers\RoverReadingsController;
 use RoverTelemetry\Controllers\RoverSummaryController;
 use RoverTelemetry\Controllers\RoverExportController;
+use RoverTelemetry\Controllers\HealthController;
 
 header('Content-Type: application/json; charset=UTF-8');
 
@@ -35,6 +36,7 @@ $roverLatestController = new RoverLatestController($pdo);
 $roverReadingsController = new RoverReadingsController($pdo, $config);
 $roverSummaryController = new RoverSummaryController($pdo);
 $roverExportController = new RoverExportController($pdo);
+$healthController = new HealthController($pdo, $config);
 
 $router->add('POST', '/api/v1/telemetry', function () use ($telemetryController) {
     $raw = file_get_contents('php://input');
@@ -65,6 +67,9 @@ $router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/export', func
     $unbufferedPdo = Database::newConnection($config, buffered: false);
     return $roverExportController->export($params, $_GET, $unbufferedPdo);
 });
+
+$router->add('GET', '/api/v1/health', fn() => $healthController->health());
+$router->add('GET', '/api/v1/system', fn() => $healthController->system());
 
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 $apiPos = strpos($uri, '/api/v1');

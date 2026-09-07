@@ -16,6 +16,7 @@ use RoverTelemetry\Controllers\RoverSummaryController;
 use RoverTelemetry\Controllers\RoverExportController;
 use RoverTelemetry\Controllers\HealthController;
 use RoverTelemetry\Controllers\SystemHistoryController;
+use RoverTelemetry\Controllers\RoverEventsController;
 
 header('Content-Type: application/json; charset=UTF-8');
 
@@ -39,6 +40,7 @@ $roverSummaryController = new RoverSummaryController($pdo);
 $roverExportController = new RoverExportController($pdo);
 $healthController = new HealthController($pdo, $config);
 $systemHistoryController = new SystemHistoryController($pdo);
+$roverEventsController = new RoverEventsController($pdo, $config);
 
 $router->add('POST', '/api/v1/telemetry', function () use ($telemetryController) {
     $raw = file_get_contents('php://input');
@@ -74,6 +76,10 @@ $router->add('GET', '/api/v1/health', fn() => $healthController->health());
 $router->add('GET', '/api/v1/system', fn() => $healthController->system());
 $router->add('GET', '/api/v1/system/history', function () use ($systemHistoryController) {
     return $systemHistoryController->history($_GET);
+});
+
+$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/events', function (array $params) use ($roverEventsController) {
+    return $roverEventsController->events($params, $_GET);
 });
 
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';

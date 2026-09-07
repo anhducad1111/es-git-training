@@ -20,74 +20,100 @@ from PyQt6.QtWidgets import (
 )
 from config import load_config, save_config
 from cloud_api import CloudAPI
-from stubs.stub_video import StubVideoThread
-from stubs.stub_telemetry import StubTelemetryThread
+from cloud_worker import CloudWorker
+from rover_ws import RoverWebSocket
+from mjpeg_receiver import MJPEGReceiver
+from telemetry_poller import TelemetryPoller
 
 
 DARK_STYLE = """
 QMainWindow, QWidget {
     background-color: #0b1326;
     color: #f1f5f9;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    font-size: 12px;
 }
 QGroupBox {
-    font-weight: bold;
-    border: 1px solid #334155;
+    font-weight: 600;
+    border: 1px solid #243147;
     border-radius: 6px;
     margin-top: 10px;
-    padding-top: 10px;
+    padding: 10px 8px 8px 8px;
+    background-color: #171f33;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
     left: 10px;
     padding: 0 5px;
+    color: #94a3b8;
+    font-size: 11px;
 }
 QPushButton {
-    background-color: #1d4ed8;
+    background-color: #3b82f6;
     color: white;
     border: none;
     border-radius: 4px;
     padding: 6px 16px;
-    font-weight: bold;
+    font-weight: 600;
+    font-size: 12px;
 }
 QPushButton:hover {
     background-color: #2563eb;
 }
 QPushButton:pressed {
-    background-color: #1e40af;
+    background-color: #1d4ed8;
 }
 QSlider::groove:horizontal {
-    border: 1px solid #334155;
-    height: 8px;
-    background: #1e293b;
-    border-radius: 4px;
+    border: 1px solid #243147;
+    height: 6px;
+    background: #0f172a;
+    border-radius: 3px;
 }
 QSlider::handle:horizontal {
     background: #3b82f6;
     border: none;
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     margin: -4px 0;
-    border-radius: 8px;
+    border-radius: 7px;
 }
 QSlider::sub-page:horizontal {
     background: #3b82f6;
-    border-radius: 4px;
+    border-radius: 3px;
 }
 QLineEdit {
-    background-color: #1e293b;
+    background-color: #0f172a;
     border: 1px solid #334155;
     border-radius: 4px;
     padding: 4px 8px;
     color: #f1f5f9;
+    font-size: 11px;
+}
+QLineEdit:focus {
+    border: 1px solid #3b82f6;
 }
 QTextEdit {
-    background-color: #131b2e;
-    border: 1px solid #334155;
+    background-color: #0f172a;
+    border: 1px solid #243147;
     border-radius: 4px;
-    color: #f1f5f9;
+    color: #94a3b8;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 11px;
 }
 QLabel {
     color: #94a3b8;
+}
+QProgressBar {
+    background-color: #0f172a;
+    border: none;
+    border-radius: 3px;
+    height: 6px;
+    text-align: center;
+    color: transparent;
+}
+QProgressBar::chunk {
+    background-color: #3b82f6;
+    border-radius: 3px;
 }
 """
 
@@ -111,6 +137,23 @@ class VideoCanvas(QLabel):
         )
         self.setPixmap(scaled)
 
+    def update_frame_jpeg(self, image):
+        if isinstance(image, QPixmap):
+            pixmap = image
+        elif isinstance(image, QImage):
+            pixmap = QPixmap.fromImage(image)
+        else:
+            pixmap = QPixmap()
+            pixmap.loadFromData(image, "JPEG")
+        
+        if not pixmap.isNull():
+            scaled = pixmap.scaled(
+                self.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self.setPixmap(scaled)
+
 
 class SensorCard(QWidget):
     def __init__(self, name, unit, icon="", min_val=0, max_val=100):
@@ -118,15 +161,15 @@ class SensorCard(QWidget):
         self.min_val = min_val
         self.max_val = max_val
         layout = QVBoxLayout()
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(2)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
 
         top_row = QHBoxLayout()
-        top_row.setSpacing(4)
+        top_row.setSpacing(6)
 
         self.icon_label = QLabel(icon)
-        self.icon_label.setFont(QFont("Segoe UI Emoji", 14))
-        self.icon_label.setFixedWidth(24)
+        self.icon_label.setFixedWidth(20)
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         top_row.addWidget(self.icon_label)
 
         self.name_label = QLabel(name)
@@ -136,12 +179,8 @@ class SensorCard(QWidget):
         top_row.addStretch()
 
         self.value_label = QLabel("--")
-        self.value_label.setStyleSheet("color: #f1f5f9; font-size: 14px; font-weight: bold;")
+        self.value_label.setStyleSheet("color: #f1f5f9; font-size: 12px; font-weight: 600; font-family: 'JetBrains Mono', monospace;")
         top_row.addWidget(self.value_label)
-
-        self.unit_label = QLabel(unit)
-        self.unit_label.setStyleSheet("color: #64748b; font-size: 11px;")
-        top_row.addWidget(self.unit_label)
 
         layout.addLayout(top_row)
 
@@ -149,23 +188,23 @@ class SensorCard(QWidget):
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
         self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(6)
+        self.progress.setFixedHeight(4)
         self.progress.setStyleSheet("""
             QProgressBar {
-                background-color: #1e293b;
+                background-color: #0f172a;
                 border: none;
-                border-radius: 3px;
+                border-radius: 2px;
             }
             QProgressBar::chunk {
                 background-color: #3b82f6;
-                border-radius: 3px;
+                border-radius: 2px;
             }
         """)
         layout.addWidget(self.progress)
 
         self.setLayout(layout)
         self.setStyleSheet(
-            "background-color: #1e293b; border-radius: 6px; padding: 4px;"
+            "background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 4px;"
         )
 
     def update_value(self, value, progress=None):
@@ -189,14 +228,18 @@ class RoverTeleopApp(QWidget):
 
         self._video_thread = None
         self._telemetry_thread = None
+        self._rover_ws = None
+        self._mjpeg_receiver = None
+        self._telemetry_poller = None
+        self._cloud_workers = []
 
         self.init_ui()
         self.connect_signals()
-        self.start_stubs()
+        self.start_connections()
 
     def init_ui(self):
         self.setWindowTitle("Rover Teleop Cockpit v2.4.0")
-        self.setMinimumSize(1400, 800)
+        self.setMinimumSize(1400, 900)
         self.setStyleSheet(DARK_STYLE)
 
         main_layout = QVBoxLayout(self)
@@ -225,13 +268,17 @@ class RoverTeleopApp(QWidget):
     def _create_header(self):
         header = QWidget()
         header.setFixedHeight(48)
-        header.setStyleSheet("background-color: #131b2e; border-bottom: 1px solid #334155;")
+        header.setStyleSheet("background-color: #131b2e; border-bottom: 1px solid #243147;")
         layout = QHBoxLayout()
         layout.setContentsMargins(16, 0, 16, 0)
 
-        title = QLabel("Rover Teleop Cockpit v2.4.0")
-        title.setStyleSheet("color: #f1f5f9; font-weight: bold; font-size: 14px;")
-        layout.addWidget(title)
+        title_label = QLabel("Rover Teleop Cockpit")
+        title_label.setStyleSheet("color: #f1f5f9; font-weight: 600; font-size: 13px;")
+        layout.addWidget(title_label)
+
+        version_label = QLabel("v2.4.0")
+        version_label.setStyleSheet("color: #94a3b8; font-size: 10px; background-color: #1e293b; padding: 2px 6px; border-radius: 3px; border: 1px solid #334155; font-family: 'JetBrains Mono', monospace;")
+        layout.addWidget(version_label)
 
         layout.addStretch()
 
@@ -240,27 +287,39 @@ class RoverTeleopApp(QWidget):
         layout.addWidget(rover_label)
 
         self._rover_ip_input = QLineEdit(self._config['car_ip'])
-        self._rover_ip_input.setFixedWidth(130)
-        self._rover_ip_input.setStyleSheet("background-color: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 2px 6px; color: #f1f5f9; font-size: 11px;")
+        self._rover_ip_input.setFixedWidth(120)
+        self._rover_ip_input.setStyleSheet("background-color: #0f172a; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
         self._rover_ip_input.returnPressed.connect(self._on_ip_changed)
         layout.addWidget(self._rover_ip_input)
 
-        cam_label = QLabel("Cam IP:")
-        cam_label.setStyleSheet("color: #94a3b8; font-size: 11px; margin-left: 12px;")
+        separator1 = QLabel()
+        separator1.setFixedWidth(1)
+        separator1.setFixedHeight(16)
+        separator1.setStyleSheet("background-color: #243147;")
+        layout.addWidget(separator1)
+
+        cam_label = QLabel("Camera IP:")
+        cam_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
         layout.addWidget(cam_label)
 
         self._cam_ip_input = QLineEdit(self._config['cam_ip'])
-        self._cam_ip_input.setFixedWidth(130)
-        self._cam_ip_input.setStyleSheet("background-color: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 2px 6px; color: #f1f5f9; font-size: 11px;")
+        self._cam_ip_input.setFixedWidth(120)
+        self._cam_ip_input.setStyleSheet("background-color: #0f172a; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
         self._cam_ip_input.returnPressed.connect(self._on_ip_changed)
         layout.addWidget(self._cam_ip_input)
 
-        self._rover_status = QLabel("● Rover")
-        self._rover_status.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 16px;")
+        separator2 = QLabel()
+        separator2.setFixedWidth(1)
+        separator2.setFixedHeight(16)
+        separator2.setStyleSheet("background-color: #243147;")
+        layout.addWidget(separator2)
+
+        self._rover_status = QLabel("Rover: Offline")
+        self._rover_status.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: 500;")
         layout.addWidget(self._rover_status)
 
-        self._cam_status = QLabel("● Cam")
-        self._cam_status.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 8px;")
+        self._cam_status = QLabel("Cam: Offline")
+        self._cam_status.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: 500; margin-left: 8px;")
         layout.addWidget(self._cam_status)
 
         header.setLayout(layout)
@@ -466,80 +525,100 @@ class RoverTeleopApp(QWidget):
 
     def _create_bottom_controls(self):
         widget = QWidget()
-        widget.setFixedHeight(100)
-        widget.setStyleSheet("background-color: #131b2e; border-top: 1px solid #334155;")
+        widget.setFixedHeight(80)
+        widget.setStyleSheet("background-color: #131b2e; border-top: 1px solid #243147;")
         layout = QHBoxLayout()
-        layout.setContentsMargins(16, 8, 16, 8)
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(8)
 
         speed_group = QGroupBox("Motor Speed")
-        speed_layout = QVBoxLayout()
+        speed_group.setStyleSheet("background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 6px;")
+        speed_layout = QHBoxLayout()
+        speed_layout.setContentsMargins(8, 4, 8, 4)
+        speed_layout.setSpacing(8)
 
         self._speed_slider = QSlider(Qt.Orientation.Horizontal)
         self._speed_slider.setRange(150, 255)
         self._speed_slider.setValue(self._current_speed)
+        self._speed_slider.setFixedWidth(120)
         self._speed_slider.valueChanged.connect(self._on_speed_change)
         speed_layout.addWidget(self._speed_slider)
 
         self._speed_label = QLabel(f"{self._current_speed} ({int(self._current_speed / 255 * 100)}%)")
-        self._speed_label.setStyleSheet("color: #f1f5f9; font-size: 11px;")
-        self._speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._speed_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
+        self._speed_label.setFixedWidth(70)
         speed_layout.addWidget(self._speed_label)
 
         speed_group.setLayout(speed_layout)
-        layout.addWidget(speed_group, 1)
+        layout.addWidget(speed_group)
 
         brake_group = QGroupBox("Auto-Brake")
-        brake_layout = QVBoxLayout()
+        brake_group.setStyleSheet("background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 6px;")
+        brake_layout = QHBoxLayout()
+        brake_layout.setContentsMargins(8, 4, 8, 4)
+        brake_layout.setSpacing(8)
 
         self._brake_toggle = QPushButton("ON")
         self._brake_toggle.setCheckable(True)
         self._brake_toggle.setChecked(True)
-        self._brake_toggle.setMinimumHeight(36)
+        self._brake_toggle.setFixedWidth(50)
+        self._brake_toggle.setFixedHeight(28)
         self._brake_toggle.setStyleSheet("""
             QPushButton {
                 background-color: #10b981;
                 color: white;
-                font-weight: bold;
-                font-size: 13px;
+                font-weight: 600;
+                font-size: 11px;
                 border-radius: 4px;
-                padding: 4px 16px;
-            }
-            QPushButton:checked {
-                background-color: #10b981;
+                border: none;
             }
             QPushButton:!checked {
-                background-color: #6b7280;
+                background-color: #64748b;
             }
         """)
         self._brake_toggle.clicked.connect(self._toggle_brake)
         brake_layout.addWidget(self._brake_toggle)
 
-        brake_label = QLabel("Threshold: 30cm")
-        brake_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        brake_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brake_label = QLabel("30cm")
+        brake_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
         brake_layout.addWidget(brake_label)
 
         brake_group.setLayout(brake_layout)
-        layout.addWidget(brake_group, 1)
+        layout.addWidget(brake_group)
 
         gimbal_group = QGroupBox("Gimbal")
-        gimbal_layout = QVBoxLayout()
+        gimbal_group.setStyleSheet("background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 6px;")
+        gimbal_layout = QHBoxLayout()
+        gimbal_layout.setContentsMargins(8, 4, 8, 4)
+        gimbal_layout.setSpacing(6)
 
-        self._gimbal_label = QLabel(f"Pan: {self._gimbal_pan}°  Tilt: {self._gimbal_tilt}°")
-        self._gimbal_label.setStyleSheet("color: #f1f5f9; font-size: 12px;")
-        self._gimbal_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        gimbal_layout.addWidget(self._gimbal_label)
+        pan_label = QLabel("Pan")
+        pan_label.setStyleSheet("color: #94a3b8; font-size: 10px;")
+        gimbal_layout.addWidget(pan_label)
+
+        self._gimbal_pan_label = QLabel(f"{self._gimbal_pan}°")
+        self._gimbal_pan_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
+        gimbal_layout.addWidget(self._gimbal_pan_label)
+
+        tilt_label = QLabel("Tilt")
+        tilt_label.setStyleSheet("color: #94a3b8; font-size: 10px;")
+        gimbal_layout.addWidget(tilt_label)
+
+        self._gimbal_tilt_label = QLabel(f"{self._gimbal_tilt}°")
+        self._gimbal_tilt_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
+        gimbal_layout.addWidget(self._gimbal_tilt_label)
 
         center_btn = QPushButton("Center")
-        center_btn.setMinimumHeight(36)
+        center_btn.setFixedHeight(28)
         center_btn.setStyleSheet("""
             QPushButton {
                 background-color: #3b82f6;
                 color: white;
-                font-weight: bold;
-                font-size: 13px;
+                font-weight: 600;
+                font-size: 11px;
                 border-radius: 4px;
-                padding: 4px 16px;
+                border: none;
+                padding: 4px 12px;
             }
             QPushButton:hover {
                 background-color: #2563eb;
@@ -549,7 +628,36 @@ class RoverTeleopApp(QWidget):
         gimbal_layout.addWidget(center_btn)
 
         gimbal_group.setLayout(gimbal_layout)
-        layout.addWidget(gimbal_group, 1)
+        layout.addWidget(gimbal_group)
+
+        cloud_group = QGroupBox("Cloud")
+        cloud_layout = QVBoxLayout()
+
+        self._cloud_send_btn = QPushButton("POST")
+        self._cloud_send_btn.setFixedHeight(40)
+        self._cloud_send_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #8b5cf6;
+                color: white;
+                font-weight: bold;
+                font-size: 13px;
+                border-radius: 4px;
+                padding: 4px 16px;
+            }
+            QPushButton:hover {
+                background-color: #7c3aed;
+            }
+        """)
+        self._cloud_send_btn.clicked.connect(self._manual_send_to_cloud)
+        cloud_layout.addWidget(self._cloud_send_btn)
+
+        cloud_label = QLabel("Send telemetry")
+        cloud_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        cloud_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cloud_layout.addWidget(cloud_label)
+
+        cloud_group.setLayout(cloud_layout)
+        layout.addWidget(cloud_group, 1)
 
         keys_group = QGroupBox("Controls")
         keys_layout = QVBoxLayout()
@@ -584,7 +692,7 @@ class RoverTeleopApp(QWidget):
 
     def _create_log_panel(self):
         widget = QWidget()
-        widget.setFixedHeight(100)
+        widget.setFixedHeight(180)
         widget.setStyleSheet("background-color: #0f172a; border-top: 1px solid #334155;")
         layout = QVBoxLayout()
         layout.setContentsMargins(16, 4, 16, 4)
@@ -604,6 +712,7 @@ class RoverTeleopApp(QWidget):
         self._log_display = QTextEdit()
         self._log_display.setReadOnly(True)
         self._log_display.setStyleSheet("background-color: #0f172a; border: none; color: #94a3b8; font-size: 11px;")
+        self._log_display.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         layout.addWidget(self._log_display)
 
         widget.setLayout(layout)
@@ -612,72 +721,179 @@ class RoverTeleopApp(QWidget):
     def connect_signals(self):
         self.log_message.connect(self._add_log)
 
-    def start_stubs(self):
-        self._video_thread = StubVideoThread()
-        self._video_thread.frame_received.connect(self._video_canvas.update_frame)
-        self._video_thread.start()
+    def start_connections(self):
+        self._stop_real_connections()
 
-        self._telemetry_thread = StubTelemetryThread()
-        self._telemetry_thread.data_received.connect(self._update_telemetry)
-        self._telemetry_thread.start()
+        ws_url = f"ws://{self._config['car_ip']}:81/"
+        self._rover_ws = RoverWebSocket(ws_url)
+        self._rover_ws.connected.connect(self._on_rover_connected)
+        self._rover_ws.disconnected.connect(self._on_rover_disconnected)
+        self._rover_ws.message_received.connect(self._on_rover_message)
+        self._rover_ws.error.connect(self._on_rover_error)
+        self._rover_ws.start()
 
-        self._add_log("CONNECTED", "Stub connections active (simulated)")
+        ws_url = f"ws://{self._config['cam_ip']}:81/"
+        self._video_receiver = MJPEGReceiver(f"http://{self._config['cam_ip']}/640x480.mjpeg")
+        self._video_receiver.connected.connect(self._on_camera_connected)
+        self._video_receiver.disconnected.connect(self._on_camera_disconnected)
+        self._video_receiver.error.connect(self._on_camera_error)
+        self._video_receiver.stats_updated.connect(self._on_video_stats)
+        self._video_receiver.start()
+
+        self._telemetry_poller = TelemetryPoller(self._config['car_ip'])
+        self._telemetry_poller.data_received.connect(self._on_telemetry_data)
+        self._telemetry_poller.error.connect(self._on_telemetry_error)
+        self._telemetry_poller.start()
+
+        self._video_timer = QTimer()
+        self._video_timer.timeout.connect(self._update_video_frame)
+        self._video_timer.start(33)
+
+        self._add_log("MODE", "Connecting to REAL ESP32 hardware...")
 
         self._cloud_api = CloudAPI()
         self._test_cloud_connection()
-        self._test_rover_connection()
-        self._test_camera_connection()
+
+    def _stop_real_connections(self):
+        if self._rover_ws:
+            self._rover_ws.stop()
+            self._rover_ws = None
+        if hasattr(self, '_video_receiver') and self._video_receiver:
+            self._video_receiver.stop()
+            self._video_receiver = None
+        if self._telemetry_poller:
+            self._telemetry_poller.stop()
+            self._telemetry_poller = None
+
+    def _on_rover_connected(self):
+        self._add_log("ROVER", f"WebSocket connected - ws://{self._config['car_ip']}:81/")
+        self._rover_status.setText("Rover: Online")
+        self._rover_status.setStyleSheet("color: #10b981; font-size: 11px; font-weight: 500;")
+
+    def _on_rover_disconnected(self):
+        self._add_log("ROVER", "WebSocket disconnected")
+        self._rover_status.setText("Rover: Offline")
+        self._rover_status.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: 500;")
+
+    def _on_rover_message(self, data):
+        msg_type = data.get("type", "")
+        if msg_type == "status":
+            self._add_log("ROVER", f"Status: {data.get('msg', '')}")
+        elif msg_type == "imu":
+            pass
+
+    def _on_rover_error(self, error):
+        self._add_log("ROVER", f"Error: {error}")
+
+    def _on_camera_connected(self):
+        self._add_log("CAMERA", f"MJPEG stream connected - http://{self._config['cam_ip']}/640x480.mjpeg")
+        self._cam_status.setText("Cam: Online")
+        self._cam_status.setStyleSheet("color: #10b981; font-size: 11px; font-weight: 500; margin-left: 8px;")
+
+    def _on_camera_disconnected(self):
+        self._add_log("CAMERA", "MJPEG stream disconnected")
+        self._cam_status.setText("Cam: Offline")
+        self._cam_status.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: 500; margin-left: 8px;")
+
+    def _on_camera_error(self, error):
+        self._add_log("CAMERA", f"Error: {error}")
+
+    def _update_video_frame(self):
+        if hasattr(self, '_video_receiver') and self._video_receiver:
+            frame = self._video_receiver.take_frame()
+            if frame:
+                self._video_canvas.update_frame_jpeg(frame)
+
+    def _on_video_stats(self, stats):
+        pass
+
+    def _on_telemetry_data(self, data):
+        self._update_telemetry(data)
+        self._send_to_cloud(data)
+
+    def _on_telemetry_error(self, error):
+        self._add_log("TELEMETRY", f"Error: {error[:60]}")
 
     def _update_telemetry(self, data):
-        self._temp_card.update_value(f"{data['temperature']}°C", data['temperature'] / 60 * 100)
-        self._humidity_card.update_value(f"{data['humidity']}%", data['humidity'])
-        self._gas_card.update_value(f"{int(data['gas'])} PPM", data['gas'] / 1000 * 100)
-        self._distance_card.update_value(f"{data['distance']} cm", data['distance'] / 200 * 100)
-        self._link_label.setText(f"Link: {data['link_quality']}%")
-        self._battery_label.setText(f"{data['battery_voltage']}V")
+        temp = data.get("temperature", 0)
+        humidity = data.get("humidity", 0)
+        gas = data.get("gas", 0)
+        distance = data.get("distance", 0)
+
+        self._temp_card.update_value(f"{temp}°C", temp / 60 * 100)
+        self._humidity_card.update_value(f"{humidity}%", humidity)
+        self._gas_card.update_value(f"{int(gas)} PPM", gas / 1000 * 100)
+        self._distance_card.update_value(f"{distance} cm", distance / 200 * 100)
+
+    def _send_to_cloud(self, data):
+        if not self._cloud_api:
+            return
+        
+        url = f"{self._cloud_api._base_url}/telemetry"
+        payload = {
+            "device_uid": self._cloud_api._device_uid,
+            "recorded_at": __import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            "temperature_c": data.get("temperature", 0),
+            "humidity_pct": data.get("humidity", 0),
+            "gas_ppm": data.get("gas", 0),
+            "distance_cm": data.get("distance", 0),
+            "auto_brake": data.get("obstacle", False),
+        }
+        worker = CloudWorker("POST", url, payload=payload)
+        self._cloud_workers.append(worker)
+        worker.finished.connect(lambda: self._cloud_workers.remove(worker) if worker in self._cloud_workers else None)
+        worker.start()
+
+    def _manual_send_to_cloud(self):
+        if not self._cloud_api:
+            self._add_log("CLOUD", "Cloud API not initialized")
+            return
+
+        url = f"{self._cloud_api._base_url}/telemetry"
+        payload = {
+            "device_uid": self._cloud_api._device_uid,
+            "recorded_at": __import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            "temperature_c": 25.0,
+            "humidity_pct": 60.0,
+            "gas_ppm": 100.0,
+            "distance_cm": 50.0,
+            "auto_brake": False,
+        }
+        worker = CloudWorker("POST", url, payload=payload)
+        worker.result.connect(self._on_cloud_post_success)
+        worker.error.connect(self._on_cloud_post_error)
+        self._cloud_workers.append(worker)
+        worker.finished.connect(lambda: self._cloud_workers.remove(worker) if worker in self._cloud_workers else None)
+        worker.start()
+
+    def _on_cloud_post_success(self, data):
+        if data.get("success"):
+            self._add_log("CLOUD", "POST sent to cloud OK")
+        else:
+            self._add_log("CLOUD", f"POST response: {data}")
+
+    def _on_cloud_post_error(self, error):
+        self._add_log("CLOUD", f"POST failed: {error}")
 
     def _test_cloud_connection(self):
-        try:
-            result = self._cloud_api.get_rovers()
-            if "error" in result:
-                if "timed out" in result["error"] or "ConnectTimeout" in result["error"]:
-                    self._add_log("CLOUD", "Server not reachable (timeout) - server may be offline")
-                elif "NameResolutionError" in result["error"] or "resolve" in result["error"]:
-                    self._add_log("CLOUD", "Cannot resolve hostname - check server address")
-                else:
-                    self._add_log("CLOUD", f"Connection failed: {result['error'][:80]}")
-            else:
-                self._add_log("CLOUD", "Connected to cloud API OK")
-        except Exception as e:
-            self._add_log("CLOUD", f"Connection failed: {e}")
+        url = f"{self._cloud_api._base_url}/rovers"
+        self._cloud_worker = CloudWorker("GET", url)
+        self._cloud_worker.result.connect(self._on_cloud_test_success)
+        self._cloud_worker.error.connect(self._on_cloud_test_error)
+        self._cloud_workers.append(self._cloud_worker)
+        self._cloud_worker.finished.connect(lambda: self._cloud_workers.remove(self._cloud_worker) if self._cloud_worker in self._cloud_workers else None)
+        self._cloud_worker.start()
 
-    def _test_rover_connection(self):
-        try:
-            resp = requests.get(f"http://{self._config['car_ip']}/api/telemetry", timeout=5)
-            if resp.status_code == 200:
-                self._add_log("ROVER", f"Connected to ESP32-Car OK ({self._config['car_ip']})")
-            else:
-                self._add_log("ROVER", f"ESP32-Car responded with status {resp.status_code}")
-        except requests.exceptions.Timeout:
-            self._add_log("ROVER", f"ESP32-Car timeout ({self._config['car_ip']}) - rover may be offline")
-        except requests.exceptions.ConnectionError:
-            self._add_log("ROVER", f"Cannot connect to ESP32-Car ({self._config['car_ip']})")
-        except Exception as e:
-            self._add_log("ROVER", f"Connection failed: {e}")
+    def _on_cloud_test_success(self, data):
+        self._add_log("CLOUD", f"Connected to cloud API OK - {self._cloud_api._base_url}")
 
-    def _test_camera_connection(self):
-        try:
-            resp = requests.get(f"http://{self._config['cam_ip']}/resolutions.csv", timeout=5)
-            if resp.status_code == 200:
-                self._add_log("CAMERA", f"Connected to ESP32-Cam OK ({self._config['cam_ip']})")
-            else:
-                self._add_log("CAMERA", f"ESP32-Cam responded with status {resp.status_code}")
-        except requests.exceptions.Timeout:
-            self._add_log("CAMERA", f"ESP32-Cam timeout ({self._config['cam_ip']}) - camera may be offline")
-        except requests.exceptions.ConnectionError:
-            self._add_log("CAMERA", f"Cannot connect to ESP32-Cam ({self._config['cam_ip']})")
-        except Exception as e:
-            self._add_log("CAMERA", f"Connection failed: {e}")
+    def _on_cloud_test_error(self, error):
+        if "timed out" in error or "ConnectTimeout" in error:
+            self._add_log("CLOUD", f"Server offline (timeout) - {self._cloud_api._base_url}")
+        elif "NameResolutionError" in error or "resolve" in error:
+            self._add_log("CLOUD", f"Cannot resolve hostname - {self._cloud_api._base_url}")
+        else:
+            self._add_log("CLOUD", f"Connection failed: {error}")
 
     def _on_speed_change(self, value):
         self._current_speed = value
@@ -692,7 +908,8 @@ class RoverTeleopApp(QWidget):
     def _center_gimbal(self):
         self._gimbal_pan = 90
         self._gimbal_tilt = 90
-        self._gimbal_label.setText(f"Pan: 90°  Tilt: 90°")
+        self._gimbal_pan_label.setText(f"90°")
+        self._gimbal_tilt_label.setText(f"90°")
         self._send_command("servo:90,90")
 
     def _take_snapshot(self):
@@ -726,6 +943,9 @@ class RoverTeleopApp(QWidget):
         timestamp = datetime.now().strftime("%H:%M:%S")
         self._commands_log.append((timestamp, command))
         self._add_log("CMD", command)
+
+        if self._rover_ws and self._rover_ws.is_connected:
+            self._rover_ws.send(command)
 
     def _add_log(self, category, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -784,13 +1004,21 @@ class RoverTeleopApp(QWidget):
             super().keyReleaseEvent(event)
 
     def _update_gimbal(self):
-        self._gimbal_label.setText(f"Pan: {self._gimbal_pan}°  Tilt: {self._gimbal_tilt}°")
+        self._gimbal_pan_label.setText(f"{self._gimbal_pan}°")
+        self._gimbal_tilt_label.setText(f"{self._gimbal_tilt}°")
         self._send_command(f"servo:{self._gimbal_pan},{self._gimbal_tilt}")
 
     def closeEvent(self, event):
-        if self._video_thread:
-            self._video_thread.stop()
-        if self._telemetry_thread:
-            self._telemetry_thread.stop()
+        if hasattr(self, '_video_timer'):
+            self._video_timer.stop()
+        
+        self._stop_real_connections()
+        
+        for worker in self._cloud_workers:
+            if worker.isRunning():
+                worker.quit()
+                worker.wait(1000)
+        self._cloud_workers.clear()
+        
         save_config(self._config)
         event.accept()

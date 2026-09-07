@@ -1,4 +1,5 @@
 import requests
+from datetime import datetime, timezone
 from config import load_config
 
 
@@ -13,9 +14,10 @@ class CloudAPI:
         return f"{self._base_url}{path}"
 
     def post_telemetry(self, data):
-        """POST /api/v1/telemetry - Ingest one telemetry record"""
+        """POST /telemetry - Ingest one telemetry record"""
         payload = {
             "device_uid": self._device_uid,
+            "recorded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
             "temperature_c": data.get("temperature", 0),
             "humidity_pct": data.get("humidity", 0),
             "gas_ppm": data.get("gas", 0),
@@ -34,7 +36,7 @@ class CloudAPI:
             return {"error": str(e)}
 
     def get_rovers(self):
-        """GET /api/v1/rovers - List known rovers"""
+        """GET /rovers - List known rovers"""
         try:
             resp = requests.get(
                 self._url("/rovers"),
@@ -46,7 +48,7 @@ class CloudAPI:
             return {"error": str(e)}
 
     def get_latest(self, device_uid=None):
-        """GET /api/v1/rovers/{device_uid}/latest - Single latest reading"""
+        """GET /rovers/{uid}/latest - Single latest reading"""
         uid = device_uid or self._device_uid
         try:
             resp = requests.get(
@@ -58,14 +60,16 @@ class CloudAPI:
         except requests.RequestException as e:
             return {"error": str(e)}
 
-    def get_readings(self, device_uid=None, limit=100, start=None, end=None):
-        """GET /api/v1/rovers/{device_uid}/readings - Last N records or time range"""
+    def get_readings(self, device_uid=None, limit=100, start=None, end=None, order=None):
+        """GET /rovers/{uid}/readings - Last N records or time range"""
         uid = device_uid or self._device_uid
         params = {"limit": limit}
         if start:
             params["start"] = start
         if end:
             params["end"] = end
+        if order:
+            params["order"] = order
         try:
             resp = requests.get(
                 self._url(f"/rovers/{uid}/readings"),
@@ -77,8 +81,8 @@ class CloudAPI:
         except requests.RequestException as e:
             return {"error": str(e)}
 
-    def get_summary(self, device_uid=None, granularity="hour", start=None, end=None):
-        """GET /api/v1/rovers/{device_uid}/summary - Aggregated statistics"""
+    def get_summary(self, device_uid=None, granularity="day", start=None, end=None):
+        """GET /rovers/{uid}/summary - Aggregated statistics"""
         uid = device_uid or self._device_uid
         params = {"granularity": granularity}
         if start:
@@ -89,6 +93,30 @@ class CloudAPI:
             resp = requests.get(
                 self._url(f"/rovers/{uid}/summary"),
                 params=params,
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as e:
+            return {"error": str(e)}
+
+    def get_health(self):
+        """GET /health - Service and database health"""
+        try:
+            resp = requests.get(
+                self._url("/health"),
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as e:
+            return {"error": str(e)}
+
+    def get_system(self):
+        """GET /system - Gateway host metrics"""
+        try:
+            resp = requests.get(
+                self._url("/system"),
                 timeout=self._timeout,
             )
             resp.raise_for_status()

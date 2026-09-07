@@ -177,6 +177,7 @@ def _on_speed_change(app, value):
     app._current_speed = value
     percent = int(value / 255 * 100)
     app._speed_label.setText(f"{value} ({percent}%)")
+    app._send_command(f"speed:{value}")
 
 
 def _toggle_brake(app):

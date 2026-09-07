@@ -78,6 +78,14 @@ class RoverTeleopApp(QWidget):
 
     def connect_signals(self):
         self.log_message.connect(self._add_log)
+        self._video_canvas.gimbal_changed.connect(self._on_mouse_gimbal)
+
+    def _on_mouse_gimbal(self, pan, tilt):
+        self._gimbal_pan = int(pan)
+        self._gimbal_tilt = int(tilt)
+        self._gimbal_pan_label.setText(f"{self._gimbal_pan}°")
+        self._gimbal_tilt_label.setText(f"{self._gimbal_tilt}°")
+        self._send_command(f"servo:{self._gimbal_pan},{self._gimbal_tilt}")
 
     def start_connections(self):
         self._stop_real_connections()
@@ -258,6 +266,7 @@ class RoverTeleopApp(QWidget):
         self._gimbal_tilt = 90
         self._gimbal_pan_label.setText(f"90°")
         self._gimbal_tilt_label.setText(f"90°")
+        self._video_canvas.set_gimbal(90, 90)
         self._send_command("servo:90,90")
 
     def _take_snapshot(self):
@@ -368,6 +377,7 @@ class RoverTeleopApp(QWidget):
     def _update_gimbal(self):
         self._gimbal_pan_label.setText(f"{self._gimbal_pan}°")
         self._gimbal_tilt_label.setText(f"{self._gimbal_tilt}°")
+        self._video_canvas.set_gimbal(self._gimbal_pan, self._gimbal_tilt)
         self._send_command(f"servo:{self._gimbal_pan},{self._gimbal_tilt}")
 
     def closeEvent(self, event):

@@ -43,8 +43,8 @@ class VideoCanvas(QLabel):
         self._last_x = event.position().x()
         self._last_y = event.position().y()
 
-        self._pan = max(0, min(180, self._pan + dx * self._sensitivity))
-        self._tilt = max(0, min(180, self._tilt - dy * self._sensitivity))
+        self._pan = max(0, min(180, self._pan - dx * self._sensitivity))
+        self._tilt = max(0, min(180, self._tilt + dy * self._sensitivity))
         self.gimbal_changed.emit(self._pan, self._tilt)
 
     def mouseReleaseEvent(self, event):

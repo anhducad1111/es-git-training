@@ -15,6 +15,7 @@ use RoverTelemetry\Controllers\RoverReadingsController;
 use RoverTelemetry\Controllers\RoverSummaryController;
 use RoverTelemetry\Controllers\RoverExportController;
 use RoverTelemetry\Controllers\HealthController;
+use RoverTelemetry\Controllers\SystemController;
 use RoverTelemetry\Controllers\SystemHistoryController;
 use RoverTelemetry\Controllers\RoverEventsController;
 use RoverTelemetry\Controllers\ValidationErrorController;
@@ -41,7 +42,8 @@ $roverLatestController = new RoverLatestController($pdo);
 $roverReadingsController = new RoverReadingsController($pdo, $config);
 $roverSummaryController = new RoverSummaryController($pdo);
 $roverExportController = new RoverExportController($pdo);
-$healthController = new HealthController($pdo, $config);
+$healthController = new HealthController($pdo);
+$systemController = new SystemController($pdo, $config);
 $systemHistoryController = new SystemHistoryController($pdo);
 $roverEventsController = new RoverEventsController($pdo, $config);
 $validationErrorController = new ValidationErrorController($pdo);
@@ -79,7 +81,7 @@ $router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/export', func
 });
 
 $router->add('GET', '/api/v1/health', fn() => $healthController->health());
-$router->add('GET', '/api/v1/system', fn() => $healthController->system());
+$router->add('GET', '/api/v1/system', fn() => $systemController->system());
 $router->add('GET', '/api/v1/system/history', function () use ($systemHistoryController) {
     return $systemHistoryController->history($_GET);
 });

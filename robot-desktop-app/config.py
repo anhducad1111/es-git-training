@@ -6,7 +6,7 @@ CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 DEFAULT_CONFIG = {
     "car_ip": "192.168.1.113",
     "cam_ip": "192.168.1.114",
-    "cloud_api_url": "http://192.168.1.116/es-git-training/rover-telemetry-backend/public/api",
+    "cloud_api_url": "http://192.168.1.116/es-git-training/rover-telemetry-backend/public/api/v1",
     "device_uid": "rover-001",
     "ollama_url": "http://rpi5.local:11434/api/generate",
     "follow_mode_url": "http://rpi5.local/follow/start",

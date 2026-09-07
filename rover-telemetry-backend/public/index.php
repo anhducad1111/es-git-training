@@ -18,6 +18,8 @@ use RoverTelemetry\Controllers\HealthController;
 use RoverTelemetry\Controllers\SystemHistoryController;
 use RoverTelemetry\Controllers\RoverEventsController;
 use RoverTelemetry\Controllers\ValidationErrorController;
+use RoverTelemetry\Controllers\SensorLimitsGetController;
+use RoverTelemetry\Controllers\SensorLimitsPutController;
 
 header('Content-Type: application/json; charset=UTF-8');
 
@@ -43,6 +45,8 @@ $healthController = new HealthController($pdo, $config);
 $systemHistoryController = new SystemHistoryController($pdo);
 $roverEventsController = new RoverEventsController($pdo, $config);
 $validationErrorController = new ValidationErrorController($pdo);
+$sensorLimitsGetController = new SensorLimitsGetController($pdo);
+$sensorLimitsPutController = new SensorLimitsPutController($pdo);
 
 $router->add('POST', '/api/v1/telemetry', function () use ($telemetryController) {
     $raw = file_get_contents('php://input');
@@ -86,6 +90,16 @@ $router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/events', func
 
 $router->add('GET', '/api/v1/validation-errors/summary', function () use ($validationErrorController) {
     return $validationErrorController->summary($_GET);
+});
+
+$router->add('GET', '/api/v1/config/sensor-limits', fn() => $sensorLimitsGetController->get());
+$router->add('PUT', '/api/v1/config/sensor-limits/(?P<field>[a-z_]+)', function (array $params) use ($sensorLimitsPutController) {
+    $raw = file_get_contents('php://input');
+    $body = json_decode($raw, true);
+    if (!is_array($body)) {
+        throw new ApiException(400, 'MALFORMED_PAYLOAD', 'Request body must be valid JSON');
+    }
+    return $sensorLimitsPutController->put($params, $body);
 });
 
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';

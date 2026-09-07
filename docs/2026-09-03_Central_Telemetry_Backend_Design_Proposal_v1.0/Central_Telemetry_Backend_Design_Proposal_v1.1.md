@@ -549,12 +549,12 @@ INSERT INTO sensor_limits (field, min_value, max_value) VALUES
 
 | No. | Method | Endpoint | Purpose | PRD reference | Status |
 |---|---|---|---|---|---|
-| 1 | POST | `/api/v1/telemetry` | Ingest one telemetry record | §3.1 | 実装済み |
-| 2 | GET | `/api/v1/rovers` | List known rovers | §3.3 | 実装済み |
-| 3 | GET | `/api/v1/rovers/{device_uid}/latest` | Single latest reading | §3.3 Live Feed | 実装済み |
-| 4 | GET | `/api/v1/rovers/{device_uid}/readings` | Last N records, or a time range | §3.3 | 実装済み |
-| 5 | GET | `/api/v1/rovers/{device_uid}/summary` | Aggregated statistics | §3.3 | 実装済み |
-| 6 | GET | `/api/v1/rovers/{device_uid}/export` | CSV or JSON export | §3.3 | 実装済み |
+| 1 | POST | `/api/v1/telemetry` | Ingest one telemetry record | §3.1 | Implemented |
+| 2 | GET | `/api/v1/rovers` | List known rovers | §3.3 | Implemented |
+| 3 | GET | `/api/v1/rovers/{device_uid}/latest` | Single latest reading | §3.3 Live Feed | Implemented |
+| 4 | GET | `/api/v1/rovers/{device_uid}/readings` | Last N records, or a time range | §3.3 | Implemented |
+| 5 | GET | `/api/v1/rovers/{device_uid}/summary` | Aggregated statistics | §3.3 | Implemented |
+| 6 | GET | `/api/v1/rovers/{device_uid}/export` | CSV or JSON export | §3.3 | Implemented |
 | 7 | GET | `/api/v1/health` | Service and database health | §3.4 | |
 | 8 | GET | `/api/v1/system` | Gateway host metrics, current | §3.4 | |
 | 9 | GET | `/api/v1/system/history` | Gateway host metrics over time | §3.4 | |

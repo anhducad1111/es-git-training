@@ -9,7 +9,11 @@ use RoverTelemetry\Database;
 use RoverTelemetry\Router;
 use RoverTelemetry\Support\ApiException;
 use RoverTelemetry\Controllers\TelemetryController;
-use RoverTelemetry\Controllers\RoverController;
+use RoverTelemetry\Controllers\RoverListController;
+use RoverTelemetry\Controllers\RoverLatestController;
+use RoverTelemetry\Controllers\RoverReadingsController;
+use RoverTelemetry\Controllers\RoverSummaryController;
+use RoverTelemetry\Controllers\RoverExportController;
 
 header('Content-Type: application/json; charset=UTF-8');
 
@@ -26,7 +30,11 @@ try {
 
 $router = new Router();
 $telemetryController = new TelemetryController($pdo);
-$roverController = new RoverController($pdo, $config);
+$roverListController = new RoverListController($pdo, $config);
+$roverLatestController = new RoverLatestController($pdo);
+$roverReadingsController = new RoverReadingsController($pdo, $config);
+$roverSummaryController = new RoverSummaryController($pdo);
+$roverExportController = new RoverExportController($pdo);
 
 $router->add('POST', '/api/v1/telemetry', function () use ($telemetryController) {
     $raw = file_get_contents('php://input');
@@ -37,25 +45,25 @@ $router->add('POST', '/api/v1/telemetry', function () use ($telemetryController)
     return $telemetryController->ingest($body);
 });
 
-$router->add('GET', '/api/v1/rovers', function () use ($roverController) {
-    return $roverController->list();
+$router->add('GET', '/api/v1/rovers', function () use ($roverListController) {
+    return $roverListController->list();
 });
 
-$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/latest', function (array $params) use ($roverController) {
-    return $roverController->latest($params);
+$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/latest', function (array $params) use ($roverLatestController) {
+    return $roverLatestController->latest($params);
 });
 
-$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/readings', function (array $params) use ($roverController) {
-    return $roverController->readings($params, $_GET);
+$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/readings', function (array $params) use ($roverReadingsController) {
+    return $roverReadingsController->readings($params, $_GET);
 });
 
-$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/summary', function (array $params) use ($roverController) {
-    return $roverController->summary($params, $_GET);
+$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/summary', function (array $params) use ($roverSummaryController) {
+    return $roverSummaryController->summary($params, $_GET);
 });
 
-$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/export', function (array $params) use ($roverController, $config) {
+$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/export', function (array $params) use ($roverExportController, $config) {
     $unbufferedPdo = Database::newConnection($config, buffered: false);
-    return $roverController->export($params, $_GET, $unbufferedPdo);
+    return $roverExportController->export($params, $_GET, $unbufferedPdo);
 });
 
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';

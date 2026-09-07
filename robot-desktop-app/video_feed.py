@@ -2,7 +2,7 @@ import json
 import time
 import websocket
 from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QImage
 
 
 class LatestSlot:
@@ -80,10 +80,10 @@ class VideoReceiverThread(QThread):
             if len(self._frame_times) > 60:
                 self._frame_times.pop(0)
             
-            pixmap = QPixmap()
-            pixmap.loadFromData(message, "JPEG")
-            if not pixmap.isNull():
-                self._frame_slot.publish(pixmap)
+            image = QImage()
+            image.loadFromData(message, "JPEG")
+            if not image.isNull():
+                self._frame_slot.publish(image)
             
             if now - self._last_stats_time >= 1.0:
                 self._emit_stats()

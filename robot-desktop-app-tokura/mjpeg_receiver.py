@@ -205,10 +205,16 @@ class MJPEGReceiver:
         (1600, 1200),
     ]
 
-    def __init__(self, cam_ip, width=640, height=480):
+    # Fixed streaming endpoint used by test-bench ESP32-Cam boards running
+    # the stock AI-Thinker firmware (no per-resolution URLs, no quality API).
+    TEST_MODE_PORT = 81
+    TEST_MODE_PATH = "/stream"
+
+    def __init__(self, cam_ip, width=640, height=480, test_mode=False):
         self.cam_ip = cam_ip
         self.width = width
         self.height = height
+        self.test_mode = test_mode
         self.raw_slot = LatestSlot()
         self.display_slot = LatestSlot()
         self.receive_thread = ReceiveThread(self._build_url(width, height), self.raw_slot)
@@ -220,7 +226,13 @@ class MJPEGReceiver:
         self.frame_ready = self.decode_thread.frame_ready
 
     def _build_url(self, width, height):
+        if self.test_mode:
+            return f"http://{self.cam_ip}:{self.TEST_MODE_PORT}{self.TEST_MODE_PATH}"
         return f"http://{self.cam_ip}/{width}x{height}.mjpeg"
+
+    def set_test_mode(self, enabled):
+        self.test_mode = enabled
+        self.receive_thread.set_stream_url(self._build_url(self.width, self.height))
 
     def set_resolution(self, width, height):
         self.width = width

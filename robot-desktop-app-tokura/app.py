@@ -406,6 +406,12 @@ class RoverTeleopApp(QWidget):
         self._auto_quality_checkbox.toggled.connect(self._on_auto_quality_toggled)
         res_layout.addWidget(self._auto_quality_checkbox)
 
+        self._test_mode_checkbox = QCheckBox("Test Mode (ESP32 /stream)")
+        self._test_mode_checkbox.setChecked(False)
+        self._test_mode_checkbox.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self._test_mode_checkbox.toggled.connect(self._on_test_mode_toggled)
+        res_layout.addWidget(self._test_mode_checkbox)
+
         res_layout.addStretch()
         resolution_widget.setLayout(res_layout)
         video_layout.addWidget(resolution_widget)
@@ -429,6 +435,20 @@ class RoverTeleopApp(QWidget):
         if self._adaptive_stream:
             self._adaptive_stream.set_enabled(checked)
         self._add_log("VIDEO", f"Auto-quality {'enabled' if checked else 'disabled'}")
+
+    def _on_test_mode_toggled(self, checked):
+        # The test-bench ESP32-Cam only serves a fixed /stream endpoint - it
+        # has no per-resolution URLs or quality API, so those controls don't
+        # apply while test mode is on.
+        self._resolution_combo.setEnabled(not checked)
+        self._auto_quality_checkbox.setEnabled(not checked)
+        if checked:
+            self._auto_quality_checkbox.setChecked(False)
+        if hasattr(self, '_video_receiver') and self._video_receiver:
+            self._video_receiver.set_test_mode(checked)
+        if self._adaptive_stream:
+            self._adaptive_stream.set_enabled(not checked and self._auto_quality_checkbox.isChecked())
+        self._add_log("VIDEO", f"Test mode {'enabled (http://' + self._config['cam_ip'] + ':81/stream)' if checked else 'disabled'}")
 
     def _create_diagnostics_view(self):
         widget = QWidget()
@@ -859,7 +879,10 @@ class RoverTeleopApp(QWidget):
         self._rover_ws.error.connect(self._on_rover_error)
         self._rover_ws.start()
 
-        self._video_receiver = MJPEGReceiver(self._config['cam_ip'], 640, 480)
+        self._video_receiver = MJPEGReceiver(
+            self._config['cam_ip'], 640, 480,
+            test_mode=self._test_mode_checkbox.isChecked(),
+        )
         self._video_receiver.connected.connect(self._on_camera_connected)
         self._video_receiver.disconnected.connect(self._on_camera_disconnected)
         self._video_receiver.error.connect(self._on_camera_error)
@@ -925,7 +948,10 @@ class RoverTeleopApp(QWidget):
         self._add_log("ROVER", f"Error: {error}")
 
     def _on_camera_connected(self):
-        self._add_log("CAMERA", f"MJPEG stream connected - http://{self._config['cam_ip']}/640x480.mjpeg")
+        url = (self._video_receiver.receive_thread.stream_url
+               if hasattr(self, '_video_receiver') and self._video_receiver
+               else f"http://{self._config['cam_ip']}/640x480.mjpeg")
+        self._add_log("CAMERA", f"MJPEG stream connected - {url}")
         self._cam_status.setText("Cam: Online")
         self._cam_status.setStyleSheet("color: #10b981; font-size: 11px; font-weight: 500; margin-left: 8px;")
 

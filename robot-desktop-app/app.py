@@ -1,22 +1,12 @@
 from datetime import datetime
-import requests
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
-from PyQt6.QtGui import QPixmap, QImage, QFont, QColor, QPalette
+import os
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
-    QGroupBox,
     QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QProgressBar,
-    QScrollArea,
-    QSlider,
-    QSplitter,
-    QTextEdit,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
-    QStackedWidget,
 )
 from config import load_config, save_config
 from cloud_api import CloudAPI
@@ -24,193 +14,13 @@ from cloud_worker import CloudWorker
 from rover_ws import RoverWebSocket
 from mjpeg_receiver import MJPEGReceiver
 from telemetry_poller import TelemetryPoller
-
-
-DARK_STYLE = """
-QMainWindow, QWidget {
-    background-color: #0b1326;
-    color: #f1f5f9;
-    font-family: 'Inter', 'Segoe UI', sans-serif;
-    font-size: 12px;
-}
-QGroupBox {
-    font-weight: 600;
-    border: 1px solid #243147;
-    border-radius: 6px;
-    margin-top: 10px;
-    padding: 10px 8px 8px 8px;
-    background-color: #171f33;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 5px;
-    color: #94a3b8;
-    font-size: 11px;
-}
-QPushButton {
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 6px 16px;
-    font-weight: 600;
-    font-size: 12px;
-}
-QPushButton:hover {
-    background-color: #2563eb;
-}
-QPushButton:pressed {
-    background-color: #1d4ed8;
-}
-QSlider::groove:horizontal {
-    border: 1px solid #243147;
-    height: 6px;
-    background: #0f172a;
-    border-radius: 3px;
-}
-QSlider::handle:horizontal {
-    background: #3b82f6;
-    border: none;
-    width: 14px;
-    height: 14px;
-    margin: -4px 0;
-    border-radius: 7px;
-}
-QSlider::sub-page:horizontal {
-    background: #3b82f6;
-    border-radius: 3px;
-}
-QLineEdit {
-    background-color: #0f172a;
-    border: 1px solid #334155;
-    border-radius: 4px;
-    padding: 4px 8px;
-    color: #f1f5f9;
-    font-size: 11px;
-}
-QLineEdit:focus {
-    border: 1px solid #3b82f6;
-}
-QTextEdit {
-    background-color: #0f172a;
-    border: 1px solid #243147;
-    border-radius: 4px;
-    color: #94a3b8;
-    font-family: 'JetBrains Mono', 'Consolas', monospace;
-    font-size: 11px;
-}
-QLabel {
-    color: #94a3b8;
-}
-QProgressBar {
-    background-color: #0f172a;
-    border: none;
-    border-radius: 3px;
-    height: 6px;
-    text-align: center;
-    color: transparent;
-}
-QProgressBar::chunk {
-    background-color: #3b82f6;
-    border-radius: 3px;
-}
-"""
-
-
-class VideoCanvas(QLabel):
-    def __init__(self):
-        super().__init__()
-        self.setMinimumSize(640, 480)
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet("background-color: #0f172a; border: 1px solid #334155;")
-        self.setText("No Video Feed")
-        self.setFont(QFont("JetBrains Mono", 14))
-
-    def update_frame(self, jpeg_data):
-        pixmap = QPixmap()
-        pixmap.loadFromData(jpeg_data)
-        scaled = pixmap.scaled(
-            self.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.setPixmap(scaled)
-
-    def update_frame_jpeg(self, image):
-        if isinstance(image, QPixmap):
-            pixmap = image
-        elif isinstance(image, QImage):
-            pixmap = QPixmap.fromImage(image)
-        else:
-            pixmap = QPixmap()
-            pixmap.loadFromData(image, "JPEG")
-        
-        if not pixmap.isNull():
-            scaled = pixmap.scaled(
-                self.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            self.setPixmap(scaled)
-
-
-class SensorCard(QWidget):
-    def __init__(self, name, unit, icon="", min_val=0, max_val=100):
-        super().__init__()
-        self.min_val = min_val
-        self.max_val = max_val
-        layout = QVBoxLayout()
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(4)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(6)
-
-        self.icon_label = QLabel(icon)
-        self.icon_label.setFixedWidth(20)
-        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        top_row.addWidget(self.icon_label)
-
-        self.name_label = QLabel(name)
-        self.name_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        top_row.addWidget(self.name_label)
-
-        top_row.addStretch()
-
-        self.value_label = QLabel("--")
-        self.value_label.setStyleSheet("color: #f1f5f9; font-size: 12px; font-weight: 600; font-family: 'JetBrains Mono', monospace;")
-        top_row.addWidget(self.value_label)
-
-        layout.addLayout(top_row)
-
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setValue(0)
-        self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(4)
-        self.progress.setStyleSheet("""
-            QProgressBar {
-                background-color: #0f172a;
-                border: none;
-                border-radius: 2px;
-            }
-            QProgressBar::chunk {
-                background-color: #3b82f6;
-                border-radius: 2px;
-            }
-        """)
-        layout.addWidget(self.progress)
-
-        self.setLayout(layout)
-        self.setStyleSheet(
-            "background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 4px;"
-        )
-
-    def update_value(self, value, progress=None):
-        self.value_label.setText(str(value))
-        if progress is not None:
-            self.progress.setValue(int(min(100, max(0, progress))))
+from styles import DARK_STYLE
+from views.header import create_header, _on_ip_changed
+from views.main_view import create_main_view
+from views.diagnostics_view import create_diagnostics_view
+from views.sidebar import create_sidebar
+from views.bottom_controls import create_bottom_controls
+from views.log_panel import create_log_panel
 
 
 class RoverTeleopApp(QWidget):
@@ -246,480 +56,37 @@ class RoverTeleopApp(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        main_layout.addWidget(self._create_header())
+        main_layout.addWidget(create_header(self))
 
         content = QHBoxLayout()
         content.setContentsMargins(0, 0, 0, 0)
         content.setSpacing(0)
 
         self._center_stack = QStackedWidget()
-        self._center_stack.addWidget(self._create_main_view())
-        self._center_stack.addWidget(self._create_diagnostics_view())
+        self._center_stack.addWidget(create_main_view(self))
+        self._center_stack.addWidget(create_diagnostics_view(self))
         content.addWidget(self._center_stack, 1)
 
-        self._sidebar = self._create_sidebar()
+        self._sidebar = create_sidebar(self)
         content.addWidget(self._sidebar)
 
         main_layout.addLayout(content, 1)
 
-        main_layout.addWidget(self._create_bottom_controls())
-        main_layout.addWidget(self._create_log_panel())
+        main_layout.addWidget(create_bottom_controls(self))
+        main_layout.addWidget(create_log_panel(self))
 
-    def _create_header(self):
-        header = QWidget()
-        header.setFixedHeight(48)
-        header.setStyleSheet("background-color: #131b2e; border-bottom: 1px solid #243147;")
-        layout = QHBoxLayout()
-        layout.setContentsMargins(16, 0, 16, 0)
-
-        title_label = QLabel("Rover Teleop Cockpit")
-        title_label.setStyleSheet("color: #f1f5f9; font-weight: 600; font-size: 13px;")
-        layout.addWidget(title_label)
-
-        version_label = QLabel("v2.4.0")
-        version_label.setStyleSheet("color: #94a3b8; font-size: 10px; background-color: #1e293b; padding: 2px 6px; border-radius: 3px; border: 1px solid #334155; font-family: 'JetBrains Mono', monospace;")
-        layout.addWidget(version_label)
-
-        layout.addStretch()
-
-        rover_label = QLabel("Rover IP:")
-        rover_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        layout.addWidget(rover_label)
-
-        self._rover_ip_input = QLineEdit(self._config['car_ip'])
-        self._rover_ip_input.setFixedWidth(120)
-        self._rover_ip_input.setStyleSheet("background-color: #0f172a; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
-        self._rover_ip_input.returnPressed.connect(self._on_ip_changed)
-        layout.addWidget(self._rover_ip_input)
-
-        separator1 = QLabel()
-        separator1.setFixedWidth(1)
-        separator1.setFixedHeight(16)
-        separator1.setStyleSheet("background-color: #243147;")
-        layout.addWidget(separator1)
-
-        cam_label = QLabel("Camera IP:")
-        cam_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        layout.addWidget(cam_label)
-
-        self._cam_ip_input = QLineEdit(self._config['cam_ip'])
-        self._cam_ip_input.setFixedWidth(120)
-        self._cam_ip_input.setStyleSheet("background-color: #0f172a; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
-        self._cam_ip_input.returnPressed.connect(self._on_ip_changed)
-        layout.addWidget(self._cam_ip_input)
-
-        separator2 = QLabel()
-        separator2.setFixedWidth(1)
-        separator2.setFixedHeight(16)
-        separator2.setStyleSheet("background-color: #243147;")
-        layout.addWidget(separator2)
-
-        self._rover_status = QLabel("Rover: Offline")
-        self._rover_status.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: 500;")
-        layout.addWidget(self._rover_status)
-
-        self._cam_status = QLabel("Cam: Offline")
-        self._cam_status.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: 500; margin-left: 8px;")
-        layout.addWidget(self._cam_status)
-
-        header.setLayout(layout)
-        return header
-
-    def _on_ip_changed(self):
-        self._config['car_ip'] = self._rover_ip_input.text()
-        self._config['cam_ip'] = self._cam_ip_input.text()
-        save_config(self._config)
-        self._add_log("CONFIG", f"IPs updated: Rover={self._config['car_ip']}, Cam={self._config['cam_ip']}")
-
-    def _create_main_view(self):
-        widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        video_container = QWidget()
-        video_layout = QVBoxLayout()
-        video_layout.setContentsMargins(0, 0, 0, 0)
-        video_layout.setSpacing(0)
-
-        self._video_canvas = VideoCanvas()
-        video_layout.addWidget(self._video_canvas, 1)
-
-        resolution_widget = QWidget()
-        resolution_widget.setFixedHeight(32)
-        resolution_widget.setStyleSheet("background-color: #131b2e; border-top: 1px solid #334155;")
-        res_layout = QHBoxLayout()
-        res_layout.setContentsMargins(8, 4, 8, 4)
-
-        from PyQt6.QtWidgets import QComboBox
-        self._resolution_combo = QComboBox()
-        self._resolution_combo.addItems(["640x480 (30 FPS)", "1280x720 (15 FPS)", "320x240 (60 FPS)"])
-        self._resolution_combo.setFixedWidth(180)
-        self._resolution_combo.setStyleSheet("background-color: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 2px 6px; color: #f1f5f9; font-size: 11px;")
-        self._resolution_combo.currentTextChanged.connect(self._on_resolution_change)
-        res_layout.addWidget(self._resolution_combo)
-
-        res_layout.addStretch()
-        resolution_widget.setLayout(res_layout)
-        video_layout.addWidget(resolution_widget)
-
-        video_container.setLayout(video_layout)
-        layout.addWidget(video_container, 1)
-
-        widget.setLayout(layout)
-        return widget
-
-    def _on_resolution_change(self, text):
-        if "640x480" in text:
-            self._send_command("resolution:640,480")
-        elif "1280x720" in text:
-            self._send_command("resolution:1280,720")
-        elif "320x240" in text:
-            self._send_command("resolution:320,240")
-        self._add_log("VIDEO", f"Resolution changed to {text}")
-
-    def _create_diagnostics_view(self):
-        widget = QWidget()
-        layout = QHBoxLayout()
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(16)
-
-        left_panel = QWidget()
-        left_layout = QVBoxLayout()
-        left_layout.setContentsMargins(0, 0, 0, 0)
-
-        charts_title = QLabel("Historical Sensor Analytics")
-        charts_title.setStyleSheet("color: #f1f5f9; font-size: 16px; font-weight: bold;")
-        left_layout.addWidget(charts_title)
-
-        charts_placeholder = QLabel("Charts will be displayed here")
-        charts_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        charts_placeholder.setStyleSheet(
-            "background-color: #1e293b; border-radius: 6px; padding: 40px; color: #64748b;"
-        )
-        left_layout.addWidget(charts_placeholder)
-
-        left_panel.setLayout(left_layout)
-        layout.addWidget(left_panel, 1)
-
-        right_panel = QWidget()
-        right_panel.setFixedWidth(384)
-        right_layout = QVBoxLayout()
-        right_layout.setContentsMargins(0, 0, 0, 0)
-
-        chat_title = QLabel("Local AI Sensor Analyst (Ollama)")
-        chat_title.setStyleSheet("color: #f1f5f9; font-size: 14px; font-weight: bold;")
-        right_layout.addWidget(chat_title)
-
-        self._chat_display = QTextEdit()
-        self._chat_display.setReadOnly(True)
-        self._chat_display.setStyleSheet("background-color: #131b2e; border-radius: 6px; padding: 8px;")
-        right_layout.addWidget(self._chat_display, 1)
-
-        chat_input_layout = QHBoxLayout()
-        self._chat_input = QLineEdit()
-        self._chat_input.setPlaceholderText("Ask about sensor data...")
-        chat_input_layout.addWidget(self._chat_input)
-
-        send_btn = QPushButton("Send")
-        send_btn.setFixedWidth(60)
-        send_btn.clicked.connect(self._send_chat)
-        chat_input_layout.addWidget(send_btn)
-
-        right_layout.addLayout(chat_input_layout)
-
-        right_panel.setLayout(right_layout)
-        layout.addWidget(right_panel)
-
-        widget.setLayout(layout)
-        return widget
-
-    def _create_sidebar(self):
-        sidebar = QWidget()
-        sidebar.setFixedWidth(320)
-        sidebar.setStyleSheet("background-color: #131b2e; border-left: 1px solid #334155;")
-        layout = QVBoxLayout()
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        header_layout = QHBoxLayout()
-        header_label = QLabel("Telemetry Sensors")
-        header_label.setStyleSheet("color: #f1f5f9; font-weight: bold; font-size: 13px;")
-        header_layout.addWidget(header_label)
-        header_layout.addStretch()
-
-        self._link_label = QLabel("Link: 98% (Optimal)")
-        self._link_label.setStyleSheet("color: #10b981; font-size: 11px;")
-        header_layout.addWidget(self._link_label)
-
-        estop_btn = QPushButton("E-STOP")
-        estop_btn.setFixedWidth(60)
-        estop_btn.setStyleSheet("background-color: #ef4444; font-weight: bold; padding: 4px 8px;")
-        estop_btn.clicked.connect(self._emergency_stop)
-        header_layout.addWidget(estop_btn)
-
-        layout.addLayout(header_layout)
-
-        self._temp_card = SensorCard("Chassis Core Temp", "°C", "🌡", 0, 60)
-        layout.addWidget(self._temp_card)
-
-        self._humidity_card = SensorCard("Ambient Humidity", "%", "💧", 0, 100)
-        layout.addWidget(self._humidity_card)
-
-        self._gas_card = SensorCard("Air Purity Metric", "PPM", "🌫", 0, 1000)
-        layout.addWidget(self._gas_card)
-
-        self._distance_card = SensorCard("Obstacle Distance", "cm", "📏", 0, 200)
-        layout.addWidget(self._distance_card)
-
-        health_group = QGroupBox("Subsystem Health")
-        health_layout = QVBoxLayout()
-
-        for name in ["ESP32 Main MCU", "Motor Drivers", "Pan/Tilt Servos"]:
-            row = QHBoxLayout()
-            label = QLabel(name)
-            label.setStyleSheet("color: #94a3b8; font-size: 11px;")
-            row.addWidget(label)
-            row.addStretch()
-            status = QLabel("OK")
-            status.setStyleSheet("color: #10b981; font-size: 11px; font-weight: bold;")
-            row.addWidget(status)
-            health_layout.addLayout(row)
-
-        battery_row = QHBoxLayout()
-        battery_label = QLabel("Battery Level")
-        battery_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        battery_row.addWidget(battery_label)
-        battery_row.addStretch()
-        self._battery_label = QLabel("12.4V")
-        self._battery_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-weight: bold;")
-        battery_row.addWidget(self._battery_label)
-        health_layout.addLayout(battery_row)
-
-        health_group.setLayout(health_layout)
-        layout.addWidget(health_group)
-
-        snapshot_btn = QPushButton("Take Snapshot")
-        snapshot_btn.setStyleSheet("background-color: #1d4ed8;")
-        snapshot_btn.clicked.connect(self._take_snapshot)
-        layout.addWidget(snapshot_btn)
-
-        diag_btn = QPushButton("System Diagnostics")
-        diag_btn.setStyleSheet("background-color: #475569;")
-        diag_btn.clicked.connect(self._toggle_view)
-        layout.addWidget(diag_btn)
-
-        config_btn = QPushButton("Device Configuration")
-        config_btn.setStyleSheet("background-color: #475569;")
-        layout.addWidget(config_btn)
-
-        follow_btn = QPushButton("Follow Mode")
-        follow_btn.setStyleSheet("background-color: #7c3aed;")
-        follow_btn.clicked.connect(self._toggle_follow_mode)
-        layout.addWidget(follow_btn)
-
-        layout.addStretch()
-
-        sidebar.setLayout(layout)
-        return sidebar
-
-    def _create_bottom_controls(self):
-        widget = QWidget()
-        widget.setFixedHeight(80)
-        widget.setStyleSheet("background-color: #131b2e; border-top: 1px solid #243147;")
-        layout = QHBoxLayout()
-        layout.setContentsMargins(12, 6, 12, 6)
-        layout.setSpacing(8)
-
-        speed_group = QGroupBox("Motor Speed")
-        speed_group.setStyleSheet("background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 6px;")
-        speed_layout = QHBoxLayout()
-        speed_layout.setContentsMargins(8, 4, 8, 4)
-        speed_layout.setSpacing(8)
-
-        self._speed_slider = QSlider(Qt.Orientation.Horizontal)
-        self._speed_slider.setRange(150, 255)
-        self._speed_slider.setValue(self._current_speed)
-        self._speed_slider.setFixedWidth(120)
-        self._speed_slider.valueChanged.connect(self._on_speed_change)
-        speed_layout.addWidget(self._speed_slider)
-
-        self._speed_label = QLabel(f"{self._current_speed} ({int(self._current_speed / 255 * 100)}%)")
-        self._speed_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
-        self._speed_label.setFixedWidth(70)
-        speed_layout.addWidget(self._speed_label)
-
-        speed_group.setLayout(speed_layout)
-        layout.addWidget(speed_group)
-
-        brake_group = QGroupBox("Auto-Brake")
-        brake_group.setStyleSheet("background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 6px;")
-        brake_layout = QHBoxLayout()
-        brake_layout.setContentsMargins(8, 4, 8, 4)
-        brake_layout.setSpacing(8)
-
-        self._brake_toggle = QPushButton("ON")
-        self._brake_toggle.setCheckable(True)
-        self._brake_toggle.setChecked(True)
-        self._brake_toggle.setFixedWidth(50)
-        self._brake_toggle.setFixedHeight(28)
-        self._brake_toggle.setStyleSheet("""
-            QPushButton {
-                background-color: #10b981;
-                color: white;
-                font-weight: 600;
-                font-size: 11px;
-                border-radius: 4px;
-                border: none;
-            }
-            QPushButton:!checked {
-                background-color: #64748b;
-            }
-        """)
-        self._brake_toggle.clicked.connect(self._toggle_brake)
-        brake_layout.addWidget(self._brake_toggle)
-
-        brake_label = QLabel("30cm")
-        brake_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
-        brake_layout.addWidget(brake_label)
-
-        brake_group.setLayout(brake_layout)
-        layout.addWidget(brake_group)
-
-        gimbal_group = QGroupBox("Gimbal")
-        gimbal_group.setStyleSheet("background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 6px;")
-        gimbal_layout = QHBoxLayout()
-        gimbal_layout.setContentsMargins(8, 4, 8, 4)
-        gimbal_layout.setSpacing(6)
-
-        pan_label = QLabel("Pan")
-        pan_label.setStyleSheet("color: #94a3b8; font-size: 10px;")
-        gimbal_layout.addWidget(pan_label)
-
-        self._gimbal_pan_label = QLabel(f"{self._gimbal_pan}°")
-        self._gimbal_pan_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
-        gimbal_layout.addWidget(self._gimbal_pan_label)
-
-        tilt_label = QLabel("Tilt")
-        tilt_label.setStyleSheet("color: #94a3b8; font-size: 10px;")
-        gimbal_layout.addWidget(tilt_label)
-
-        self._gimbal_tilt_label = QLabel(f"{self._gimbal_tilt}°")
-        self._gimbal_tilt_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
-        gimbal_layout.addWidget(self._gimbal_tilt_label)
-
-        center_btn = QPushButton("Center")
-        center_btn.setFixedHeight(28)
-        center_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
-                font-weight: 600;
-                font-size: 11px;
-                border-radius: 4px;
-                border: none;
-                padding: 4px 12px;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
-        """)
-        center_btn.clicked.connect(self._center_gimbal)
-        gimbal_layout.addWidget(center_btn)
-
-        gimbal_group.setLayout(gimbal_layout)
-        layout.addWidget(gimbal_group)
-
-        cloud_group = QGroupBox("Cloud")
-        cloud_layout = QVBoxLayout()
-
-        self._cloud_send_btn = QPushButton("POST")
-        self._cloud_send_btn.setFixedHeight(40)
-        self._cloud_send_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #8b5cf6;
-                color: white;
-                font-weight: bold;
-                font-size: 13px;
-                border-radius: 4px;
-                padding: 4px 16px;
-            }
-            QPushButton:hover {
-                background-color: #7c3aed;
-            }
-        """)
-        self._cloud_send_btn.clicked.connect(self._manual_send_to_cloud)
-        cloud_layout.addWidget(self._cloud_send_btn)
-
-        cloud_label = QLabel("Send telemetry")
-        cloud_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        cloud_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        cloud_layout.addWidget(cloud_label)
-
-        cloud_group.setLayout(cloud_layout)
-        layout.addWidget(cloud_group, 1)
-
-        keys_group = QGroupBox("Controls")
-        keys_layout = QVBoxLayout()
-
-        keys_label = QLabel("W/S: Drive  A/D: Turn")
-        keys_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        keys_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        keys_layout.addWidget(keys_label)
-
-        keys_label2 = QLabel("I/J/K/L: Gimbal  C: Center")
-        keys_label2.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        keys_label2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        keys_layout.addWidget(keys_label2)
-
-        keys_group.setLayout(keys_layout)
-        layout.addWidget(keys_group, 1)
-
-        stop_group = QGroupBox("")
-        stop_layout = QVBoxLayout()
-
-        stop_btn = QPushButton("STOP")
-        stop_btn.setFixedHeight(40)
-        stop_btn.setStyleSheet("background-color: #ef4444; font-size: 14px;")
-        stop_btn.clicked.connect(self._emergency_stop)
-        stop_layout.addWidget(stop_btn)
-
-        stop_group.setLayout(stop_layout)
-        layout.addWidget(stop_group, 1)
-
-        widget.setLayout(layout)
-        return widget
-
-    def _create_log_panel(self):
-        widget = QWidget()
-        widget.setFixedHeight(180)
-        widget.setStyleSheet("background-color: #0f172a; border-top: 1px solid #334155;")
-        layout = QVBoxLayout()
-        layout.setContentsMargins(16, 4, 16, 4)
-
-        header_layout = QHBoxLayout()
-        log_toggle = QLabel("[LOG] Click to expand/collapse")
-        log_toggle.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        header_layout.addWidget(log_toggle)
-
-        header_layout.addStretch()
-
-        baud_label = QLabel("115200 Baud")
-        baud_label.setStyleSheet("color: #64748b; font-size: 11px;")
-        header_layout.addWidget(baud_label)
-        layout.addLayout(header_layout)
-
-        self._log_display = QTextEdit()
-        self._log_display.setReadOnly(True)
-        self._log_display.setStyleSheet("background-color: #0f172a; border: none; color: #94a3b8; font-size: 11px;")
-        self._log_display.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        layout.addWidget(self._log_display)
-
-        widget.setLayout(layout)
-        return widget
+        self.setFocus()
 
     def connect_signals(self):
         self.log_message.connect(self._add_log)
+        self._video_canvas.gimbal_changed.connect(self._on_mouse_gimbal)
+
+    def _on_mouse_gimbal(self, pan, tilt):
+        self._gimbal_pan = int(pan)
+        self._gimbal_tilt = int(tilt)
+        self._gimbal_pan_label.setText(f"{self._gimbal_pan}°")
+        self._gimbal_tilt_label.setText(f"{self._gimbal_tilt}°")
+        self._send_command(f"servo:{self._gimbal_pan},{self._gimbal_tilt}")
 
     def start_connections(self):
         self._stop_real_connections()
@@ -895,25 +262,25 @@ class RoverTeleopApp(QWidget):
         else:
             self._add_log("CLOUD", f"Connection failed: {error}")
 
-    def _on_speed_change(self, value):
-        self._current_speed = value
-        percent = int(value / 255 * 100)
-        self._speed_label.setText(f"{value} ({percent}%)")
-
-    def _toggle_brake(self):
-        checked = self._brake_toggle.isChecked()
-        self._brake_toggle.setText("ON" if checked else "OFF")
-        self._add_log("SAFETY", f"Auto-brake {'enabled' if checked else 'disabled'}")
-
     def _center_gimbal(self):
         self._gimbal_pan = 90
         self._gimbal_tilt = 90
         self._gimbal_pan_label.setText(f"90°")
         self._gimbal_tilt_label.setText(f"90°")
+        self._video_canvas.set_gimbal(90, 90)
         self._send_command("servo:90,90")
 
     def _take_snapshot(self):
-        self._add_log("SNAPSHOT", "Frame captured (stub)")
+        pixmap = self._video_canvas.pixmap()
+        if pixmap is None or pixmap.isNull():
+            self._add_log("SNAPSHOT", "No frame to capture")
+            return
+        snapshot_dir = os.path.join(os.path.dirname(__file__), "snapshot")
+        os.makedirs(snapshot_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filepath = os.path.join(snapshot_dir, f"{timestamp}.png")
+        pixmap.save(filepath)
+        self._add_log("SNAPSHOT", f"Saved: {filepath}")
 
     def _toggle_view(self):
         if self._view_mode == "main":
@@ -967,6 +334,10 @@ class RoverTeleopApp(QWidget):
             return
 
         key = event.key()
+        if key in (Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D):
+            if self._telemetry_poller:
+                self._telemetry_poller.set_driving(True)
+
         if key == Qt.Key.Key_W:
             self._send_command("forward")
         elif key == Qt.Key.Key_S:
@@ -991,6 +362,14 @@ class RoverTeleopApp(QWidget):
             self._update_gimbal()
         elif key == Qt.Key.Key_C:
             self._center_gimbal()
+        elif key == Qt.Key.Key_1:
+            self._resolution_combo.setCurrentIndex(0)
+        elif key == Qt.Key.Key_2:
+            self._resolution_combo.setCurrentIndex(1)
+        elif key == Qt.Key.Key_3:
+            self._resolution_combo.setCurrentIndex(2)
+        elif key == Qt.Key.Key_4:
+            self._resolution_combo.setCurrentIndex(3)
         else:
             super().keyPressEvent(event)
 
@@ -1000,12 +379,15 @@ class RoverTeleopApp(QWidget):
         key = event.key()
         if key in (Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D):
             self._send_command("stop")
+            if self._telemetry_poller:
+                self._telemetry_poller.set_driving(False)
         else:
             super().keyReleaseEvent(event)
 
     def _update_gimbal(self):
         self._gimbal_pan_label.setText(f"{self._gimbal_pan}°")
         self._gimbal_tilt_label.setText(f"{self._gimbal_tilt}°")
+        self._video_canvas.set_gimbal(self._gimbal_pan, self._gimbal_tilt)
         self._send_command(f"servo:{self._gimbal_pan},{self._gimbal_tilt}")
 
     def closeEvent(self, event):

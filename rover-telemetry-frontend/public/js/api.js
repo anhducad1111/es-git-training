@@ -35,6 +35,16 @@ window.Api = (function () {
     return { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) };
   }
 
+  function deleteRequest(path) {
+    const url = `${window.APP_CONFIG.API_BASE_URL}${path}`;
+    return fetch(url, { method: 'DELETE' }).then(response => {
+      if (!response.ok) {
+        throw { code: 'UNKNOWN_ERROR', message: `HTTP ${response.status}`, request_id: null };
+      }
+      return null;
+    });
+  }
+
   return {
     health: () => request('/health'),
     rovers: () => request('/rovers'),
@@ -48,5 +58,8 @@ window.Api = (function () {
     system: () => request('/system'),
     systemHistory: (params) => request(`/system/history${buildQuery(params)}`),
     exportUrl: (uid, params) => `${window.APP_CONFIG.API_BASE_URL}/rovers/${uid}/export${buildQuery(params)}`,
+    media: (uid, params) => request(`/rovers/${uid}/media${buildQuery(params)}`),
+    deleteMedia: (uid, id) => deleteRequest(`/rovers/${uid}/media/${id}`),
+    mediaUrl: (uid, id) => `${window.APP_CONFIG.API_BASE_URL}/rovers/${uid}/media/${id}`,
   };
 })();

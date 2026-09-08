@@ -35,6 +35,10 @@ window.LiveView = (function () {
           <div class="panel-title">Obstacle distance · live</div>
           <canvas id="obstacle-chart" height="70"></canvas>
         </div>
+        <div class="panel">
+          <div class="panel-title">Media Gallery</div>
+          <div id="media-gallery" class="media-gallery"></div>
+        </div>
         <div class="live-bottom-grid">
           <div class="panel">
             <div class="panel-title">Incoming readings</div>
@@ -351,6 +355,50 @@ window.LiveView = (function () {
     }).catch((err) => showError(`Events/limits unavailable: ${err.message || err.code}`));
   }
 
+  function loadMediaGallery(uid) {
+    Api.media(uid, { limit: 50 }).then((data) => {
+      const gallery = document.getElementById('media-gallery');
+      if (!data.media || data.media.length === 0) {
+        gallery.innerHTML = '<p style="color: var(--text-dim);">No media files yet.</p>';
+        return;
+      }
+      gallery.innerHTML = data.media.map((m) => {
+        const icon = m.media_type === 'photo' ? '📷' : '🎥';
+        return `
+          <div class="media-item" data-id="${m.id}">
+            <div class="media-preview" style="background: #eee; border-radius: 4px; padding: 8px; text-align: center; font-size: 28px;">
+              ${icon}
+            </div>
+            <div class="media-info">
+              <div class="media-type">${m.media_type}</div>
+              <div class="media-time">${new Date(m.captured_at).toLocaleString()}</div>
+              <div class="media-size">${(m.file_size_bytes / 1024).toFixed(0)} KB</div>
+            </div>
+            <button class="media-delete-btn" data-id="${m.id}" aria-label="Delete media">✕</button>
+          </div>
+        `;
+      }).join('');
+
+      // Add delete handlers
+      gallery.querySelectorAll('.media-delete-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = btn.dataset.id;
+          if (confirm('Delete this media file?')) {
+            Api.deleteMedia(uid, id).then(() => {
+              loadMediaGallery(uid);
+            }).catch((err) => {
+              showError(`Failed to delete media: ${err.message || err.code}`);
+            });
+          }
+        });
+      });
+    }).catch((err) => {
+      console.error('Failed to load media:', err);
+      document.getElementById('media-gallery').innerHTML = '<p style="color: var(--text-dim);">Media unavailable.</p>';
+    });
+  }
+
   document.addEventListener('click', (evt) => {
     const btn = evt.target.closest('#telemetry-range-controls button');
     if (!btn) return;
@@ -370,6 +418,7 @@ window.LiveView = (function () {
       clearTimeout(cardsPollTimer);
       lastGoodCardsAt = null;
       pollCards(uid);
+      loadMediaGallery(uid);
     },
   };
 })();

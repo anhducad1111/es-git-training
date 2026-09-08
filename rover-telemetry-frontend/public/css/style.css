@@ -72,3 +72,16 @@ tr.rejected td { color: #9096a2; }
   .card-grid { grid-template-columns: 1fr; }
   .live-layout { grid-template-columns: 1fr; }
 }
+
+.live-bottom-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-top: 12px; }
+.limit-row { margin-bottom: 10px; font-size: 12px; }
+.limit-label { text-transform: uppercase; color: var(--text-dim); font-size: 11px; }
+.limit-track { background: #eceef1; border-radius: 3px; height: 6px; margin: 3px 0; overflow: hidden; }
+.limit-fill { background: var(--ok); height: 100%; }
+.limit-fill.over { background: var(--bad); }
+.event-list { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+.event-list li { padding: 3px 0; border-bottom: 1px solid var(--border); }
+.event-time { color: var(--text-dim); margin-right: 6px; }
+@media (max-width: 700px) {
+  .live-bottom-grid { grid-template-columns: 1fr; }
+}

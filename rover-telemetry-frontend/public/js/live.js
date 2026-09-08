@@ -35,10 +35,31 @@ window.LiveView = (function () {
           <div class="panel-title">Obstacle distance · live</div>
           <canvas id="obstacle-chart" height="70"></canvas>
         </div>
-        <!-- charts and tables from later tasks go below this line -->
+        <div class="live-bottom-grid">
+          <div class="panel">
+            <div class="panel-title">Incoming readings</div>
+            <table>
+              <thead><tr><th>Time (UTC)</th><th>Temp</th><th>Hum</th><th>Gas</th><th>Dist</th><th>State</th></tr></thead>
+              <tbody id="incoming-readings-body"></tbody>
+            </table>
+          </div>
+          <div>
+            <div class="panel">
+              <div class="panel-title">Sensor limits</div>
+              <div id="sensor-limit-bars"></div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">Recent events</div>
+              <ul id="recent-events-list" class="event-list"></ul>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
+
+  const incomingBuffers = {}; // uid -> array of {recorded_at, temperature_c, humidity_pct, gas_ppm, distance_cm, state}
+  const MAX_INCOMING_ROWS = 8;
 
   function statusDotClass(status) {
     if (status === 'ONLINE') return 'dot-ok';
@@ -168,6 +189,7 @@ window.LiveView = (function () {
         renderCards(latest, summary.buckets);
         loadTelemetryChart(uid);
         loadObstacleChart(uid);
+        pollEventsAndLimits(uid, latest);
       })
       .catch((err) => {
         const staleFor = lastGoodCardsAt ? `stale since ${new Date(lastGoodCardsAt).toLocaleTimeString()}` : 'no data yet';
@@ -261,6 +283,72 @@ window.LiveView = (function () {
         ]);
       }
     }).catch((err) => showError(`Obstacle chart unavailable: ${err.message || err.code}`));
+  }
+
+  function classifyState(reading, recentEvents) {
+    const nearEvent = (type) => recentEvents.some((e) => e.type === type && Math.abs(new Date(e.at) - new Date(reading.recorded_at)) < 2000);
+    if (nearEvent('threshold_exceeded')) return 'gas spike';
+    if (nearEvent('auto_brake_engaged') || reading.auto_brake) return 'brake';
+    return 'stored';
+  }
+
+  function renderIncomingReadings(uid, recentEvents) {
+    const rows = incomingBuffers[uid] || [];
+    document.getElementById('incoming-readings-body').innerHTML = rows.map((r) => `
+      <tr>
+        <td>${r.recorded_at.slice(11, 19)}</td>
+        <td>${fmt(r.temperature_c)}</td><td>${fmt(r.humidity_pct)}</td>
+        <td>${fmt(r.gas_ppm, 0)}</td><td>${fmt(r.distance_cm)}</td>
+        <td>${classifyState(r, recentEvents)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderSensorLimitBars(latest, limits) {
+    const rows = [
+      ['temperature_c', 'temperature', '°C'],
+      ['humidity_pct', 'humidity', '%'],
+      ['gas_ppm', 'gas', 'ppm'],
+      ['distance_cm', 'distance', 'cm'],
+    ];
+    document.getElementById('sensor-limit-bars').innerHTML = rows.map(([key, label, unit]) => {
+      const limit = limits[key];
+      const value = latest[key];
+      const pct = value === null || !limit ? 0 : Math.min(100, Math.max(0, ((value - limit.min) / (limit.max - limit.min)) * 100));
+      const over = value !== null && limit && (value < limit.min || value > limit.max);
+      return `
+        <div class="limit-row">
+          <div class="limit-label">${label}</div>
+          <div class="limit-track"><div class="limit-fill ${over ? 'over' : ''}" style="width:${pct}%"></div></div>
+          <div class="limit-value">${fmt(value)} / ${limit ? limit.max : '–'} ${unit}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderRecentEvents(events) {
+    document.getElementById('recent-events-list').innerHTML = events.slice(0, 8).map((e) => `
+      <li><span class="event-time">${e.at.slice(11, 19)}</span> ${describeEvent(e)}</li>
+    `).join('');
+  }
+
+  function describeEvent(e) {
+    if (e.type === 'threshold_exceeded') return `${e.sensor} ${e.value} above limit ${e.limit}`;
+    if (e.type === 'auto_brake_engaged') return `auto-brake engaged · ${e.value} cm`;
+    if (e.type === 'auto_brake_cleared') return 'obstacle cleared';
+    if (e.type === 'reconnected') return `reconnected · gap ${e.gap_seconds}s`;
+    return e.type;
+  }
+
+  function pollEventsAndLimits(uid, latest) {
+    Promise.all([Api.events(uid, { limit: 20 }), Api.sensorLimits()]).then(([eventsResp, limits]) => {
+      incomingBuffers[uid] = incomingBuffers[uid] || [];
+      incomingBuffers[uid].unshift({ ...latest });
+      incomingBuffers[uid] = incomingBuffers[uid].slice(0, MAX_INCOMING_ROWS);
+      renderIncomingReadings(uid, eventsResp.events);
+      renderSensorLimitBars(latest, limits);
+      renderRecentEvents(eventsResp.events);
+    }).catch((err) => showError(`Events/limits unavailable: ${err.message || err.code}`));
   }
 
   document.addEventListener('click', (evt) => {

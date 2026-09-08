@@ -19,7 +19,12 @@ window.Api = (function () {
       throw { code: 'NETWORK_ERROR', message: networkError.message, request_id: null };
     }
     const contentType = response.headers.get('content-type') || '';
-    const body = contentType.includes('application/json') ? await response.json() : null;
+    let body = null;
+    try {
+      body = contentType.includes('application/json') ? await response.json() : null;
+    } catch (parseError) {
+      throw { code: 'UNKNOWN_ERROR', message: `Failed to parse JSON response: ${parseError.message}`, request_id: null };
+    }
     if (!response.ok) {
       throw (body && body.error) || { code: 'UNKNOWN_ERROR', message: `HTTP ${response.status}`, request_id: null };
     }

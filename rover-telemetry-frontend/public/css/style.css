@@ -102,3 +102,6 @@ tr.rejected td { color: #9096a2; }
 @media (max-width: 700px) {
   .media-gallery { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
 }
+
+.system-panels-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 700px) { .system-panels-grid { grid-template-columns: 1fr; } }

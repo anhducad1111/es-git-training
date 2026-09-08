@@ -2,6 +2,8 @@ window.LiveView = (function () {
   let el;
   let pollTimer = null;
   let selectedUid = null;
+  let cardsPollTimer = null;
+  let lastGoodCardsAt = null;
 
   const TEMPLATE = `
     <div class="live-layout">
@@ -18,7 +20,9 @@ window.LiveView = (function () {
       </aside>
       <div class="live-main" id="live-main">
         <div id="live-error-banner"></div>
-        <p>Select a rover from the fleet list.</p>
+        <div id="live-stale-banner"></div>
+        <div class="card-grid" id="metric-cards"></div>
+        <!-- charts and tables from later tasks go below this line -->
       </div>
     </div>
   `;
@@ -97,6 +101,7 @@ window.LiveView = (function () {
 
   function stop() {
     clearTimeout(pollTimer);
+    clearTimeout(cardsPollTimer);
     pollTimer = null;
   }
 
@@ -104,5 +109,71 @@ window.LiveView = (function () {
     return selectedUid;
   }
 
-  return { mount, start, stop, getSelectedUid, onRoverSelected: null };
+  function fmt(value, digits) {
+    return value === null || value === undefined ? '–' : Number(value).toFixed(digits === undefined ? 1 : digits);
+  }
+
+  function renderCards(latest, todayBuckets) {
+    const today = todayBuckets[0];
+    const rows = [
+      { key: 'temperature_c', label: 'Temp °C' },
+      { key: 'humidity_pct', label: 'Hum %' },
+      { key: 'gas_ppm', label: 'Gas ppm' },
+      { key: 'distance_cm', label: 'Dist cm' },
+    ];
+    const cardsHtml = rows.map(({ key, label }) => {
+      const range = today && today[key] ? `${fmt(today[key].min)} / ${fmt(today[key].max)} today` : '– / – today';
+      const stale = latest.age_seconds > window.APP_CONFIG.DEGRADED_THRESHOLD_SECONDS;
+      return `
+        <div class="card ${stale ? 'warn' : ''}">
+          <div class="card-label">${label}</div>
+          <div class="card-value">${fmt(latest[key])}</div>
+          <div class="card-sub">${stale ? `at ${latest.recorded_at}` : range}</div>
+        </div>
+      `;
+    }).join('') + `
+      <div class="card">
+        <div class="card-label">Auto-brake</div>
+        <div class="card-value">${latest.auto_brake ? 'BRAKING' : 'CLEAR'}</div>
+        <div class="card-sub">${today ? `${today.obstacle_events} obstacles today` : '– obstacles today'}</div>
+      </div>
+    `;
+    document.getElementById('metric-cards').innerHTML = cardsHtml;
+  }
+
+  function showStale(message) {
+    document.getElementById('live-stale-banner').innerHTML = message
+      ? `<div class="stale-banner">${message}</div>` : '';
+  }
+
+  function pollCards(uid) {
+    const today = new Date().toISOString().slice(0, 10);
+    Promise.all([Api.latest(uid), Api.summary(uid, { granularity: 'day', start: today, end: today })])
+      .then(([latest, summary]) => {
+        lastGoodCardsAt = Date.now();
+        showStale(null);
+        renderCards(latest, summary.buckets);
+      })
+      .catch((err) => {
+        const staleFor = lastGoodCardsAt ? `stale since ${new Date(lastGoodCardsAt).toLocaleTimeString()}` : 'no data yet';
+        showStale(`${err.code === 'NOT_FOUND' ? 'Rover has never reported.' : `Live data unavailable (${err.message || err.code}).`} ${staleFor}`);
+      })
+      .finally(() => {
+        if (document.getElementById('metric-cards')) {
+          cardsPollTimer = setTimeout(() => pollCards(uid), window.APP_CONFIG.POLL_INTERVAL_LIVE_MS);
+        }
+      });
+  }
+
+  return {
+    mount,
+    start,
+    stop,
+    getSelectedUid,
+    onRoverSelected(uid) {
+      clearTimeout(cardsPollTimer);
+      lastGoodCardsAt = null;
+      pollCards(uid);
+    },
+  };
 })();

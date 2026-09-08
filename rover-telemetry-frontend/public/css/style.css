@@ -40,6 +40,7 @@ main { padding: 16px 20px; }
 .card .card-value { font-size: 26px; font-weight: 700; margin-top: 4px; }
 .card .card-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 .card.warn { border-color: var(--warn); }
+.card.warn .card-sub { color: var(--warn); }
 .card.bad { border-color: var(--bad); }
 
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin-top: 12px; }

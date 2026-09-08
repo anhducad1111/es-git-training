@@ -4,6 +4,8 @@ window.LiveView = (function () {
   let selectedUid = null;
   let cardsPollTimer = null;
   let lastGoodCardsAt = null;
+  let cardsPollGeneration = 0;
+  let fleetPollGeneration = 0;
 
   const TEMPLATE = `
     <div class="live-layout">
@@ -115,6 +117,7 @@ window.LiveView = (function () {
   }
 
   function pollFleetAndRejects() {
+    const myGeneration = fleetPollGeneration;
     Promise.all([Api.rovers(), Api.validationErrorsSummary('24h')])
       .then(([rovers, rejects]) => {
         clearError();
@@ -124,7 +127,11 @@ window.LiveView = (function () {
           .map(([code, count]) => `${code} ${count}`).join(' · ');
       })
       .catch((err) => showError(`Fleet list unavailable: ${err.message || err.code}`))
-      .finally(() => { pollTimer = setTimeout(pollFleetAndRejects, window.APP_CONFIG.POLL_INTERVAL_LIVE_MS); });
+      .finally(() => {
+        if (myGeneration === fleetPollGeneration) {
+          pollTimer = setTimeout(pollFleetAndRejects, window.APP_CONFIG.POLL_INTERVAL_LIVE_MS);
+        }
+      });
   }
 
   function mount(rootEl) {
@@ -133,14 +140,23 @@ window.LiveView = (function () {
   }
 
   function start() {
-    if (pollTimer) return;
-    pollFleetAndRejects();
+    if (!pollTimer) {
+      pollFleetAndRejects();
+    }
+    const uid = getSelectedUid();
+    if (uid && !cardsPollTimer) {
+      cardsPollGeneration += 1;
+      pollCards(uid);
+    }
   }
 
   function stop() {
     clearTimeout(pollTimer);
     clearTimeout(cardsPollTimer);
     pollTimer = null;
+    cardsPollTimer = null;
+    cardsPollGeneration += 1;
+    fleetPollGeneration += 1;
   }
 
   function getSelectedUid() {
@@ -185,9 +201,11 @@ window.LiveView = (function () {
   }
 
   function pollCards(uid) {
+    const myGeneration = cardsPollGeneration;
     const today = new Date().toISOString().slice(0, 10);
     Promise.all([Api.latest(uid), Api.summary(uid, { granularity: 'day', start: today, end: today })])
       .then(([latest, summary]) => {
+        if (myGeneration !== cardsPollGeneration) return;
         lastGoodCardsAt = Date.now();
         showStale(null);
         renderCards(latest, summary.buckets);
@@ -196,11 +214,12 @@ window.LiveView = (function () {
         pollEventsAndLimits(uid, latest);
       })
       .catch((err) => {
+        if (myGeneration !== cardsPollGeneration) return;
         const staleFor = lastGoodCardsAt ? `stale since ${new Date(lastGoodCardsAt).toLocaleTimeString()}` : 'no data yet';
         showStale(`${err.code === 'NOT_FOUND' ? 'Rover has never reported.' : `Live data unavailable (${err.message || err.code}).`} ${staleFor}`);
       })
       .finally(() => {
-        if (document.getElementById('metric-cards')) {
+        if (myGeneration === cardsPollGeneration && document.getElementById('metric-cards')) {
           cardsPollTimer = setTimeout(() => pollCards(uid), window.APP_CONFIG.POLL_INTERVAL_LIVE_MS);
         }
       });
@@ -416,6 +435,7 @@ window.LiveView = (function () {
     getSelectedUid,
     onRoverSelected(uid) {
       clearTimeout(cardsPollTimer);
+      cardsPollGeneration += 1;
       lastGoodCardsAt = null;
       pollCards(uid);
       loadMediaGallery(uid);

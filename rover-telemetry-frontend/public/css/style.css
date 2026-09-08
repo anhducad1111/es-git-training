@@ -52,7 +52,17 @@ tr.rejected td { color: #9096a2; }
 .error-banner { background: #fdeceb; border: 1px solid var(--bad); color: var(--bad); padding: 6px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
 .stale-banner { background: #fff6e5; border: 1px solid var(--warn); color: var(--warn); padding: 6px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
 
+.live-layout { display: grid; grid-template-columns: 240px 1fr; gap: 16px; }
+.live-rail .fleet-item { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.live-rail .fleet-item.selected { background: #eaf0fe; }
+.live-rail .fleet-uid { font-weight: 600; }
+.live-rail .fleet-status { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-ok { background: var(--ok); }
+.dot-warn { background: var(--warn); }
+.dot-bad { background: var(--bad); }
 @media (max-width: 700px) {
   .app-header { flex-wrap: wrap; }
   .card-grid { grid-template-columns: 1fr; }
+  .live-layout { grid-template-columns: 1fr; }
 }

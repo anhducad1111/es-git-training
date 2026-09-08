@@ -87,6 +87,8 @@ rover-telemetry-frontend/public/
 
 **Warnings:** the header's warning count and per-card warning styling come directly from `/system.warnings`; no threshold values are hard-coded client-side beyond what's needed to draw the reference lines (which also come from `/system`'s reported limits where available, falling back to `config.js` constants otherwise).
 
+**Sensor-limit editor:** a panel backed by `GET /config/sensor-limits` and `PUT /config/sensor-limits/{field}`. Lists the four numeric fields (`temperature_c`, `humidity_pct`, `gas_ppm`, `distance_cm`) with editable min/max inputs and each field's `updated_at`. Saving one field calls `PUT` for that field only; a validation failure from the API (`min` not less than `max`) is shown inline on that field's row rather than blocking the others. This is not in the rendered UI sketch, so it gets a plain, undecorated form consistent with the rest of the System view rather than a specific mocked-up treatment.
+
 ## 7. Shared error handling
 
 - `api.js` wraps `fetch`; a non-2xx response is parsed for the `{error: {code, message, request_id}}` shape and surfaced as a small inline banner in the relevant panel, not a global alert.
@@ -106,4 +108,3 @@ No backend changes are made, so backend test suite is untouched. For the dashboa
 - Cockpit tab (§4 above).
 - Authentication (matches current API state; §11.6 "Auth: None").
 - Media (photo/video) browsing UI — not part of §11's three views or its mockups.
-- Sensor-limit editing UI (`PUT /config/sensor-limits/{field}`) — §11.3 mentions a limit editor but it is not present in the UI sketch's rendered mockup; deferred rather than guessed. Confirm with the user if this turns out to be wanted before implementation starts, since it changes the System view's scope.

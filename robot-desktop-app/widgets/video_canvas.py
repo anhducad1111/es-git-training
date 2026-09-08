@@ -96,6 +96,17 @@ class VideoCanvas(QLabel):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawEllipse(QPointF(cx, cy), 16, 16)
 
+        if hasattr(self, '_app') and hasattr(self._app, '_hog_detections'):
+            for det in self._app._hog_detections:
+                x, y, w, h = det["x"], det["y"], det["w"], det["h"]
+                conf = det["confidence"]
+                label = det.get("label", "Person")
+                painter.setPen(QPen(QColor(16, 185, 129), 2))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(x, y, w, h)
+                painter.setFont(QFont("JetBrains Mono", 8))
+                painter.drawText(x, y - 5, f"{label} {conf:.1f}")
+
         painter.end()
 
     def update_frame(self, jpeg_data):

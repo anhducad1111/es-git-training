@@ -2,6 +2,7 @@ import os
 import tempfile
 from datetime import datetime
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QImage
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -126,6 +127,11 @@ class RoverTeleopApp(QWidget):
         self._cloud_timer.timeout.connect(self._send_cloud_update)
         self._cloud_timer.start(10000)
 
+        self._hog_detector = None
+        self._yolo_detector = None
+        self._hog_detections = []
+        self._detection_method = "HOG"
+
         self._add_log("MODE", "Connecting to REAL ESP32 hardware...")
 
         self._cloud_api = CloudAPI()
@@ -180,6 +186,55 @@ class RoverTeleopApp(QWidget):
             frame = self._video_receiver.take_frame()
             if frame:
                 self._video_canvas.update_frame_jpeg(frame)
+                if (self._hog_detector and self._hog_detector.isRunning()) or \
+                   (self._yolo_detector and self._yolo_detector.isRunning()):
+                    import cv2
+                    import numpy as np
+                    if isinstance(frame, QImage):
+                        ptr = frame.bits()
+                        ptr.setsize(frame.sizeInBytes())
+                        arr = np.array(ptr).reshape(frame.height(), frame.width(), 4)
+                        bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
+                    else:
+                        nparr = np.frombuffer(frame, np.uint8)
+                        bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    if bgr is not None:
+                        if self._hog_detector and self._hog_detector.isRunning():
+                            self._hog_detector.set_frame(bgr)
+                        if self._yolo_detector and self._yolo_detector.isRunning():
+                            self._yolo_detector.set_frame(bgr)
+
+    def _toggle_hog_detection(self):
+        if self._detection_method == "HOG":
+            if self._hog_detector and self._hog_detector.isRunning():
+                self._hog_detector.stop_detection()
+                self._hog_detections = []
+                self._add_log("HOG", "Human detection stopped")
+            else:
+                from hog_detector import HOGDetector
+                self._hog_detector = HOGDetector()
+                self._hog_detector.detected.connect(self._on_hog_detected)
+                self._hog_detector.error.connect(lambda e: self._add_log("HOG", f"Error: {e}"))
+                self._hog_detector.start_detection()
+                self._add_log("HOG", "Human detection started")
+        elif self._detection_method == "YOLO":
+            if self._yolo_detector and self._yolo_detector.isRunning():
+                self._yolo_detector.stop_detection()
+                self._hog_detections = []
+                self._add_log("YOLO", "Object detection stopped")
+            else:
+                from yolo_detector import YOLODetector
+                self._yolo_detector = YOLODetector()
+                self._yolo_detector.detected.connect(self._on_hog_detected)
+                self._yolo_detector.error.connect(lambda e: self._add_log("YOLO", f"Error: {e}"))
+                self._yolo_detector.status.connect(lambda e: self._add_log("YOLO", e))
+                self._yolo_detector.start_detection()
+                self._add_log("YOLO", "Object detection started")
+
+    def _on_hog_detected(self, detections):
+        self._hog_detections = detections
+        if detections:
+            self._add_log("HOG", f"Detected {len(detections)} person(s)")
 
     def _on_video_stats(self, stats):
         pass

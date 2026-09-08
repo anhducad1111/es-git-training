@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QCheckBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
+    QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
     QSlider, QVBoxLayout, QWidget
 )
 
@@ -188,6 +188,59 @@ def create_bottom_controls(app):
     app._super_res_check.setStyleSheet("color: #64748b; font-size: 9px;")
     layout.addWidget(app._super_res_check)
 
+    layout.addSpacing(10)
+
+    app._detect_combo = QComboBox()
+    app._detect_combo.addItems(["HOG", "YOLO"])
+    app._detect_combo.setFixedHeight(28)
+    app._detect_combo.setFixedWidth(60)
+    app._detect_combo.setStyleSheet("""
+        QComboBox {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            font-size: 10px;
+            padding: 2px 8px;
+        }
+        QComboBox::drop-down {
+            border: none;
+        }
+        QComboBox::down-arrow {
+            image: none;
+        }
+        QComboBox QAbstractItemView {
+            background-color: #1e293b;
+            color: #e2e8f0;
+            selection-background-color: #06b6d4;
+        }
+    """)
+    app._detect_combo.currentTextChanged.connect(lambda t: _on_detect_method_change(app, t))
+    layout.addWidget(app._detect_combo)
+
+    app._hog_btn = QPushButton("DETECT")
+    app._hog_btn.setFixedHeight(32)
+    app._hog_btn.setCheckable(True)
+    app._hog_btn.setStyleSheet("""
+        QPushButton {
+            background-color: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #10b981;
+            font-weight: 600;
+            font-size: 11px;
+            padding: 6px 16px;
+            letter-spacing: 1px;
+        }
+        QPushButton:hover {
+            background-color: rgba(16, 185, 129, 0.25);
+        }
+        QPushButton:checked {
+            background-color: #10b981;
+            color: #0a0e1a;
+        }
+    """)
+    app._hog_btn.clicked.connect(app._toggle_hog_detection)
+    layout.addWidget(app._hog_btn)
+
     layout.addStretch()
 
     widget.setLayout(layout)
@@ -213,3 +266,9 @@ def _toggle_mouse_gimbal(app):
     if hasattr(app, '_video_canvas'):
         app._video_canvas._mouse_gimbal_enabled = checked
     app._add_log("GIMBAL", f"Mouse gimbal {'enabled' if checked else 'disabled'}")
+
+
+def _on_detect_method_change(app, method):
+    if hasattr(app, '_detection_method'):
+        app._detection_method = method
+        app._add_log("DETECT", f"Detection method: {method}")

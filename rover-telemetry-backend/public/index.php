@@ -21,6 +21,10 @@ use RoverTelemetry\Controllers\RoverEventsController;
 use RoverTelemetry\Controllers\ValidationErrorController;
 use RoverTelemetry\Controllers\SensorLimitsGetController;
 use RoverTelemetry\Controllers\SensorLimitsPutController;
+use RoverTelemetry\Controllers\MediaUploadController;
+use RoverTelemetry\Controllers\MediaListController;
+use RoverTelemetry\Controllers\MediaServeController;
+use RoverTelemetry\Controllers\MediaDeleteController;
 
 header('Content-Type: application/json; charset=UTF-8');
 
@@ -49,6 +53,10 @@ $roverEventsController = new RoverEventsController($pdo, $config);
 $validationErrorController = new ValidationErrorController($pdo);
 $sensorLimitsGetController = new SensorLimitsGetController($pdo);
 $sensorLimitsPutController = new SensorLimitsPutController($pdo);
+$mediaUploadController = new MediaUploadController($pdo, $config);
+$mediaListController = new MediaListController($pdo);
+$mediaServeController = new MediaServeController($pdo, $config);
+$mediaDeleteController = new MediaDeleteController($pdo, $config);
 
 $router->add('POST', '/api/v1/telemetry', function () use ($telemetryController) {
     $raw = file_get_contents('php://input');
@@ -104,9 +112,41 @@ $router->add('PUT', '/api/v1/config/sensor-limits/(?P<field>[a-z_]+)', function 
     return $sensorLimitsPutController->put($params, $body);
 });
 
+$router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/media', function (array $params) use ($mediaListController) {
+    return $mediaListController->list($params, $_GET);
+});
+$router->add('DELETE', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/media/(?P<id>\d+)', function (array $params) use ($mediaDeleteController) {
+    return $mediaDeleteController->delete($params);
+});
+
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 $apiPos = strpos($uri, '/api/v1');
 $path = $apiPos !== false ? substr($uri, $apiPos) : $uri;
+
+// Upload (multipart/form-data, needs $_FILES) and serve (streams a binary body)
+// bypass the JSON-body/JSON-response router path below, since neither fits it.
+if (preg_match('#^/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/media$#', $path, $m) && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    try {
+        $result = $mediaUploadController->upload($m, $_FILES['file'] ?? []);
+        http_response_code($result['status']);
+        echo json_encode($result['body']);
+    } catch (ApiException $e) {
+        http_response_code($e->httpStatus);
+        echo json_encode($e->toArray($requestId));
+    }
+    exit;
+}
+
+if (preg_match('#^/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/media/(?P<id>\d+)$#', $path, $m) && ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET') {
+    try {
+        $mediaServeController->serve($m);
+    } catch (ApiException $e) {
+        http_response_code($e->httpStatus);
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode($e->toArray($requestId));
+    }
+    exit;
+}
 
 try {
     $result = $router->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', $path);

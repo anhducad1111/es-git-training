@@ -27,6 +27,10 @@ window.HistoryView = (function () {
           </select>
         </label>
         <span id="history-sensor-toggles"></span>
+        <span class="export-buttons">
+          <button id="export-csv">Export CSV</button>
+          <button id="export-json">Export JSON</button>
+        </span>
       </div>
     </div>
     <div class="panel">
@@ -71,6 +75,22 @@ window.HistoryView = (function () {
     document.getElementById('history-error-banner').innerHTML = message ? `<div class="error-banner">${message}</div>` : '';
   }
 
+  function currentRangeIso() {
+    return { start: new Date(Date.now() - RANGE_TO_MS[range]).toISOString(), end: new Date().toISOString() };
+  }
+
+  function triggerExport(format) {
+    if (!uid) return;
+    const { start, end } = currentRangeIso();
+    const url = Api.exportUrl(uid, { format, start, end });
+    const link = document.createElement('a');
+    link.href = url;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
   function runQuery() {
     if (!uid) return;
     const start = new Date(Date.now() - RANGE_TO_MS[range]).toISOString();
@@ -108,6 +128,8 @@ window.HistoryView = (function () {
       sensors[input.dataset.sensor] = input.checked;
       if (window.HistoryView._onSensorsChanged) window.HistoryView._onSensorsChanged();
     });
+    document.getElementById('export-csv').addEventListener('click', () => triggerExport('csv'));
+    document.getElementById('export-json').addEventListener('click', () => triggerExport('json'));
   }
 
   function start() {}

@@ -173,11 +173,27 @@ window.HistoryView = (function () {
       : gaps.map((g) => `<li>${Api.escapeHtml(g.start)} → ${Api.escapeHtml(g.end)} · ${g.duration_seconds}s · ${g.missing_readings} readings missing</li>`).join('');
   }
 
+  // Mirrors the resolution ladder used for the chart above (see runQuery/Api.readings
+  // with resolution=auto, and backend design proposal §6.5): sub-day ranges need
+  // minute/hour buckets or the statistics table silently shows whole-day stats that
+  // disagree with a 1h/6h/24h chart. /summary only supports minute/hour/day (no raw),
+  // so the finest granularity we can ask for is 'minute'.
+  const RANGE_TO_GRANULARITY = { '1h': 'minute', '6h': 'minute', '24h': 'hour', '7d': 'day', '30d': 'day' };
+
   function loadSummaryPanels() {
     if (!uid) return;
-    const start = new Date(Date.now() - RANGE_TO_MS[range]).toISOString().slice(0, 10);
-    const end = new Date().toISOString().slice(0, 10);
-    const granularity = resolution === 'raw' ? 'hour' : (resolution === 'auto' ? 'day' : resolution);
+    const isAuto = resolution === 'auto';
+    // For an explicit resolution override or a day-scale range use whole-day
+    // boundaries (matches the API's date-only example); for auto sub-day ranges use
+    // the precise window so the statistics table matches what the chart is showing.
+    const useDayBoundaries = !isAuto || RANGE_TO_GRANULARITY[range] === 'day';
+    const start = useDayBoundaries
+      ? new Date(Date.now() - RANGE_TO_MS[range]).toISOString().slice(0, 10)
+      : new Date(Date.now() - RANGE_TO_MS[range]).toISOString();
+    const end = useDayBoundaries ? new Date().toISOString().slice(0, 10) : new Date().toISOString();
+    const granularity = resolution === 'raw'
+      ? 'hour'
+      : (isAuto ? (RANGE_TO_GRANULARITY[range] || 'day') : resolution);
     Api.summary(uid, { granularity, start, end }).then((summaryData) => {
       const buckets = summaryData.buckets;
       document.getElementById('history-stats-body').innerHTML = Object.entries(SENSOR_META).map(([key, meta]) => {

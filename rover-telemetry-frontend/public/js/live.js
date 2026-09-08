@@ -31,6 +31,10 @@ window.LiveView = (function () {
           </div>
           <canvas id="telemetry-chart" height="90"></canvas>
         </div>
+        <div class="panel">
+          <div class="panel-title">Obstacle distance · live</div>
+          <canvas id="obstacle-chart" height="70"></canvas>
+        </div>
         <!-- charts and tables from later tasks go below this line -->
       </div>
     </div>
@@ -163,6 +167,7 @@ window.LiveView = (function () {
         showStale(null);
         renderCards(latest, summary.buckets);
         loadTelemetryChart(uid);
+        loadObstacleChart(uid);
       })
       .catch((err) => {
         const staleFor = lastGoodCardsAt ? `stale since ${new Date(lastGoodCardsAt).toLocaleTimeString()}` : 'no data yet';
@@ -229,6 +234,33 @@ window.LiveView = (function () {
         Charts.updateChart(telemetryChart, labels, [max, min, avg]);
       }
     }).catch((err) => showError(`Telemetry chart unavailable: ${err.message || err.code}`));
+  }
+
+  let obstacleChart = null;
+
+  function loadObstacleChart(uid) {
+    Api.readings(uid, { limit: 150, order: 'desc', resolution: 'raw' }).then((data) => {
+      const readings = data.readings.slice().reverse();
+      const labels = readings.map((r) => labelFor(r.recorded_at));
+      const distance = readings.map((r) => (r.distance_cm === null ? null : r.distance_cm));
+      const brakeFlags = readings.map((r) => (r.auto_brake ? 1 : 0));
+      const maxDistance = Math.max(120, ...distance.filter((v) => v !== null));
+      if (!obstacleChart) {
+        obstacleChart = Charts.lineWithBand({
+          canvasId: 'obstacle-chart', labels, avg: distance, min: distance, max: distance,
+          avgLabel: 'Distance (cm)', colorRgb: '26,127,55',
+        });
+        obstacleChart.data.datasets.push(Charts.thresholdDataset('Auto-brake threshold', window.APP_CONFIG.AUTO_BRAKE_THRESHOLD_CM, labels.length, '207,34,46'));
+        obstacleChart.data.datasets.push(Charts.bandDataset('Brake engaged', brakeFlags, maxDistance, 'rgba(207,34,46,0.15)'));
+        obstacleChart.update('none');
+      } else {
+        Charts.updateChart(obstacleChart, labels, [
+          distance, distance, distance,
+          new Array(labels.length).fill(window.APP_CONFIG.AUTO_BRAKE_THRESHOLD_CM),
+          brakeFlags.map((f) => (f ? maxDistance : 0)),
+        ]);
+      }
+    }).catch((err) => showError(`Obstacle chart unavailable: ${err.message || err.code}`));
   }
 
   document.addEventListener('click', (evt) => {

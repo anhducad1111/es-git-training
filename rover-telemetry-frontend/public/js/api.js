@@ -45,7 +45,14 @@ window.Api = (function () {
     });
   }
 
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
+
   return {
+    escapeHtml,
     health: () => request('/health'),
     rovers: () => request('/rovers'),
     latest: (uid) => request(`/rovers/${uid}/latest`),

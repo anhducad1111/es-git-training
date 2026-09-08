@@ -82,9 +82,9 @@ window.LiveView = (function () {
   function renderFleet(rovers) {
     const list = document.getElementById('fleet-list');
     list.innerHTML = rovers.map((r) => `
-      <div class="fleet-item ${r.device_uid === selectedUid ? 'selected' : ''}" data-uid="${r.device_uid}">
+      <div class="fleet-item ${r.device_uid === selectedUid ? 'selected' : ''}" data-uid="${Api.escapeHtml(r.device_uid)}">
         <span class="dot ${statusDotClass(r.status)}"></span>
-        <span class="fleet-uid">${r.device_uid}</span>
+        <span class="fleet-uid">${Api.escapeHtml(r.device_uid)}</span>
         <span class="fleet-status">${r.status} · ${ageLabel(r.last_reading_at)}</span>
       </div>
     `).join('');

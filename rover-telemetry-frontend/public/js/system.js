@@ -69,8 +69,8 @@ window.SystemView = (function () {
   function renderServices(services) {
     document.getElementById('services-body').innerHTML = Object.entries(services).map(([name, info]) => {
       const status = typeof info === 'string' ? info : info.status;
-      const lastRun = typeof info === 'object' && info.last_run ? ` · last run ${info.last_run}` : '';
-      return `<tr><td>${name}</td><td>${status}${lastRun}</td></tr>`;
+      const lastRun = typeof info === 'object' && info.last_run ? ` · last run ${Api.escapeHtml(info.last_run)}` : '';
+      return `<tr><td>${Api.escapeHtml(name)}</td><td>${Api.escapeHtml(status)}${lastRun}</td></tr>`;
     }).join('');
   }
 
@@ -190,11 +190,11 @@ window.SystemView = (function () {
   function loadSensorLimitEditor() {
     Api.sensorLimits().then((limits) => {
       document.getElementById('sensor-limits-editor-body').innerHTML = Object.entries(limits).map(([field, limit]) => `
-        <tr data-field="${field}">
-          <td>${field}</td>
+        <tr data-field="${Api.escapeHtml(field)}">
+          <td>${Api.escapeHtml(field)}</td>
           <td><input type="number" class="limit-min" value="${limit.min}" style="width:70px"></td>
           <td><input type="number" class="limit-max" value="${limit.max}" style="width:70px"></td>
-          <td>${limit.updated_at}</td>
+          <td>${Api.escapeHtml(limit.updated_at)}</td>
           <td><button class="save-limit">Save</button><span class="limit-status"></span></td>
         </tr>
       `).join('');

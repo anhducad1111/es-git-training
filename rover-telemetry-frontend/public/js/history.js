@@ -59,7 +59,7 @@ window.HistoryView = (function () {
 
   function populateRoverSelect(rovers) {
     const select = document.getElementById('history-rover');
-    select.innerHTML = rovers.map((r) => `<option value="${r.device_uid}">${r.device_uid}</option>`).join('');
+    select.innerHTML = rovers.map((r) => `<option value="${Api.escapeHtml(r.device_uid)}">${Api.escapeHtml(r.device_uid)}</option>`).join('');
     if (!uid && rovers.length > 0) uid = rovers[0].device_uid;
     select.value = uid;
   }
@@ -170,7 +170,7 @@ window.HistoryView = (function () {
   function renderGapsList(gaps) {
     document.getElementById('history-gaps-list').innerHTML = gaps.length === 0
       ? '<li>No gaps in this range.</li>'
-      : gaps.map((g) => `<li>${g.start} → ${g.end} · ${g.duration_seconds}s · ${g.missing_readings} readings missing</li>`).join('');
+      : gaps.map((g) => `<li>${Api.escapeHtml(g.start)} → ${Api.escapeHtml(g.end)} · ${g.duration_seconds}s · ${g.missing_readings} readings missing</li>`).join('');
   }
 
   function loadSummaryPanels() {

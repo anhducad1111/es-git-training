@@ -107,7 +107,7 @@ No backend changes are made, so backend test suite is untouched. For the dashboa
 
 - Cockpit tab (§4 above).
 - Authentication (matches current API state; §11.6 "Auth: None").
-- Media (photo/video) browsing UI — not part of §11's three views or its mockups.
+- Media (photo/video) browsing UI was originally out of scope (not part of §11's three views or its mockups), but a basic media gallery (list + delete) was later added to the Live view as a deliberate, explicitly-requested addition beyond this design — see commit `85863b0` and the final-review hardening pass.
 
 ## 10. Manual QA record
 
@@ -124,3 +124,8 @@ Verified by browser walkthrough (Chrome automation) against the local backend at
 - History view: range/resolution/sensor controls, query-cost panel, aggregated chart, statistics table, obstacle-events chart, gap list, CSV export URL.
 - System view: metric cards, services/database/rejected panels, three history charts, sensor-limit editor round-trip (write-then-restore verified against `distance_cm`).
 - Degraded/offline rendering confirmed via a forced `/latest` failure.
+- Media gallery panel (Live view, added post-design per commit `85863b0`, hardened in the
+  final-review fix pass): confirmed it renders `rover-001`'s 3 media items with no console
+  errors, and confirmed its own responsive behavior at a narrow (~375px) viewport does not
+  overflow (`scrollWidth`/`clientWidth` matched on the containing panel and the gallery
+  itself, same check used above for the sensor-limit editor table).

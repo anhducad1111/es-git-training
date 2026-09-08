@@ -413,7 +413,7 @@ window.LiveView = (function () {
         });
       });
     }).catch((err) => {
-      console.error('Failed to load media:', err);
+      showError(`Media gallery unavailable: ${err.message || err.code}`);
       document.getElementById('media-gallery').innerHTML = '<p style="color: var(--text-dim);">Media unavailable.</p>';
     });
   }

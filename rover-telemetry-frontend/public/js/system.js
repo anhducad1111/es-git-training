@@ -56,7 +56,7 @@ window.SystemView = (function () {
       <div>size ${fmt(db.size_mb)} MB</div>
       <div>rows ${db.row_count.toLocaleString()}</div>
       <div>growth ${fmt(db.growth_mb_per_day)} MB/day</div>
-      <div>capacity ≈ ${db.projected_days_remaining === null ? 'n/a' : `${db.projected_days_remaining} days`}</div>
+      <div>capacity ≈ ${db.projected_days_remaining == null ? 'n/a' : `${db.projected_days_remaining} days`}</div>
     `;
   }
 

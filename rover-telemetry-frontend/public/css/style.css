@@ -85,3 +85,6 @@ tr.rejected td { color: #9096a2; }
 @media (max-width: 700px) {
   .live-bottom-grid { grid-template-columns: 1fr; }
 }
+
+.history-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 13px; }
+.sensor-toggle { margin-right: 10px; font-size: 12px; }

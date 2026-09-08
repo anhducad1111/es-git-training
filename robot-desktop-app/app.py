@@ -1,3 +1,5 @@
+import os
+import tempfile
 from datetime import datetime
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -13,6 +15,7 @@ from cloud_worker import CloudWorker
 from rover_ws import RoverWebSocket
 from mjpeg_receiver import MJPEGReceiver
 from telemetry_poller import TelemetryPoller
+from esp32_api import ESP32API
 from styles import DARK_STYLE
 from views.header import create_header, _on_ip_changed
 from views.main_view import create_main_view
@@ -29,11 +32,15 @@ class RoverTeleopApp(QWidget):
         super().__init__()
         self._config = load_config()
         self._is_driving = False
+        self._driving_forward = True
+        self._global_speed = 180
+        self._forward_speed = 180
         self._current_speed = self._config.get("motor_speed", 220)
         self._gimbal_pan = 90
         self._gimbal_tilt = 90
         self._view_mode = "main"
         self._commands_log = []
+        self._speed_delta = 0
 
         self._video_thread = None
         self._telemetry_thread = None
@@ -41,6 +48,10 @@ class RoverTeleopApp(QWidget):
         self._mjpeg_receiver = None
         self._telemetry_poller = None
         self._cloud_workers = []
+
+        self._speed_timer = QTimer()
+        self._speed_timer.timeout.connect(self._tick_speed)
+        self._speed_timer.setInterval(50)
 
         self.init_ui()
         self.connect_signals()
@@ -78,6 +89,8 @@ class RoverTeleopApp(QWidget):
 
     def connect_signals(self):
         self.log_message.connect(self._add_log)
+        if hasattr(self, '_video_canvas'):
+            self._video_canvas.gimbal_changed.connect(self._on_mouse_gimbal)
 
     def start_connections(self):
         self._stop_real_connections()
@@ -102,9 +115,16 @@ class RoverTeleopApp(QWidget):
         self._telemetry_poller.error.connect(self._on_telemetry_error)
         self._telemetry_poller.start()
 
+        self._esp32_api = ESP32API(self._config['car_ip'], self._config['cam_ip'])
+
         self._video_timer = QTimer()
         self._video_timer.timeout.connect(self._update_video_frame)
         self._video_timer.start(33)
+
+        self._latest_telemetry = {}
+        self._cloud_timer = QTimer()
+        self._cloud_timer.timeout.connect(self._send_cloud_update)
+        self._cloud_timer.start(10000)
 
         self._add_log("MODE", "Connecting to REAL ESP32 hardware...")
 
@@ -166,7 +186,7 @@ class RoverTeleopApp(QWidget):
 
     def _on_telemetry_data(self, data):
         self._update_telemetry(data)
-        self._send_to_cloud(data)
+        self._latest_telemetry = data
 
     def _on_telemetry_error(self, error):
         self._add_log("TELEMETRY", f"Error: {error[:60]}")
@@ -181,6 +201,21 @@ class RoverTeleopApp(QWidget):
         self._humidity_card.update_value(f"{humidity}%", humidity)
         self._gas_card.update_value(f"{int(gas)} PPM", gas / 1000 * 100)
         self._distance_card.update_value(f"{distance} cm", distance / 200 * 100)
+
+        if hasattr(self, '_brake_toggle') and self._brake_toggle.isChecked():
+            if self._driving_forward and distance < 100:
+                if distance <= 15:
+                    self._forward_speed = 0
+                else:
+                    ratio = (distance - 15) / 85.0
+                    self._forward_speed = int(255 * ratio)
+                self._forward_speed = max(0, min(255, self._forward_speed))
+                self._send_command(f"speed:{self._forward_speed}")
+                if self._forward_speed == 0:
+                    self._send_command("stop")
+            else:
+                self._forward_speed = self._global_speed
+                self._send_command(f"speed:{self._global_speed}")
 
     def _send_to_cloud(self, data):
         if not self._cloud_api:
@@ -200,6 +235,11 @@ class RoverTeleopApp(QWidget):
         self._cloud_workers.append(worker)
         worker.finished.connect(lambda: self._cloud_workers.remove(worker) if worker in self._cloud_workers else None)
         worker.start()
+        self._add_log("CLOUD", f"Sent: T={data.get('temperature',0)}°C H={data.get('humidity',0)}%")
+
+    def _send_cloud_update(self):
+        if self._latest_telemetry:
+            self._send_to_cloud(self._latest_telemetry)
 
     def _manual_send_to_cloud(self):
         if not self._cloud_api:
@@ -258,9 +298,52 @@ class RoverTeleopApp(QWidget):
         self._gimbal_pan_label.setText(f"90°")
         self._gimbal_tilt_label.setText(f"90°")
         self._send_command("servo:90,90")
+        if hasattr(self, '_gimbal_hud'):
+            self._gimbal_hud.set_gimbal(90, 90)
 
     def _take_snapshot(self):
-        self._add_log("SNAPSHOT", "Frame captured (stub)")
+        if not hasattr(self, '_video_canvas'):
+            self._add_log("SNAPSHOT", "No video canvas available")
+            return
+        
+        pixmap = self._video_canvas.pixmap()
+        if pixmap is None or pixmap.isNull():
+            self._add_log("SNAPSHOT", "No frame to capture")
+            return
+        
+        snapshot_dir = os.path.join(os.path.dirname(__file__), "snapshot")
+        os.makedirs(snapshot_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"snapshot_{timestamp}.png"
+        filepath = os.path.join(snapshot_dir, filename)
+        
+        pixmap.save(filepath, "PNG")
+        self._add_log("SNAPSHOT", f"Saved: {filename}")
+        
+        if hasattr(self, '_super_res_check') and self._super_res_check.isChecked():
+            self._apply_super_resolution(filepath)
+
+    def _apply_super_resolution(self, image_path):
+        self._add_log("SUPER RES", "Processing snapshot...")
+        
+        try:
+            from super_resolution import SuperResolutionWorker
+            
+            directory = os.path.dirname(image_path)
+            filename = os.path.basename(image_path)
+            output_path = os.path.join(directory, f"high_{filename}")
+            
+            self._sr_worker = SuperResolutionWorker(image_path, output_path)
+            self._sr_worker.finished.connect(
+                lambda path: self._add_log("SUPER RES", f"Saved: {os.path.basename(path)}")
+            )
+            self._sr_worker.error.connect(
+                lambda err: self._add_log("SUPER RES", f"Error: {err[:50]}")
+            )
+            self._sr_worker.start()
+        except Exception as e:
+            self._add_log("SUPER RES", f"Error: {str(e)[:50]}")
 
     def _toggle_view(self):
         if self._view_mode == "main":
@@ -276,15 +359,6 @@ class RoverTeleopApp(QWidget):
     def _emergency_stop(self):
         self._send_command("stop")
         self._add_log("STOP", "Emergency stop activated")
-
-    def _send_chat(self):
-        text = self._chat_input.text().strip()
-        if not text:
-            return
-        self._chat_display.append(f"You: {text}")
-        self._chat_input.clear()
-
-        self._chat_display.append(f"AI: [Stub] Received: {text}")
 
     def _send_command(self, command):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -319,8 +393,10 @@ class RoverTeleopApp(QWidget):
                 self._telemetry_poller.set_driving(True)
 
         if key == Qt.Key.Key_W:
+            self._driving_forward = True
             self._send_command("forward")
         elif key == Qt.Key.Key_S:
+            self._driving_forward = False
             self._send_command("backward")
         elif key == Qt.Key.Key_A:
             self._send_command("left")
@@ -342,6 +418,8 @@ class RoverTeleopApp(QWidget):
             self._update_gimbal()
         elif key == Qt.Key.Key_C:
             self._center_gimbal()
+        elif key == Qt.Key.Key_X:
+            self._take_snapshot()
         elif key == Qt.Key.Key_1:
             self._resolution_combo.setCurrentIndex(0)
         elif key == Qt.Key.Key_2:
@@ -350,6 +428,14 @@ class RoverTeleopApp(QWidget):
             self._resolution_combo.setCurrentIndex(2)
         elif key == Qt.Key.Key_4:
             self._resolution_combo.setCurrentIndex(3)
+        elif key == Qt.Key.Key_Shift:
+            self._speed_delta = 1
+            if not self._speed_timer.isActive():
+                self._speed_timer.start()
+        elif key == Qt.Key.Key_Control:
+            self._speed_delta = -1
+            if not self._speed_timer.isActive():
+                self._speed_timer.start()
         else:
             super().keyPressEvent(event)
 
@@ -361,13 +447,39 @@ class RoverTeleopApp(QWidget):
             self._send_command("stop")
             if self._telemetry_poller:
                 self._telemetry_poller.set_driving(False)
+        elif key in (Qt.Key.Key_Shift, Qt.Key.Key_Control):
+            self._speed_delta = 0
+            self._speed_timer.stop()
         else:
             super().keyReleaseEvent(event)
+
+    def _change_speed(self, delta):
+        new_speed = max(150, min(255, self._global_speed + delta))
+        if new_speed != self._global_speed:
+            self._global_speed = new_speed
+            self._speed_slider.setValue(self._global_speed)
+            self._speed_label.setText(f"{self._global_speed}")
+            self._send_command(f"speed:{self._global_speed}")
+
+    def _tick_speed(self):
+        if self._speed_delta != 0:
+            self._change_speed(self._speed_delta)
 
     def _update_gimbal(self):
         self._gimbal_pan_label.setText(f"{self._gimbal_pan}°")
         self._gimbal_tilt_label.setText(f"{self._gimbal_tilt}°")
         self._send_command(f"servo:{self._gimbal_pan},{self._gimbal_tilt}")
+        if hasattr(self, '_gimbal_hud'):
+            self._gimbal_hud.set_gimbal(self._gimbal_pan, self._gimbal_tilt)
+
+    def _on_mouse_gimbal(self, pan, tilt):
+        self._gimbal_pan = int(pan)
+        self._gimbal_tilt = int(tilt)
+        self._gimbal_pan_label.setText(f"{self._gimbal_pan}°")
+        self._gimbal_tilt_label.setText(f"{self._gimbal_tilt}°")
+        self._send_command(f"servo:{self._gimbal_pan},{self._gimbal_tilt}")
+        if hasattr(self, '_gimbal_hud'):
+            self._gimbal_hud.set_gimbal(self._gimbal_pan, self._gimbal_tilt)
 
     def closeEvent(self, event):
         if hasattr(self, '_video_timer'):

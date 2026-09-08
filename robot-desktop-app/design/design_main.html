@@ -1,11 +1,13 @@
-<!DOCTYPE html><html class="dark" lang="en" style=""><head>
-<meta charset="utf-8">
-<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<!DOCTYPE html>
+
+<html class="dark" lang="en" style=""><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Rover Teleop Cockpit</title>
-<link href="https://fonts.googleapis.com" rel="preconnect">
-<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script id="tailwind-config">
   tailwind.config = {
@@ -19,6 +21,7 @@
           "surface-container-low": "#0f172a",
           "surface-container-high": "#1e293b",
           "surface-container-highest": "#28344e",
+          "surface-container-lowest": "#060e20",
           "outline": "#334155",
           "outline-variant": "#243147",
           "primary": "#3b82f6",
@@ -54,7 +57,7 @@
 <nav class="hidden md:flex items-center gap-1 ml-2 pl-3 border-l border-outline-variant">
 <a class="px-2.5 py-1 rounded text-primary bg-primary/10 font-medium text-xs" href="#">Main View</a>
 <a class="px-2.5 py-1 rounded text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors font-medium text-xs" href="#">Gimbal</a>
-<a class="px-2.5 py-1 rounded text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors font-medium text-xs" href="#" aria-label="Toggle Gemini AI Analytics View">Diagnostics</a>
+<a aria-label="Toggle Gemini AI Analytics View" class="px-2.5 py-1 rounded text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors font-medium text-xs" href="#">Diagnostics</a>
 <a class="px-2.5 py-1 rounded text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors font-medium text-xs" href="#">Subsystems</a>
 </nav>
 </div>
@@ -62,12 +65,12 @@
 <div class="hidden lg:flex items-center gap-3 bg-surface-container px-3 py-1 border border-outline-variant rounded">
 <div class="flex items-center gap-1.5 font-mono text-[11px]">
 <span class="text-secondary font-sans text-xs">Rover IP:</span>
-<input class="w-24 bg-background border border-outline text-text-primary px-1.5 py-0.5 rounded text-center focus:outline-none focus:border-primary text-xs" readonly="" type="text" value="192.168.1.100">
+<input class="w-24 bg-background border border-outline text-text-primary px-1.5 py-0.5 rounded text-center focus:outline-none focus:border-primary text-xs" readonly="" type="text" value="192.168.1.100"/>
 </div>
 <div class="w-px h-3.5 bg-outline-variant"></div>
 <div class="flex items-center gap-1.5 font-mono text-[11px]">
 <span class="text-secondary font-sans text-xs">Camera IP:</span>
-<input class="w-24 bg-background border border-outline text-text-primary px-1.5 py-0.5 rounded text-center focus:outline-none focus:border-primary text-xs" readonly="" type="text" value="192.168.1.101">
+<input class="w-24 bg-background border border-outline text-text-primary px-1.5 py-0.5 rounded text-center focus:outline-none focus:border-primary text-xs" readonly="" type="text" value="192.168.1.101"/>
 </div>
 <div class="w-px h-3.5 bg-outline-variant"></div>
 <!-- Simple Status Indicator Chips -->
@@ -82,14 +85,11 @@
 </div>
 <!-- Right Actions / Utilities -->
 <div class="flex items-center gap-2">
-<!-- Stream Resolution Dropdown -->
-
 <!-- Toolbar buttons -->
 <div class="flex items-center gap-1 bg-surface-container p-0.5 border border-outline-variant rounded">
 <button class="p-1 text-secondary hover:text-text-primary hover:bg-surface-container-high rounded transition-colors" title="Flip Orientation">
 <span class="material-symbols-outlined text-[16px]">flip</span>
 </button>
-
 <button class="flex items-center gap-1 px-2 py-1 text-secondary hover:text-text-primary hover:bg-surface-container-high rounded transition-colors text-xs" title="OTA Firmware Update">
 <span class="material-symbols-outlined text-[15px] text-status-warning">system_update_alt</span>
 <span class="hidden sm:inline">OTA Update</span>
@@ -107,10 +107,102 @@
 <!-- VIDEO STAGE (FPV Camera Feed with Clean Minimal Overlays) -->
 <section class="flex-1 flex flex-col relative bg-black overflow-hidden">
 <!-- Camera Viewport Container -->
-<div class="relative w-full h-full flex items-center justify-center bg-black overflow-hidden"><div class="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3 py-1.5 rounded bg-background/80 border border-outline-variant text-text-primary text-xs font-mono shadow-md pointer-events-none select-none"><div class="flex items-center gap-1.5 font-sans"><span class="w-2 h-2 rounded-full bg-status-safe"></span><span class="font-medium text-status-safe font-mono">30.0 FPS</span></div><div class="w-px h-3 bg-outline-variant"></div><div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px]">network_ping</span><span class="text-text-primary">5 ms</span></div><div class="w-px h-3 bg-outline-variant"></div><div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px] text-primary">radar</span><span class="text-status-safe font-medium">45 cm</span></div><div class="w-px h-3 bg-outline-variant"></div><div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px] text-status-warning">device_thermostat</span><span class="text-text-primary">28.5 °C</span></div><div class="w-px h-3 bg-outline-variant"></div><div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px] text-primary">water_drop</span><span class="text-text-primary">65.0 %</span></div></div><div class="absolute inset-0 bg-cover bg-center" data-alt="Ground robot camera view of a peaceful daytime outdoor gravel pathway and green park" style="background-image: url(&quot;https://lh3.googleusercontent.com/aida-public/AB6AXuBe4_aBH3S-scYF7wEv-urUy0ZLO_D0MtMdGnGHpx3FpbGNADK0wnoiBtBhmsCKw2gSCr-0obiCO86XBWts3cJvM55mwRNcpzXkzqxMVViuY-jejELGhtFfzwlp3kmV6Qxz6DhfsgE63wtsU1AgCvS5hTRBg8XHvIuLx9BVvfV6orOxV73uHeJQjkDcc_YqvDA6ODKT7OShaQKCYeIzaJIy6Ybpc4FkCgh7KJ4ouH_UP_CdLjO95cz-&quot;);"></div><div class="relative pointer-events-none flex items-center justify-center select-none" style="filter: drop-shadow(rgba(0, 0, 0, 0.9) 0px 0px 2px) drop-shadow(rgba(0, 0, 0, 0.7) 0px 1px 2px);"><svg class="w-16 h-16 text-white" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 64 64"><circle cx="32" cy="32" r="6" stroke-width="1.75" fill="rgba(0,0,0,0.15)"></circle><circle cx="32" cy="32" r="1" fill="white" stroke="none"></circle><line stroke-width="2" x1="32" x2="32" y1="6" y2="22"></line><line stroke-width="2" x1="32" x2="32" y1="42" y2="58"></line><line stroke-width="2" x1="6" x2="22" y1="32" y2="32"></line><line stroke-width="2" x1="42" x2="58" y1="32" y2="32"></line><circle cx="32" cy="32" r="16" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"></circle></svg></div><div class="absolute bottom-3 right-3 z-20 flex items-center gap-1 bg-background/80 hover:bg-background border border-outline-variant rounded px-2 py-1 shadow-md transition-colors"><span class="material-symbols-outlined text-[14px] text-primary">videocam</span><select class="bg-transparent text-text-primary text-[11px] font-mono appearance-none outline-none cursor-pointer pr-4"><option class="bg-surface text-text-primary" selected="">640x480 (30 FPS)</option><option class="bg-surface text-text-primary">1280x720 (15 FPS)</option><option class="bg-surface text-text-primary">320x240 (60 FPS)</option></select><span class="material-symbols-outlined text-secondary pointer-events-none text-[14px] -ml-3">expand_more</span></div></div>
+<div class="relative w-full h-full flex items-center justify-center bg-black overflow-hidden">
+<!-- Top Telemetry HUD Pill -->
+<div class="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3 py-1.5 rounded bg-background/80 border border-outline-variant text-text-primary text-xs font-mono shadow-md pointer-events-none select-none">
+<div class="flex items-center gap-1.5 font-sans"><span class="w-2 h-2 rounded-full bg-status-safe"></span><span class="font-medium text-status-safe font-mono">30.0 FPS</span></div>
+<div class="w-px h-3 bg-outline-variant"></div>
+<div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px]">network_ping</span><span class="text-text-primary">5 ms</span></div>
+<div class="w-px h-3 bg-outline-variant"></div>
+<div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px] text-primary">radar</span><span class="text-status-safe font-medium">45 cm</span></div>
+<div class="w-px h-3 bg-outline-variant"></div>
+<div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px] text-status-warning">device_thermostat</span><span class="text-text-primary">28.5 °C</span></div>
+<div class="w-px h-3 bg-outline-variant"></div>
+<div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px] text-primary">water_drop</span><span class="text-text-primary">65.0 %</span></div>
+</div>
+<!-- Camera Stream Image Background -->
+<div class="absolute inset-0 bg-cover bg-center" data-alt="Ground robot camera view of a peaceful daytime outdoor gravel pathway and green park" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBe4_aBH3S-scYF7wEv-urUy0ZLO_D0MtMdGnGHpx3FpbGNADK0wnoiBtBhmsCKw2gSCr-0obiCO86XBWts3cJvM55mwRNcpzXkzqxMVViuY-jejELGhtFfzwlp3kmV6Qxz6DhfsgE63wtsU1AgCvS5hTRBg8XHvIuLx9BVvfV6orOxV73uHeJQjkDcc_YqvDA6ODKT7OShaQKCYeIzaJIy6Ybpc4FkCgh7KJ4ouH_UP_CdLjO95cz-");'></div>
+<!-- Central Crosshair Reticle -->
+<div class="relative pointer-events-none flex items-center justify-center select-none" style="filter: drop-shadow(rgba(0, 0, 0, 0.9) 0px 0px 2px) drop-shadow(rgba(0, 0, 0, 0.7) 0px 1px 2px);">
+<svg class="w-16 h-16 text-white" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" viewbox="0 0 64 64">
+<circle cx="32" cy="32" fill="rgba(0,0,0,0.15)" r="6" stroke-width="1.75"></circle>
+<circle cx="32" cy="32" fill="white" r="1" stroke="none"></circle>
+<line stroke-width="2" x1="32" x2="32" y1="6" y2="22"></line>
+<line stroke-width="2" x1="32" x2="32" y1="42" y2="58"></line>
+<line stroke-width="2" x1="6" x2="22" y1="32" y2="32"></line>
+<line stroke-width="2" x1="42" x2="58" y1="32" y2="32"></line>
+<circle cx="32" cy="32" opacity="0.6" r="16" stroke-dasharray="2 4" stroke-width="1"></circle>
+</svg>
+</div>
+<!-- DUAL ORIENTATION HUD: HORIZONTAL (PAN) & VERTICAL (TILT) (Bottom-Left) -->
+<div class="absolute bottom-3 left-3 z-20 flex flex-col gap-2 bg-surface-container-lowest/85 backdrop-blur-md border border-[#ff2a85]/30 rounded-xl p-2.5 shadow-2xl transition-all select-none w-[104px]">
+<!-- Header: Cam Orientation & Align -->
+<div class="flex flex-col gap-1 pb-1.5 border-b border-outline-variant/60">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1">
+<span class="inline-block w-2 h-2 rounded-full bg-[#ff2a85] shadow-[0_0_8px_#ff2a85] animate-pulse"></span>
+<span class="text-[9px] font-mono tracking-wider font-semibold text-secondary uppercase whitespace-nowrap">CAM</span>
+</div>
+<span class="text-[8px] font-mono uppercase text-secondary">GIMBAL</span>
+</div>
+<div class="text-[9px] font-mono font-semibold px-1 py-0.5 rounded bg-[#ff2a85]/15 text-pink-300 border border-[#ff2a85]/30 text-center truncate whitespace-nowrap" id="hudOrientationLabel">FRONT / LEVEL</div>
+</div>
+<!-- 1. Dedicated Pan (Horizontal) Indicator on Top -->
+<div class="flex flex-col items-center">
+<div class="text-[9px] font-mono font-semibold text-secondary tracking-tight mb-1 flex items-center justify-between w-full px-0.5">
+<span class="">PAN (HORIZ)</span>
+<span class="text-pink-400 font-mono font-bold" id="hudPanValue">90°</span>
+</div>
+<div class="relative w-[74px] h-[74px] rounded-lg bg-surface/70 border border-outline-variant/60 overflow-hidden shadow-inner flex items-center justify-center">
+<canvas class="w-[74px] h-[74px]" height="148" id="panDialCanvas" width="148"></canvas>
+<!-- Azimuth Compass points -->
+<span class="absolute top-0.5 text-[8px] font-mono font-bold text-pink-400 pointer-events-none">N</span>
+<span class="absolute bottom-0.5 text-[8px] font-mono text-secondary/60 pointer-events-none">S</span>
+<span class="absolute left-1 text-[8px] font-mono text-secondary/60 pointer-events-none">W</span>
+<span class="absolute right-1 text-[8px] font-mono text-secondary/60 pointer-events-none">E</span>
+</div>
+<div class="flex justify-between w-full text-[8px] font-mono text-secondary/70 mt-1 px-0.5">
+<span class="">L: 0°</span>
+<span class="text-pink-400 font-semibold" id="panRelValue">0°</span>
+<span class="">R: 180°</span>
+</div>
+</div>
+<!-- Divider between stacked dials -->
+<div class="w-full h-px bg-outline-variant/60 my-0.5"></div>
+<!-- 2. Dedicated Tilt (Vertical) Indicator Below -->
+<div class="flex flex-col items-center">
+<div class="text-[9px] font-mono font-semibold text-secondary tracking-tight mb-1 flex items-center justify-between w-full px-0.5">
+<span class="">TILT (VERT)</span>
+<span class="text-pink-400 font-mono font-bold" id="hudTiltValue">90°</span>
+</div>
+<div class="relative w-[74px] h-[74px] rounded-lg bg-surface/70 border border-outline-variant/60 overflow-hidden shadow-inner flex items-center justify-center">
+<canvas class="w-[74px] h-[74px]" height="148" id="tiltDialCanvas" width="148"></canvas>
+<!-- Elevation Labels -->
+<span class="absolute top-0.5 right-1 text-[7.5px] font-mono font-semibold text-secondary/70 pointer-events-none">UP</span>
+<span class="absolute top-1/2 -translate-y-1/2 right-1 text-[7.5px] font-mono font-semibold text-pink-400/80 pointer-events-none">LVL</span>
+<span class="absolute bottom-0.5 right-1 text-[7.5px] font-mono font-semibold text-secondary/70 pointer-events-none">DN</span>
+</div>
+<div class="flex justify-between w-full text-[8px] font-mono text-secondary/70 mt-1 px-0.5">
+<span class="">-45°</span>
+<span class="text-pink-400 font-semibold" id="tiltPitchValue">+0°</span>
+<span class="">+45°</span>
+</div>
+</div>
+</div>
+<!-- Resolution Selector (Bottom-Right) -->
+<div class="absolute bottom-3 right-3 z-20 flex items-center gap-1 bg-background/80 hover:bg-background border border-outline-variant rounded px-2 py-1 shadow-md transition-colors">
+<span class="material-symbols-outlined text-[14px] text-primary">videocam</span>
+<select class="bg-transparent text-text-primary text-[11px] font-mono appearance-none outline-none cursor-pointer pr-4">
+<option class="bg-surface text-text-primary" selected="">640x480 (30 FPS)</option>
+<option class="bg-surface text-text-primary">1280x720 (15 FPS)</option>
+<option class="bg-surface text-text-primary">320x240 (60 FPS)</option>
+</select>
+<span class="material-symbols-outlined text-secondary pointer-events-none text-[14px] -ml-3">expand_more</span>
+</div>
+</div>
 </section>
 <!-- RIGHT TELEMETRY SIDEBAR (Clean PyQt Property/Telemetry Panel) -->
-<aside class="w-72 2xl:w-80 flex flex-col bg-surface border-l border-outline-variant h-full overflow-y-auto shrink-0 select-none z-20">
+<aside class="w-72 2xl:w-80 flex flex-col bg-surface border-l border-outline-variant h-full overflow-y-auto shrink-0 select-none z-20" id="telemetry-sidebar">
 <!-- Panel Header -->
 <div class="px-4 py-2.5 border-b border-outline-variant bg-surface-container flex justify-between items-center shrink-0">
 <div>
@@ -122,59 +214,171 @@
       </button>
 </div>
 <!-- Clean Sensor Cards -->
-<div class="p-3 flex flex-col gap-2.5 overflow-y-auto flex-1">
-<!-- Sensor 1: Chassis Core Temp -->
-<div class="bg-surface-container p-3 border border-outline-variant rounded">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-secondary text-xs flex items-center gap-1.5">
-<span class="material-symbols-outlined text-[15px] text-status-warning">device_thermostat</span>
-            Chassis Core Temp
-          </span>
-<span class="font-mono text-xs font-semibold text-text-primary">28.5 °C</span>
+<div class="p-3 flex flex-col gap-2.5 overflow-y-auto flex-1"><div class="bg-surface-container p-3 border border-outline-variant rounded flex flex-col gap-2.5" id="collisionProximityCard">
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-status-safe animate-pulse">radar</span>
+<span class="text-[11px] font-semibold text-text-primary tracking-tight uppercase font-mono">PROXIMITY / COLLISION RISK</span>
 </div>
-<div class="w-full h-1.5 bg-background rounded-full overflow-hidden">
-<div class="h-full bg-primary rounded-full" style="width: 58%;"></div>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-status-safe/20 text-status-safe border border-status-safe/40" id="obstacleStatusBadge">MARGIN: 45 cm (SAFE)</span>
+</div>
+<!-- Analog Semi-Circular Gauge Dial -->
+<div class="relative flex flex-col items-center justify-center bg-surface-container-low/70 border border-outline-variant/60 rounded-lg p-2 overflow-hidden shadow-inner">
+<svg class="w-48 h-28 select-none" viewbox="0 0 200 120">
+<defs>
+<lineargradient id="needleGlow" x1="0%" x2="100%" y1="0%" y2="100%">
+<stop offset="0%" stop-color="#ff2a85"></stop>
+<stop offset="100%" stop-color="#f43f5e"></stop>
+</lineargradient>
+<filter height="140%" id="glow" width="140%" x="-20%" y="-20%">
+<fedropshadow dx="0" dy="0" flood-color="#ff2a85" flood-opacity="0.8" stddeviation="2"></fedropshadow>
+</filter>
+</defs>
+<!-- Gauge Outer Track Arc Background -->
+<path d="M 20 105 A 80 80 0 0 1 180 105" fill="none" stroke="#1e293b" stroke-linecap="round" stroke-width="16"></path>
+<!-- Red Arc: Danger Zone (0 - 20 cm) -->
+<path d="M 20 105 A 80 80 0 0 1 45 48" fill="none" opacity="0.9" stroke="#ef4444" stroke-linecap="round" stroke-width="12"></path>
+<!-- Yellow Arc: Caution / Slowdown Zone (20 - 40 cm) -->
+<path d="M 48 44 A 80 80 0 0 1 90 26" fill="none" opacity="0.9" stroke="#f59e0b" stroke-width="12"></path>
+<!-- Green Arc: Safe Zone (40 - 100 cm+) -->
+<path d="M 94 25 A 80 80 0 0 1 180 105" fill="none" opacity="0.9" stroke="#10b981" stroke-linecap="round" stroke-width="12"></path>
+<!-- Tick marks & radial lines -->
+<line stroke="#ef4444" stroke-width="2" x1="20" x2="28" y1="105" y2="105"></line>
+<line stroke="#f59e0b" stroke-width="1.5" x1="45" x2="52" y1="48" y2="53"></line>
+<line stroke="#10b981" stroke-width="2" x1="100" x2="100" y1="25" y2="34"></line>
+<line stroke="#10b981" stroke-width="1.5" x1="152" x2="146" y1="50" y2="56"></line>
+<line stroke="#10b981" stroke-width="2" x1="180" x2="172" y1="105" y2="105"></line>
+<!-- Numerical Scale Labels (cm) -->
+<text fill="#ef4444" font-family="monospace" font-size="8" font-weight="bold" text-anchor="middle" x="16" y="116">0</text>
+<text fill="#f59e0b" font-family="monospace" font-size="8" font-weight="semibold" text-anchor="middle" x="40" y="42">20</text>
+<text fill="#10b981" font-family="monospace" font-size="8" font-weight="bold" text-anchor="middle" x="100" y="18">40</text>
+<text fill="#94a3b8" font-family="monospace" font-size="8" text-anchor="middle" x="160" y="46">60</text>
+<text fill="#94a3b8" font-family="monospace" font-size="8" text-anchor="middle" x="182" y="116">100</text>
+<!-- Auto-Brake Threshold Reference Indicator (30 cm: angle ~ -36 deg) -->
+<line stroke="#f59e0b" stroke-dasharray="2 2" stroke-width="2" x1="70" x2="77" y1="32" y2="42"></line>
+<polygon fill="#f59e0b" points="70,30 66,24 74,24"></polygon>
+<!-- Gauge Needle (Pointing to 45 cm: ~ -9 deg tilt from 12 o'clock, rotate -9 at center 100,105) -->
+<g filter="url(#glow)" id="gaugeNeedleGroup" transform="rotate(-9, 100, 105)">
+<!-- Needle Line / Polygon -->
+<polygon fill="url(#needleGlow)" points="98,105 100,34 102,105"></polygon>
+<line stroke="#ffffff" stroke-linecap="round" stroke-width="1.5" x1="100" x2="100" y1="105" y2="32"></line>
+<!-- Needle Counterweight -->
+<polygon fill="#ff2a85" points="97,105 100,114 103,105"></polygon>
+</g>
+<!-- Center Hub / Pivot Cap -->
+<circle cx="100" cy="105" fill="#1e293b" r="8" stroke="#ff2a85" stroke-width="2"></circle>
+<circle cx="100" cy="105" fill="#ffffff" r="4"></circle>
+</svg>
+<!-- Numerical Readout & Threshold info -->
+<div class="flex items-center justify-between w-full px-2 pt-1 border-t border-outline-variant/40">
+<div class="flex items-baseline gap-1">
+<span class="text-[10px] text-secondary font-mono uppercase">DIST:</span>
+<span class="text-sm font-bold text-status-safe font-mono tracking-tight" id="obstacleDigitalDist">45 <span class="text-[10px] font-normal text-secondary">cm</span></span>
+</div>
+<div class="flex items-center gap-1 text-[10px] font-mono text-status-warning bg-status-warning/10 px-1.5 py-0.5 rounded border border-status-warning/30">
+<span class="material-symbols-outlined text-[12px]">shield</span>
+<span>AUTO-BRAKE: 30 cm</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Sensor 1: Chassis Core Temp -->
+<div class="bg-surface-container px-2.5 py-2 border border-outline-variant rounded flex flex-col gap-1.5">
+<div class="flex justify-between items-center">
+<span class="text-secondary text-[11px] font-medium flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-status-warning">device_thermostat</span>
+      Chassis Temp
+    </span>
+<div class="flex items-center gap-1.5">
+<span class="px-1 py-0.2 rounded text-[9px] font-mono font-semibold bg-status-safe/20 text-status-safe border border-status-safe/40">NOMINAL</span>
+<span class="font-mono text-xs font-bold text-text-primary">28.5 <span class="text-[10px] font-normal text-secondary">°C</span></span>
+</div>
+</div>
+<!-- Precision Gauge Scale Bar with Visual Ticks and Zones -->
+<div class="flex flex-col gap-0.5">
+<div class="relative w-full h-2 rounded bg-surface-container-low overflow-hidden border border-outline-variant/60 flex items-center">
+<!-- Zone Bands: 0-45°C Optimal (Emerald), 45-65°C Warm (Amber), 65-80°C High (Danger) -->
+<div class="h-full bg-status-safe/20 border-r border-outline-variant/40" style="width: 56.25%;"></div>
+<div class="h-full bg-status-warning/20 border-r border-outline-variant/40" style="width: 25%;"></div>
+<div class="h-full bg-status-danger/20 flex-1"></div>
+<!-- Active Value Fill & Pointer Glow -->
+<div class="absolute top-0 left-0 h-full bg-gradient-to-r from-status-safe/80 to-status-warning/90 rounded-l" style="width: 35.6%;"></div>
+<div class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_#fff] rounded" style="left: calc(35.6% - 2px);"></div>
+</div>
+<!-- Scale Calibration Ticks & Labels -->
+<div class="flex justify-between items-center text-[8px] font-mono text-secondary/70 px-0.5">
+<span class="">0°C</span>
+<span class="text-status-safe/80">| 25°C</span>
+<span class="text-status-warning/80">| 50°C</span>
+<span class="text-status-danger/80">80°C</span>
+</div>
 </div>
 </div>
 <!-- Sensor 2: Ambient Humidity -->
-<div class="bg-surface-container p-3 border border-outline-variant rounded">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-secondary text-xs flex items-center gap-1.5">
-<span class="material-symbols-outlined text-[15px] text-primary">water_drop</span>
-            Ambient Humidity
-          </span>
-<span class="font-mono text-xs font-semibold text-text-primary">65.0 %</span>
+<div class="bg-surface-container px-2.5 py-2 border border-outline-variant rounded flex flex-col gap-1.5">
+<div class="flex justify-between items-center">
+<span class="text-secondary text-[11px] font-medium flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-primary">water_drop</span>
+      Humidity
+    </span>
+<div class="flex items-center gap-1.5">
+<span class="px-1 py-0.2 rounded text-[9px] font-mono font-semibold bg-primary/20 text-primary border border-primary/30">OPTIMAL</span>
+<span class="font-mono text-xs font-bold text-text-primary">65.0 <span class="text-[10px] font-normal text-secondary">%</span></span>
 </div>
-<div class="w-full h-1.5 bg-background rounded-full overflow-hidden">
-<div class="h-full bg-primary rounded-full" style="width: 65%;"></div>
+</div>
+<!-- Precision Gauge Scale Bar with Visual Ticks -->
+<div class="flex flex-col gap-0.5">
+<div class="relative w-full h-2 rounded bg-surface-container-low overflow-hidden border border-outline-variant/60 flex items-center">
+<!-- Zone Bands: 0-30% Dry, 30-70% Comfort/Ideal, 70-100% High Moisture -->
+<div class="h-full bg-outline-variant/30 border-r border-outline-variant/40" style="width: 30%;"></div>
+<div class="h-full bg-primary/25 border-r border-outline-variant/40" style="width: 40%;"></div>
+<div class="h-full bg-status-warning/20 flex-1"></div>
+<!-- Active Value Fill -->
+<div class="absolute top-0 left-0 h-full bg-primary/80 rounded-l" style="width: 65%;"></div>
+<div class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_#60a5fa] rounded" style="left: calc(65% - 2px);"></div>
+</div>
+<!-- Scale Calibration Ticks & Labels -->
+<div class="flex justify-between items-center text-[8px] font-mono text-secondary/70 px-0.5">
+<span class="">0%</span>
+<span class="">30%</span>
+<span class="text-primary font-semibold">| 65%</span>
+<span class="">100%</span>
+</div>
 </div>
 </div>
 <!-- Sensor 3: Air Purity -->
-<div class="bg-surface-container p-3 border border-outline-variant rounded">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-secondary text-xs flex items-center gap-1.5">
-<span class="material-symbols-outlined text-[15px] text-status-safe">air</span>
-            Air Purity Metric
-          </span>
-<span class="font-mono text-xs font-semibold text-status-safe">450 PPM</span>
+<div class="bg-surface-container px-2.5 py-2 border border-outline-variant rounded flex flex-col gap-1.5">
+<div class="flex justify-between items-center">
+<span class="text-secondary text-[11px] font-medium flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-status-safe">air</span>
+      Air Purity (IAQ)
+    </span>
+<div class="flex items-center gap-1.5">
+<span class="px-1 py-0.2 rounded text-[9px] font-mono font-semibold bg-status-safe/20 text-status-safe border border-status-safe/40">GOOD</span>
+<span class="font-mono text-xs font-bold text-status-safe">450 <span class="text-[10px] font-normal text-secondary">PPM</span></span>
 </div>
-<div class="w-full h-1.5 bg-background rounded-full overflow-hidden">
-<div class="h-full bg-status-safe rounded-full" style="width: 45%;"></div>
+</div>
+<!-- Precision Gauge Scale Bar with Visual Ticks -->
+<div class="flex flex-col gap-0.5">
+<div class="relative w-full h-2 rounded bg-surface-container-low overflow-hidden border border-outline-variant/60 flex items-center">
+<!-- Zone Bands: 0-500 PPM Fresh (Safe), 500-1000 Moderate (Warning), 1000+ Poor (Danger) -->
+<div class="h-full bg-status-safe/25 border-r border-outline-variant/40" style="width: 50%;"></div>
+<div class="h-full bg-status-warning/20 border-r border-outline-variant/40" style="width: 30%;"></div>
+<div class="h-full bg-status-danger/20 flex-1"></div>
+<!-- Active Value Fill -->
+<div class="absolute top-0 left-0 h-full bg-status-safe/80 rounded-l" style="width: 45%;"></div>
+<div class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_#34d399] rounded" style="left: calc(45% - 2px);"></div>
+</div>
+<!-- Scale Calibration Ticks & Labels -->
+<div class="flex justify-between items-center text-[8px] font-mono text-secondary/70 px-0.5">
+<span class="text-status-safe">0 [CLEAN]</span>
+<span class="text-status-safe font-semibold">| 500</span>
+<span class="text-status-warning">1k</span>
+<span class="text-status-danger">2k+ PPM</span>
+</div>
 </div>
 </div>
 <!-- Sensor 4: Obstacle Distance -->
-<div class="bg-surface-container p-3 border border-outline-variant rounded">
-<div class="flex justify-between items-center mb-1.5">
-<span class="text-secondary text-xs flex items-center gap-1.5">
-<span class="material-symbols-outlined text-[15px] text-primary">radar</span>
-            Obstacle Distance
-          </span>
-<span class="font-mono text-xs font-semibold text-status-safe">45 cm</span>
-</div>
-<div class="w-full h-1.5 bg-background rounded-full overflow-hidden">
-<div class="h-full bg-status-safe rounded-full" style="width: 45%;"></div>
-</div>
-</div>
 <!-- Quick Subsystem Status List -->
 <div class="bg-surface-container p-3 border border-outline-variant rounded mt-1">
 <div class="text-[11px] font-semibold text-secondary uppercase tracking-wider mb-2">Subsystem Health</div>
@@ -198,8 +402,14 @@
 </div>
 </div>
 </div>
-<!-- Sidebar Bottom Links -->
-<div class="border-t border-outline-variant p-2 bg-surface-container flex flex-col gap-1 shrink-0"><button class="flex items-center justify-center gap-2 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded font-medium transition-colors text-xs active:scale-95 mb-1" title="Capture Snapshot"><span class="material-symbols-outlined text-[16px]">photo_camera</span><span class="">Take Snapshot</span></button>
+<!-- Sidebar Bottom Links (with Snapshot & Record Video) -->
+<div class="border-t border-outline-variant p-2 bg-surface-container flex flex-col gap-1 shrink-0">
+<div class="grid gap-1.5 mb-1 w-full">
+<button class="flex items-center justify-center gap-1.5 px-2.5 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded font-medium transition-colors text-xs active:scale-95 w-full" title="Capture Snapshot">
+<span class="material-symbols-outlined text-[16px]">photo_camera</span>
+<span class="truncate">Snapshot</span>
+</button>
+</div>
 <a class="flex items-center gap-2 px-2 py-1.5 text-secondary hover:text-text-primary hover:bg-surface-container-high rounded transition-colors text-xs" href="#">
 <span class="material-symbols-outlined text-[15px]">build</span>
 <span class="">System Diagnostics</span>
@@ -210,8 +420,6 @@
 </a>
 </div>
 </aside>
-<!-- FLOATING CHAT BUTTON (Minimal, Practical Circular Icon) -->
-<button aria-label="Toggle Gemini AI Analytics View" class="fixed bottom-24 right-4 z-30 w-10 h-10 rounded-full bg-primary hover:bg-primary-container text-white shadow-md flex items-center justify-center transition-transform hover:scale-105 active:scale-95 border border-outline-variant cursor-pointer group" title="Open Gemini AI Analytics &amp; Graph View"><span class="material-symbols-outlined text-[18px]">chat</span><span class="absolute right-12 bg-surface-container-highest text-text-primary px-2 py-1 rounded text-[11px] font-sans font-medium shadow-md border border-outline-variant whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity">Gemini AI Analytics</span></button>
 </main>
 <!-- BOTTOM CONTROL & LOG PANEL (Clean Desktop Style) -->
 <footer class="bg-surface border-t border-outline-variant flex flex-col justify-between shrink-0 z-20">
@@ -223,14 +431,14 @@
 <span class="text-[11px] text-secondary">Motor Speed</span>
 <div class="font-mono text-xs font-semibold text-text-primary">180 <span class="text-secondary font-normal">(70%)</span></div>
 </div>
-<input class="w-28 h-1.5 bg-background accent-primary rounded cursor-pointer" max="255" min="0" type="range" value="180">
+<input class="w-28 h-1.5 bg-background accent-primary rounded cursor-pointer" max="255" min="0" type="range" value="180"/>
 </div>
 <!-- Auto-Brake Guard -->
 <div class="flex items-center gap-3 bg-surface-container px-3 py-1.5 border border-outline-variant rounded shrink-0">
 <div class="flex items-center gap-2">
 <span class="text-xs font-medium text-text-primary">Auto-Brake</span>
 <label class="relative inline-flex items-center cursor-pointer">
-<input checked="" class="sr-only peer" type="checkbox">
+<input checked="" class="sr-only peer" type="checkbox"/>
 <div class="w-7 h-4 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-status-safe"></div>
 </label>
 </div>
@@ -238,23 +446,26 @@
 <div class="flex items-center gap-2">
 <span class="text-[11px] text-secondary">Threshold:</span>
 <span class="font-mono text-xs font-medium text-text-primary">30 cm</span>
-<input class="w-20 h-1.5 bg-background accent-status-warning rounded cursor-pointer" max="100" min="10" type="range" value="30">
+<input class="w-20 h-1.5 bg-background accent-status-warning rounded cursor-pointer" max="100" min="10" type="range" value="30"/>
 </div>
 </div>
 <!-- Gimbal Controls (Pan, Tilt, Center) -->
 <div class="flex items-center gap-3 bg-surface-container px-3 py-1.5 border border-outline-variant rounded shrink-0">
-<span class="text-xs font-medium text-text-primary">Gimbal:</span>
+<span class="text-xs font-medium text-text-primary flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-[#ff2a85]"></span>
+        Gimbal:
+      </span>
 <div class="flex items-center gap-1.5">
 <span class="text-[11px] text-secondary">Pan</span>
-<span class="font-mono text-xs text-text-primary">90°</span>
-<input class="w-20 h-1.5 bg-background accent-primary rounded cursor-pointer" max="180" min="0" type="range" value="90">
+<span class="font-mono text-xs text-pink-400 font-semibold" id="footerPanText">90°</span>
+<input class="w-20 h-1.5 bg-background accent-[#ff2a85] rounded cursor-pointer" id="panSlider" max="180" min="0" type="range" value="90"/>
 </div>
 <div class="flex items-center gap-1.5">
 <span class="text-[11px] text-secondary">Tilt</span>
-<span class="font-mono text-xs text-text-primary">90°</span>
-<input class="w-20 h-1.5 bg-background accent-primary rounded cursor-pointer" max="180" min="0" type="range" value="90">
+<span class="font-mono text-xs text-pink-400 font-semibold" id="footerTiltText">90°</span>
+<input class="w-20 h-1.5 bg-background accent-[#ff2a85] rounded cursor-pointer" id="tiltSlider" max="180" min="0" type="range" value="90"/>
 </div>
-<button class="text-xs text-primary hover:text-text-primary bg-primary/10 hover:bg-primary/20 px-2 py-0.5 rounded border border-primary/30 transition-colors font-medium">
+<button class="text-xs text-pink-300 hover:text-white bg-[#ff2a85]/20 hover:bg-[#ff2a85]/30 px-2.5 py-0.5 rounded border border-[#ff2a85]/40 transition-colors font-medium active:scale-95" id="centerGimbalBtn">
         Center
       </button>
 </div>
@@ -263,7 +474,8 @@
 <div class="hidden xl:flex items-center gap-2 text-secondary text-[11px] font-mono">
 <span class=""><kbd class="px-1 py-0.5 bg-surface-container border border-outline rounded text-text-primary text-[10px]">W/S</kbd> Drive</span>
 <span class=""><kbd class="px-1 py-0.5 bg-surface-container border border-outline rounded text-text-primary text-[10px]">A/D</kbd> Turn</span>
-<span class=""><kbd class="px-1 py-0.5 bg-surface-container border border-outline rounded text-text-primary text-[10px]">I/J/K/L</kbd> Gimbal</span>
+<span class=""><kbd class="px-1 py-0.5 bg-surface-container border border-[#ff2a85]/40 text-pink-300 rounded text-[10px]">I/J/K/L</kbd> Gimbal</span>
+<span class=""><kbd class="px-1 py-0.5 bg-surface-container border border-[#ff2a85]/40 text-pink-300 rounded text-[10px]">C</kbd> Center</span>
 </div>
 <button class="bg-status-danger hover:bg-red-600 text-white font-semibold text-xs px-4 py-1.5 rounded transition-colors active:scale-95 shrink-0">
         Space: Stop
@@ -287,7 +499,7 @@
 <div class="flex items-center gap-2">
 <span class="text-text-muted">10:00:01</span>
 <span class="text-status-safe font-medium">[CONNECTED]</span>
-<span class="text-text-primary">WebSocket connected to 192.168.1.100 (ESP32-MCU)</span>
+<span class="text-text-primary">UDP Port 5005 bound to 192.168.1.100 (ACK in 4.2ms)</span>
 </div>
 <div class="flex items-center gap-2">
 <span class="text-text-muted">10:00:02</span>
@@ -307,8 +519,424 @@
 </div>
 </details>
 </footer>
+<!-- DEDICATED DUAL PAN & TILT GAUGE SCRIPT -->
+<script>
+  (function() {
+    const panCanvas = document.getElementById('panDialCanvas');
+    const tiltCanvas = document.getElementById('tiltDialCanvas');
+    if (!panCanvas || !tiltCanvas) return;
 
+    const panCtx = panCanvas.getContext('2d');
+    const tiltCtx = tiltCanvas.getContext('2d');
 
+    // Controls & Readout Elements
+    const panSlider = document.getElementById('panSlider');
+    const tiltSlider = document.getElementById('tiltSlider');
+    const centerBtn = document.getElementById('centerGimbalBtn');
+    const footerPanText = document.getElementById('footerPanText');
+    const footerTiltText = document.getElementById('footerTiltText');
+    const hudPanValue = document.getElementById('hudPanValue');
+    const hudTiltValue = document.getElementById('hudTiltValue');
+    const hudOrientationLabel = document.getElementById('hudOrientationLabel');
+    const panRelValue = document.getElementById('panRelValue');
+    const tiltPitchValue = document.getElementById('tiltPitchValue');
 
+    let currentPan = 90;
+    let currentTilt = 90;
+    let targetPan = 90;
+    let targetTilt = 90;
 
-</body></html>
+    function updateLabels(pan, tilt) {
+      const panOffset = Math.round(pan - 90);
+      const tiltOffset = Math.round(tilt - 90);
+
+      let pText = "CTR";
+      if (panOffset > 15) pText = `R+${panOffset}°`;
+      else if (panOffset < -15) pText = `L${panOffset}°`;
+
+      let tText = "LEVEL";
+      if (tiltOffset > 10) tText = `UP+${tiltOffset}°`;
+      else if (tiltOffset < -10) tText = `DN${tiltOffset}°`;
+
+      if (hudOrientationLabel) {
+        if (Math.abs(panOffset) <= 10 && Math.abs(tiltOffset) <= 10) {
+          hudOrientationLabel.textContent = "FRONT / LEVEL";
+        } else {
+          hudOrientationLabel.textContent = `${pText} / ${tText}`;
+        }
+      }
+
+      if (panRelValue) {
+        panRelValue.textContent = (panOffset >= 0 ? `+${panOffset}°` : `${panOffset}°`);
+      }
+      if (tiltPitchValue) {
+        tiltPitchValue.textContent = (tiltOffset >= 0 ? `+${tiltOffset}°` : `${tiltOffset}°`);
+      }
+    }
+
+    function syncControls() {
+      const p = Math.round(targetPan);
+      const t = Math.round(targetTilt);
+      if (footerPanText) footerPanText.textContent = `${p}°`;
+      if (footerTiltText) footerTiltText.textContent = `${t}°`;
+      if (hudPanValue) hudPanValue.textContent = `${p}°`;
+      if (hudTiltValue) hudTiltValue.textContent = `${t}°`;
+      updateLabels(p, t);
+    }
+
+    if (panSlider) {
+      panSlider.addEventListener('input', (e) => {
+        targetPan = parseFloat(e.target.value);
+        syncControls();
+      });
+    }
+
+    if (tiltSlider) {
+      tiltSlider.addEventListener('input', (e) => {
+        targetTilt = parseFloat(e.target.value);
+        syncControls();
+      });
+    }
+
+    function resetCenter() {
+      targetPan = 90;
+      targetTilt = 90;
+      if (panSlider) panSlider.value = 90;
+      if (tiltSlider) tiltSlider.value = 90;
+      syncControls();
+    }
+
+    if (centerBtn) {
+      centerBtn.addEventListener('click', resetCenter);
+    }
+
+    // Keyboard bindings (I/J/K/L to move, C to center)
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+      const key = e.key.toLowerCase();
+      let changed = false;
+      if (key === 'j') { targetPan = Math.max(0, targetPan - 5); changed = true; }
+      if (key === 'l') { targetPan = Math.min(180, targetPan + 5); changed = true; }
+      if (key === 'i') { targetTilt = Math.min(180, targetTilt + 5); changed = true; }
+      if (key === 'k') { targetTilt = Math.max(0, targetTilt - 5); changed = true; }
+      if (key === 'c') { resetCenter(); return; }
+
+      if (changed) {
+        if (panSlider) panSlider.value = targetPan;
+        if (tiltSlider) tiltSlider.value = targetTilt;
+        syncControls();
+      }
+    });
+
+    // Helper: Draw a prominent vivid magenta-pink (#ff2a85) Arrow
+    function drawGlowingArrow(ctx, startX, startY, endX, endY, headLen = 14, headWidth = 11, shaftWidth = 4) {
+      const dx = endX - startX;
+      const dy = endY - startY;
+      const angle = Math.atan2(dy, dx);
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const neckLen = Math.max(0, length - headLen);
+
+      const neckX = startX + Math.cos(angle) * neckLen;
+      const neckY = startY + Math.sin(angle) * neckLen;
+
+      // Shaft Outer Glow
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(neckX, neckY);
+      ctx.strokeStyle = '#ff2a85';
+      ctx.lineWidth = shaftWidth;
+      ctx.lineCap = 'round';
+      ctx.shadowColor = '#ff2a85';
+      ctx.shadowBlur = 10;
+      ctx.stroke();
+
+      // Shaft Core Highlight
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(neckX, neckY);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = shaftWidth * 0.45;
+      ctx.stroke();
+
+      // Triangular Arrow Head
+      const p1X = endX;
+      const p1Y = endY;
+      const p2X = neckX + Math.cos(angle + Math.PI / 2) * (headWidth / 2);
+      const p2Y = neckY + Math.sin(angle + Math.PI / 2) * (headWidth / 2);
+      const p3X = neckX + Math.cos(angle - Math.PI / 2) * (headWidth / 2);
+      const p3Y = neckY + Math.sin(angle - Math.PI / 2) * (headWidth / 2);
+
+      ctx.beginPath();
+      ctx.moveTo(p1X, p1Y);
+      ctx.lineTo(p2X, p2Y);
+      ctx.lineTo(p3X, p3Y);
+      ctx.closePath();
+
+      ctx.fillStyle = '#ff2a85';
+      ctx.shadowColor = '#ff2a85';
+      ctx.shadowBlur = 12;
+      ctx.fill();
+
+      // Head Border & Core Spark
+      ctx.strokeStyle = '#ffe4f0';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(p1X, p1Y, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function renderPanDial(panAngle) {
+      const w = 148;
+      const h = 148;
+      const cx = 74;
+      const cy = 74;
+      const r = 54;
+
+      panCtx.clearRect(0, 0, w, h);
+
+      // Dial Radial Gradient Background
+      const bgGrad = panCtx.createRadialGradient(cx, cy, 5, cx, cy, r);
+      bgGrad.addColorStop(0, 'rgba(25, 33, 56, 0.9)');
+      bgGrad.addColorStop(0.85, 'rgba(11, 19, 38, 0.95)');
+      bgGrad.addColorStop(1, 'rgba(6, 14, 32, 0.98)');
+      panCtx.fillStyle = bgGrad;
+      panCtx.beginPath();
+      panCtx.arc(cx, cy, r, 0, Math.PI * 2);
+      panCtx.fill();
+
+      // Outer bezel ring
+      panCtx.strokeStyle = 'rgba(75, 85, 99, 0.5)';
+      panCtx.lineWidth = 1.5;
+      panCtx.stroke();
+
+      // Subtle range arc (0° left to 180° right spanning the top hemisphere)
+      panCtx.beginPath();
+      panCtx.arc(cx, cy, r - 3, Math.PI, 0, false);
+      panCtx.strokeStyle = 'rgba(255, 42, 133, 0.35)';
+      panCtx.lineWidth = 3;
+      panCtx.stroke();
+
+      // Compass crosshair / grid lines
+      panCtx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+      panCtx.lineWidth = 1;
+      panCtx.beginPath();
+      panCtx.moveTo(cx - r + 8, cy);
+      panCtx.lineTo(cx + r - 8, cy);
+      panCtx.moveTo(cx, cy - r + 8);
+      panCtx.lineTo(cx, cy + r - 8);
+      panCtx.stroke();
+
+      // Angle tick marks around dial
+      for (let deg = 0; deg <= 180; deg += 15) {
+        // Map 0 -> -Math.PI (left, 9 o'clock), 90 -> -Math.PI/2 (top, 12 o'clock), 180 -> 0 (right, 3 o'clock)
+        const rad = Math.PI + (deg / 180) * Math.PI;
+        const isMajor = deg % 45 === 0;
+        const len = isMajor ? 8 : 4;
+        const x1 = cx + Math.cos(rad) * (r - 2);
+        const y1 = cy + Math.sin(rad) * (r - 2);
+        const x2 = cx + Math.cos(rad) * (r - 2 - len);
+        const y2 = cy + Math.sin(rad) * (r - 2 - len);
+
+        panCtx.beginPath();
+        panCtx.moveTo(x1, y1);
+        panCtx.lineTo(x2, y2);
+        panCtx.strokeStyle = isMajor ? '#ff2a85' : 'rgba(148, 163, 184, 0.4)';
+        panCtx.lineWidth = isMajor ? 1.5 : 1;
+        panCtx.stroke();
+      }
+
+      // Calculate arrow tip coordinates
+      // Pan angle: 90 is centered forward (top / 12 o'clock, -PI/2)
+      // 0 is left (9 o'clock, PI), 180 is right (3 o'clock, 0)
+      const arrowRad = Math.PI + (panAngle / 180) * Math.PI;
+      const arrowLen = r - 10;
+      const tipX = cx + Math.cos(arrowRad) * arrowLen;
+      const tipY = cy + Math.sin(arrowRad) * arrowLen;
+
+      // Draw Glowing Magenta-Pink Arrow
+      drawGlowingArrow(panCtx, cx, cy, tipX, tipY, 15, 12, 4);
+
+      // Center pivot hub
+      panCtx.beginPath();
+      panCtx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+      panCtx.fillStyle = '#ff2a85';
+      panCtx.shadowColor = '#ff2a85';
+      panCtx.shadowBlur = 6;
+      panCtx.fill();
+      panCtx.beginPath();
+      panCtx.arc(cx, cy, 2, 0, Math.PI * 2);
+      panCtx.fillStyle = '#ffffff';
+      panCtx.fill();
+      panCtx.shadowBlur = 0;
+    }
+
+    function renderTiltDial(tiltAngle) {
+      const w = 148;
+      const h = 148;
+      const cx = 74;
+      const cy = 74;
+      const r = 54;
+
+      tiltCtx.clearRect(0, 0, w, h);
+
+      // Background Gradient
+      const bgGrad = tiltCtx.createRadialGradient(cx, cy, 5, cx, cy, r);
+      bgGrad.addColorStop(0, 'rgba(25, 33, 56, 0.9)');
+      bgGrad.addColorStop(0.85, 'rgba(11, 19, 38, 0.95)');
+      bgGrad.addColorStop(1, 'rgba(6, 14, 32, 0.98)');
+      tiltCtx.fillStyle = bgGrad;
+      tiltCtx.beginPath();
+      tiltCtx.arc(cx, cy, r, 0, Math.PI * 2);
+      tiltCtx.fill();
+
+      // Outer bezel ring
+      tiltCtx.strokeStyle = 'rgba(75, 85, 99, 0.5)';
+      tiltCtx.lineWidth = 1.5;
+      tiltCtx.stroke();
+
+      // Pitch Ladder / Vertical Elevation Arc on Right side (-70° to +70°)
+      tiltCtx.beginPath();
+      tiltCtx.arc(cx, cy, r - 3, -Math.PI * 0.45, Math.PI * 0.45, false);
+      tiltCtx.strokeStyle = 'rgba(255, 42, 133, 0.35)';
+      tiltCtx.lineWidth = 3;
+      tiltCtx.stroke();
+
+      // Center Level Reference line (Artificial horizon style)
+      tiltCtx.beginPath();
+      tiltCtx.moveTo(cx - 30, cy);
+      tiltCtx.lineTo(cx + 30, cy);
+      tiltCtx.strokeStyle = 'rgba(59, 130, 246, 0.5)';
+      tiltCtx.lineWidth = 1.5;
+      tiltCtx.setLineDash([4, 3]);
+      tiltCtx.stroke();
+      tiltCtx.setLineDash([]);
+
+      // Vertical ladder pitch rungs (Down, Level, Up)
+      const ladderY = [-32, -16, 0, 16, 32];
+      ladderY.forEach((offset, idx) => {
+        const isZero = offset === 0;
+        const width = isZero ? 28 : (Math.abs(offset) > 20 ? 14 : 20);
+        tiltCtx.beginPath();
+        tiltCtx.moveTo(cx - width / 2, cy + offset);
+        tiltCtx.lineTo(cx + width / 2, cy + offset);
+        tiltCtx.strokeStyle = isZero ? '#ff2a85' : 'rgba(148, 163, 184, 0.35)';
+        tiltCtx.lineWidth = isZero ? 1.5 : 1;
+        tiltCtx.stroke();
+      });
+
+      // Calculate Tilt needle angle
+      // 90 is Level (horizontal pointing right, 0 rad)
+      // 180 is Up (tilted up by -55 deg)
+      // 0 is Down (tilted down by +55 deg)
+      // Maximum deflection: ~50 degrees (0.88 rad)
+      const tiltFrac = (tiltAngle - 90) / 90; // -1 (down) to +1 (up)
+      const maxDeflectionRad = 0.95; // ~54 degrees
+      const needleAngle = -tiltFrac * maxDeflectionRad; // negative angle = pointing UP on canvas
+
+      const needleLen = r - 10;
+      const startX = cx - 18;
+      const startY = cy;
+      const tipX = startX + Math.cos(needleAngle) * (needleLen + 14);
+      const tipY = startY + Math.sin(needleAngle) * (needleLen + 14);
+
+      // Draw Glowing Magenta-Pink Tilt Arrow
+      drawGlowingArrow(tiltCtx, startX, startY, tipX, tipY, 15, 12, 4);
+
+      // Origin Pivot Dot
+      tiltCtx.beginPath();
+      tiltCtx.arc(startX, startY, 4, 0, Math.PI * 2);
+      tiltCtx.fillStyle = '#ff2a85';
+      tiltCtx.shadowColor = '#ff2a85';
+      tiltCtx.shadowBlur = 6;
+      tiltCtx.fill();
+      tiltCtx.beginPath();
+      tiltCtx.arc(startX, startY, 1.5, 0, Math.PI * 2);
+      tiltCtx.fillStyle = '#ffffff';
+      tiltCtx.fill();
+      tiltCtx.shadowBlur = 0;
+    }
+
+    function animate() {
+      // Smooth interpolation for both axes
+      currentPan += (targetPan - currentPan) * 0.22;
+      currentTilt += (targetTilt - currentTilt) * 0.22;
+
+      renderPanDial(currentPan);
+      renderTiltDial(currentTilt);
+
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+    syncControls();
+  })();
+</script>
+<script class="">
+  (function() {
+    const needleGroup = document.getElementById('gaugeNeedleGroup');
+    const statusBadge = document.getElementById('obstacleStatusBadge');
+    const digitalDist = document.getElementById('obstacleDigitalDist');
+    const brakeMargin = document.getElementById('obstacleBrakeMargin');
+    const brakeThresholdSlider = document.querySelector('input[type="range"][max="100"][min="10"]');
+
+    let currentDist = 45;
+    let currentThreshold = 30;
+
+    function updateObstacleMeter(dist, threshold) {
+      if (!needleGroup) return;
+      // Scale: 0 cm = -90deg, 100 cm = +90deg (180deg total span)
+      const clamped = Math.max(0, Math.min(100, dist));
+      const angle = -90 + (clamped / 100) * 180;
+      needleGroup.setAttribute('transform', `rotate(${angle}, 80, 80)`);
+
+      if (digitalDist) {
+        digitalDist.innerHTML = `${Math.round(dist)} <span class="text-[10px] font-normal text-secondary">cm</span>`;
+      }
+
+      const margin = Math.round(dist - threshold);
+      if (brakeMargin) {
+        if (margin > 0) {
+          brakeMargin.textContent = `+${margin} cm SAFE`;
+          brakeMargin.className = 'text-xs font-semibold text-status-safe';
+        } else if (margin === 0) {
+          brakeMargin.textContent = 'AT THRESHOLD';
+          brakeMargin.className = 'text-xs font-semibold text-status-warning';
+        } else {
+          brakeMargin.textContent = `${margin} cm BRAKE`;
+          brakeMargin.className = 'text-xs font-semibold text-status-danger';
+        }
+      }
+
+      if (statusBadge) {
+        if (dist <= 18) {
+          statusBadge.textContent = 'COLLISION RISK';
+          statusBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-status-danger/20 text-status-danger border border-status-danger/40 animate-pulse';
+          if (digitalDist) digitalDist.className = 'text-sm font-bold text-status-danger flex items-baseline gap-1';
+        } else if (dist <= threshold || dist <= 32) {
+          statusBadge.textContent = 'CAUTION';
+          statusBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-status-warning/20 text-status-warning border border-status-warning/40';
+          if (digitalDist) digitalDist.className = 'text-sm font-bold text-status-warning flex items-baseline gap-1';
+        } else {
+          statusBadge.textContent = 'SAFE';
+          statusBadge.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-status-safe/20 text-status-safe border border-status-safe/40';
+          if (digitalDist) digitalDist.className = 'text-sm font-bold text-status-safe flex items-baseline gap-1';
+        }
+      }
+    }
+
+    if (brakeThresholdSlider) {
+      brakeThresholdSlider.addEventListener('input', (e) => {
+        currentThreshold = parseFloat(e.target.value);
+        updateObstacleMeter(currentDist, currentThreshold);
+      });
+    }
+
+    updateObstacleMeter(currentDist, currentThreshold);
+  })();
+</script></body></html>

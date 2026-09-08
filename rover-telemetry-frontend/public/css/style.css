@@ -62,6 +62,11 @@ tr.rejected td { color: #9096a2; }
 .dot-ok { background: var(--ok); }
 .dot-warn { background: var(--warn); }
 .dot-bad { background: var(--bad); }
+
+.range-controls { display: flex; gap: 4px; margin-bottom: 8px; }
+.range-controls button { padding: 4px 10px; border: 1px solid var(--border); background: var(--panel); border-radius: 4px; cursor: pointer; font-size: 12px; }
+.range-controls button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
 @media (max-width: 700px) {
   .app-header { flex-wrap: wrap; }
   .card-grid { grid-template-columns: 1fr; }

@@ -22,6 +22,15 @@ window.LiveView = (function () {
         <div id="live-error-banner"></div>
         <div id="live-stale-banner"></div>
         <div class="card-grid" id="metric-cards"></div>
+        <div class="panel">
+          <div class="panel-title" id="telemetry-panel-title">Telemetry</div>
+          <div class="range-controls" id="telemetry-range-controls">
+            <button data-range="10m">10 m</button><button data-range="1h">1 h</button>
+            <button data-range="6h" class="active">6 h</button><button data-range="24h">24 h</button>
+            <button data-range="7d">7 d</button><button data-range="30d">30 d</button>
+          </div>
+          <canvas id="telemetry-chart" height="90"></canvas>
+        </div>
         <!-- charts and tables from later tasks go below this line -->
       </div>
     </div>
@@ -153,6 +162,7 @@ window.LiveView = (function () {
         lastGoodCardsAt = Date.now();
         showStale(null);
         renderCards(latest, summary.buckets);
+        loadTelemetryChart(uid);
       })
       .catch((err) => {
         const staleFor = lastGoodCardsAt ? `stale since ${new Date(lastGoodCardsAt).toLocaleTimeString()}` : 'no data yet';
@@ -164,6 +174,72 @@ window.LiveView = (function () {
         }
       });
   }
+
+  let telemetryChart = null;
+  let telemetryRange = '6h';
+
+  const RANGE_TO_MS = { '10m': 6e5, '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5, '30d': 2592e6 };
+
+  function isoMinusMs(ms) {
+    return new Date(Date.now() - ms).toISOString();
+  }
+
+  function labelFor(recordedAt) {
+    return recordedAt.slice(11, 16);
+  }
+
+  function fieldSeries(readings, field, isAggregated) {
+    return readings.map((r) => {
+      const v = r[field];
+      if (v === null || v === undefined) return null;
+      return isAggregated ? v.avg : v;
+    });
+  }
+  function fieldMin(readings, field, isAggregated) {
+    return readings.map((r) => {
+      const v = r[field];
+      if (v === null || v === undefined) return null;
+      return isAggregated ? v.min : v;
+    });
+  }
+  function fieldMax(readings, field, isAggregated) {
+    return readings.map((r) => {
+      const v = r[field];
+      if (v === null || v === undefined) return null;
+      return isAggregated ? v.max : v;
+    });
+  }
+
+  function loadTelemetryChart(uid) {
+    const start = isoMinusMs(RANGE_TO_MS[telemetryRange]);
+    const end = new Date().toISOString();
+    Api.readings(uid, { start, end, resolution: 'auto' }).then((data) => {
+      const isAggregated = data.resolution !== 'raw';
+      const labels = data.readings.map((r) => labelFor(r.recorded_at));
+      document.getElementById('telemetry-panel-title').textContent =
+        `Telemetry · ${data.resolution} · ${data.count} pts`;
+      const avg = fieldSeries(data.readings, 'temperature_c', isAggregated);
+      const min = fieldMin(data.readings, 'temperature_c', isAggregated);
+      const max = fieldMax(data.readings, 'temperature_c', isAggregated);
+      if (!telemetryChart) {
+        telemetryChart = Charts.lineWithBand({
+          canvasId: 'telemetry-chart', labels, avg, min, max, avgLabel: 'Temperature (°C)', colorRgb: '47,111,237',
+        });
+      } else {
+        Charts.updateChart(telemetryChart, labels, [max, min, avg]);
+      }
+    }).catch((err) => showError(`Telemetry chart unavailable: ${err.message || err.code}`));
+  }
+
+  document.addEventListener('click', (evt) => {
+    const btn = evt.target.closest('#telemetry-range-controls button');
+    if (!btn) return;
+    document.querySelectorAll('#telemetry-range-controls button').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    telemetryRange = btn.dataset.range;
+    const uid = getSelectedUid();
+    if (uid) loadTelemetryChart(uid);
+  });
 
   return {
     mount,

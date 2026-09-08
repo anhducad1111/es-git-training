@@ -36,6 +36,13 @@ window.SystemView = (function () {
       <div class="panel-title">Database growth</div>
       <canvas id="growth-chart" height="60"></canvas>
     </div>
+    <div class="panel">
+      <div class="panel-title">Sensor limits</div>
+      <table>
+        <thead><tr><th>Field</th><th>Min</th><th>Max</th><th>Updated</th><th></th></tr></thead>
+        <tbody id="sensor-limits-editor-body"></tbody>
+      </table>
+    </div>
   `;
 
   function fmt(value, digits) { return value === null || value === undefined ? '–' : Number(value).toFixed(digits === undefined ? 1 : digits); }
@@ -180,6 +187,39 @@ window.SystemView = (function () {
     return dbSizeSeries.map((_, i) => Number((last + perPoint * i).toFixed(2)));
   }
 
+  function loadSensorLimitEditor() {
+    Api.sensorLimits().then((limits) => {
+      document.getElementById('sensor-limits-editor-body').innerHTML = Object.entries(limits).map(([field, limit]) => `
+        <tr data-field="${field}">
+          <td>${field}</td>
+          <td><input type="number" class="limit-min" value="${limit.min}" style="width:70px"></td>
+          <td><input type="number" class="limit-max" value="${limit.max}" style="width:70px"></td>
+          <td>${limit.updated_at}</td>
+          <td><button class="save-limit">Save</button><span class="limit-status"></span></td>
+        </tr>
+      `).join('');
+    }).catch((err) => showError(`Sensor limits unavailable: ${err.message || err.code}`));
+  }
+
+  function wireSensorLimitEditor() {
+    document.getElementById('sensor-limits-editor-body').addEventListener('click', (evt) => {
+      const btn = evt.target.closest('.save-limit');
+      if (!btn) return;
+      const row = btn.closest('tr');
+      const field = row.dataset.field;
+      const min = Number(row.querySelector('.limit-min').value);
+      const max = Number(row.querySelector('.limit-max').value);
+      const status = row.querySelector('.limit-status');
+      status.textContent = 'saving…';
+      Api.putSensorLimit(field, { min, max }).then((updated) => {
+        status.textContent = `saved · ${updated.updated_at}`;
+        row.children[3].textContent = updated.updated_at;
+      }).catch((err) => {
+        status.textContent = err.code === 'INVALID_PARAMETER' ? 'min must be less than max' : `error: ${err.message || err.code}`;
+      });
+    });
+  }
+
   function mount(rootEl) { el = rootEl; el.innerHTML = TEMPLATE; document.getElementById('system-range-controls').addEventListener('click', (evt) => {
     const btn = evt.target.closest('button');
     if (!btn) return;
@@ -187,7 +227,7 @@ window.SystemView = (function () {
     btn.classList.add('active');
     historyRange = btn.dataset.range;
     loadResourceCharts();
-  }); }
+  }); wireSensorLimitEditor(); loadSensorLimitEditor(); }
   function start() { if (pollTimer) return; poll(); }
   function stop() { clearTimeout(pollTimer); pollTimer = null; }
 

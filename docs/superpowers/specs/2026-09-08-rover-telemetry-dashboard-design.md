@@ -50,7 +50,7 @@ rover-telemetry-frontend/public/
 - Five metric cards: temperature, humidity, gas, distance, auto-brake state — each showing today's min/max alongside the current value.
 - Telemetry chart: temperature + humidity over a selectable range (10m/1h/6h/24h/7d/30d), average line with min/max band, shaded gaps, resolution badge (e.g. `minute · 360 pts · auto`), CSV/JSON export shortcuts (reuse History's export logic against the current rover/range).
 - Obstacle-distance chart: last 5 minutes, raw resolution, auto-brake threshold line, shaded brake-engaged bands (rising→falling edges of `auto_brake`).
-- Incoming-readings table: newest-first, last ~10 polls, greys out and labels a rejected row inline (this table is client-side history of poll responses, not a separate endpoint).
+- Incoming-readings table: newest-first, last ~10 polls of `/latest`, client-side ring buffer (no dedicated endpoint). Each row is annotated `stored` / `gas spike` (a `threshold_exceeded` event from `/events` at that timestamp) / `brake` (`auto_brake_engaged` event at that timestamp). **Correction from the UI sketch:** the sketch shows an inline `rejected` row with sensor values, but no endpoint exposes per-row rejected-payload detail (device, values, timestamp) — `GET /validation-errors/summary` only returns counts grouped by error code, and rejected payloads never reach `telemetry_readings` so `/events` can't surface them either. A rejected row cannot be rendered with real data and is not fabricated; rejection visibility stays in the sidebar's aggregate count (below).
 - Sensor-limit bars: current value against `min`/`max` from `/config/sensor-limits`.
 - Recent-events list from `/rovers/{uid}/events`.
 

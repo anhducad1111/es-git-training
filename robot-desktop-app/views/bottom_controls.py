@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QGroupBox, QHBoxLayout, QLabel, QPushButton,
+    QCheckBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
     QSlider, QVBoxLayout, QWidget
 )
 
@@ -25,12 +25,12 @@ def create_bottom_controls(app):
     """)
     speed_layout = QHBoxLayout()
     speed_layout.setContentsMargins(8, 4, 8, 4)
-    speed_layout.setSpacing(8)
+    speed_layout.setSpacing(4)
 
     app._speed_slider = QSlider(Qt.Orientation.Horizontal)
-    app._speed_slider.setRange(150, 255)
+    app._speed_slider.setRange(180, 255)
     app._speed_slider.setValue(app._current_speed)
-    app._speed_slider.setFixedWidth(100)
+    app._speed_slider.setFixedWidth(60)
     app._speed_slider.valueChanged.connect(lambda v: _on_speed_change(app, v))
     speed_layout.addWidget(app._speed_slider)
 
@@ -41,7 +41,7 @@ def create_bottom_controls(app):
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
     """)
-    app._speed_label.setFixedWidth(60)
+    app._speed_label.setFixedWidth(30)
     speed_layout.addWidget(app._speed_label)
 
     speed_group.setLayout(speed_layout)
@@ -163,58 +163,32 @@ def create_bottom_controls(app):
     gimbal_group.setLayout(gimbal_layout)
     layout.addWidget(gimbal_group)
 
-    cloud_group = QGroupBox("CLOUD")
-    cloud_group.setStyleSheet("""
-        background-color: #0f172a;
-        border: 1px solid #1e293b;
-        border-radius: 6px;
-        padding: 8px;
-    """)
-    cloud_layout = QHBoxLayout()
-    cloud_layout.setContentsMargins(8, 4, 8, 4)
+    layout.addSpacing(10)
 
-    app._cloud_send_btn = QPushButton("SEND")
-    app._cloud_send_btn.setFixedHeight(28)
-    app._cloud_send_btn.setStyleSheet("""
+    snapshot_btn = QPushButton("SNAPSHOT")
+    snapshot_btn.setFixedHeight(32)
+    snapshot_btn.setStyleSheet("""
         QPushButton {
-            background-color: #7c3aed;
-            color: white;
+            background-color: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #3b82f6;
             font-weight: 600;
-            font-size: 10px;
-            border: none;
-            padding: 4px 16px;
+            font-size: 11px;
+            padding: 6px 20px;
             letter-spacing: 1px;
         }
         QPushButton:hover {
-            background-color: #6d28d9;
+            background-color: rgba(59, 130, 246, 0.25);
         }
     """)
-    app._cloud_send_btn.clicked.connect(app._manual_send_to_cloud)
-    cloud_layout.addWidget(app._cloud_send_btn)
+    snapshot_btn.clicked.connect(app._take_snapshot)
+    layout.addWidget(snapshot_btn)
 
-    app._toggle_view_btn = QPushButton("DATA")
-    app._toggle_view_btn.setFixedHeight(28)
-    app._toggle_view_btn.setCheckable(True)
-    app._toggle_view_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            color: #06b6d4;
-            font-weight: 600;
-            font-size: 10px;
-            padding: 4px 12px;
-            letter-spacing: 1px;
-        }
-        QPushButton:checked {
-            background-color: #06b6d4;
-            color: #0a0e1a;
-        }
-    """)
-    app._toggle_view_btn.clicked.connect(app._toggle_view)
-    cloud_layout.addWidget(app._toggle_view_btn)
+    app._super_res_check = QCheckBox("Super-Res")
+    app._super_res_check.setStyleSheet("color: #64748b; font-size: 9px;")
+    layout.addWidget(app._super_res_check)
 
-    cloud_group.setLayout(cloud_layout)
-    layout.addWidget(cloud_group)
+    layout.addStretch()
 
     widget.setLayout(layout)
     return widget

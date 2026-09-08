@@ -19,8 +19,8 @@ class GimbalHUD(QWidget):
         self._timer.start(30)
 
     def set_gimbal(self, pan, tilt):
-        self._pan = pan
-        self._tilt = tilt
+        self._pan = 180 - pan
+        self._tilt = 180 - tilt
 
     def _animate(self):
         self._current_pan += (self._pan - self._current_pan) * 0.22
@@ -34,6 +34,10 @@ class GimbalHUD(QWidget):
         w = self.width()
         h = self.height()
         cx = w // 2
+        
+        painter.translate(cx, h // 2)
+        painter.scale(1, -1)
+        painter.translate(-cx, -h // 2)
         
         pink = QColor(255, 42, 133)
         dim_pink = QColor(255, 42, 133, 80)
@@ -54,54 +58,9 @@ class GimbalHUD(QWidget):
         painter.setPen(QPen(pink, 1))
         painter.drawText(cx - 15, header_y + 10, f"{int(self._current_pan)}°")
         
-        pan_cy = 70
+        tilt_cy = 70
         r = 30
         
-        painter.setPen(QPen(dim_pink, 1))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(QPointF(cx, pan_cy), r, r)
-        
-        painter.setPen(QPen(QColor(59, 130, 246, 80), 1, Qt.PenStyle.DashLine))
-        painter.drawLine(cx - 22, pan_cy, cx + 22, pan_cy)
-        
-        painter.setFont(QFont("JetBrains Mono", 6))
-        painter.setPen(QPen(pink, 1))
-        painter.drawText(cx - 3, pan_cy - r - 2, "N")
-        painter.setPen(QPen(dim_white, 1))
-        painter.drawText(cx - 3, pan_cy + r + 8, "S")
-        painter.drawText(cx - r - 8, pan_cy + 3, "W")
-        painter.drawText(cx + r + 2, pan_cy + 3, "E")
-        
-        for deg in range(0, 181, 15):
-            rad = math.pi * (1 - deg / 180)
-            x1 = cx + math.cos(rad) * (r - 2)
-            y1 = pan_cy + math.sin(rad) * (r - 2)
-            x2 = cx + math.cos(rad) * (r - 6)
-            y2 = pan_cy + math.sin(rad) * (r - 6)
-            is_major = deg % 45 == 0
-            painter.setPen(QPen(pink if is_major else dim_white, 1 if is_major else 1))
-            painter.drawLine(int(x1), int(y1), int(x2), int(y2))
-        
-        pan_rad = math.pi * (1 - self._current_pan / 180)
-        arrow_len = r - 8
-        tip_x = cx + arrow_len * math.cos(pan_rad)
-        tip_y = pan_cy + arrow_len * math.sin(pan_rad)
-        
-        painter.setPen(QPen(pink, 2))
-        painter.drawLine(cx, pan_cy, int(tip_x), int(tip_y))
-        
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(pink))
-        painter.drawEllipse(QPointF(cx, pan_cy), 4, 4)
-        painter.setBrush(QBrush(white))
-        painter.drawEllipse(QPointF(cx, pan_cy), 2, 2)
-        
-        pan_offset = int(self._current_pan - 90)
-        painter.setFont(QFont("JetBrains Mono", 6))
-        painter.setPen(QPen(pink, 1))
-        painter.drawText(cx - 10, pan_cy + r + 18, f"{pan_offset:+d}°")
-        
-        tilt_cy = 135
         painter.setPen(QPen(dim_pink, 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawEllipse(QPointF(cx, tilt_cy), r, r)
@@ -144,5 +103,50 @@ class GimbalHUD(QWidget):
         painter.setFont(QFont("JetBrains Mono", 6))
         painter.setPen(QPen(pink, 1))
         painter.drawText(cx - 10, tilt_cy + r + 18, f"{tilt_offset:+d}°")
+        
+        pan_cy = 135
+        painter.setPen(QPen(dim_pink, 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(QPointF(cx, pan_cy), r, r)
+        
+        painter.setPen(QPen(QColor(59, 130, 246, 80), 1, Qt.PenStyle.DashLine))
+        painter.drawLine(cx - 22, pan_cy, cx + 22, pan_cy)
+        
+        painter.setFont(QFont("JetBrains Mono", 6))
+        painter.setPen(QPen(pink, 1))
+        painter.drawText(cx - 3, pan_cy - r - 2, "N")
+        painter.setPen(QPen(dim_white, 1))
+        painter.drawText(cx - 3, pan_cy + r + 8, "S")
+        painter.drawText(cx - r - 8, pan_cy + 3, "W")
+        painter.drawText(cx + r + 2, pan_cy + 3, "E")
+        
+        for deg in range(0, 181, 15):
+            rad = math.pi * (1 - deg / 180)
+            x1 = cx + math.cos(rad) * (r - 2)
+            y1 = pan_cy + math.sin(rad) * (r - 2)
+            x2 = cx + math.cos(rad) * (r - 6)
+            y2 = pan_cy + math.sin(rad) * (r - 6)
+            is_major = deg % 45 == 0
+            painter.setPen(QPen(pink if is_major else dim_white, 1))
+            painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+        
+        pan_rad = math.pi * (1 - self._current_pan / 180)
+        arrow_len = r - 8
+        tip_x = cx + arrow_len * math.cos(pan_rad)
+        tip_y = pan_cy + arrow_len * math.sin(pan_rad)
+        
+        painter.setPen(QPen(pink, 2))
+        painter.drawLine(cx, pan_cy, int(tip_x), int(tip_y))
+        
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(pink))
+        painter.drawEllipse(QPointF(cx, pan_cy), 4, 4)
+        painter.setBrush(QBrush(white))
+        painter.drawEllipse(QPointF(cx, pan_cy), 2, 2)
+        
+        pan_offset = int(self._current_pan - 90)
+        painter.setFont(QFont("JetBrains Mono", 6))
+        painter.setPen(QPen(pink, 1))
+        painter.drawText(cx - 10, pan_cy + r + 18, f"{pan_offset:+d}°")
         
         painter.end()

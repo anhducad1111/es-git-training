@@ -33,8 +33,8 @@ class RoverTeleopApp(QWidget):
         self._config = load_config()
         self._is_driving = False
         self._driving_forward = True
-        self._global_speed = 180
-        self._forward_speed = 180
+        self._global_speed = self._config.get("motor_speed", 220)
+        self._forward_speed = self._global_speed
         self._current_speed = self._config.get("motor_speed", 220)
         self._gimbal_pan = 90
         self._gimbal_tilt = 90
@@ -197,9 +197,9 @@ class RoverTeleopApp(QWidget):
         gas = data.get("gas", 0)
         distance = data.get("distance", 0)
 
-        self._temp_card.update_value(f"{temp}°C", temp / 60 * 100)
-        self._humidity_card.update_value(f"{humidity}%", humidity)
-        self._gas_card.update_value(f"{int(gas)} PPM", gas / 1000 * 100)
+        self._temp_label.setText(f"{temp}°C")
+        self._humidity_label.setText(f"{humidity}%")
+        self._gas_label.setText(f"{int(gas)} PPM")
         self._distance_card.update_value(f"{distance} cm", distance / 200 * 100)
 
         if hasattr(self, '_brake_toggle') and self._brake_toggle.isChecked():
@@ -311,6 +311,36 @@ class RoverTeleopApp(QWidget):
             self._add_log("SNAPSHOT", "No frame to capture")
             return
         
+        from PyQt6.QtGui import QPainter, QFont, QColor, QPen
+        
+        temp = self._latest_telemetry.get("temperature", 0)
+        humidity = self._latest_telemetry.get("humidity", 0)
+        gas = self._latest_telemetry.get("gas", 0)
+        distance = self._latest_telemetry.get("distance", 0)
+        
+        overlay = pixmap.copy()
+        painter = QPainter(overlay)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        panel_w = 400
+        panel_h = 30
+        panel_x = overlay.width() - panel_w - 10
+        panel_y = 10
+        
+        from datetime import timezone, timedelta
+        vn_tz = timezone(timedelta(hours=7))
+        vn_time = datetime.now(vn_tz).strftime("%H:%M:%S")
+        
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 0))
+        painter.drawRoundedRect(panel_x, panel_y, panel_w, panel_h, 6, 6)
+        
+        painter.setPen(QPen(QColor(16, 185, 129), 1))
+        painter.setFont(QFont("JetBrains Mono", 10, QFont.Weight.Bold))
+        painter.drawText(panel_x - 30, panel_y + 20, f"T:{temp}°C  H:{humidity}%  G:{int(gas)}PPM  {vn_time}")
+        
+        painter.end()
+        
         snapshot_dir = os.path.join(os.path.dirname(__file__), "snapshot")
         os.makedirs(snapshot_dir, exist_ok=True)
         
@@ -318,11 +348,35 @@ class RoverTeleopApp(QWidget):
         filename = f"snapshot_{timestamp}.png"
         filepath = os.path.join(snapshot_dir, filename)
         
-        pixmap.save(filepath, "PNG")
+        overlay.save(filepath, "PNG")
         self._add_log("SNAPSHOT", f"Saved: {filename}")
+        
+        self._upload_snapshot_to_server(filepath)
         
         if hasattr(self, '_super_res_check') and self._super_res_check.isChecked():
             self._apply_super_resolution(filepath)
+
+    def _upload_snapshot_to_server(self, filepath):
+        if not self._cloud_api:
+            self._add_log("SNAPSHOT", "Cloud API not available")
+            return
+        
+        try:
+            import requests
+            url = self._cloud_api._url(f"/rovers/{self._cloud_api._device_uid}/media")
+            self._add_log("SNAPSHOT", f"Upload URL: {url}")
+            
+            with open(filepath, 'rb') as f:
+                files = {'file': (os.path.basename(filepath), f, 'image/png')}
+                response = requests.post(url, files=files, timeout=10)
+            
+            self._add_log("SNAPSHOT", f"Response: {response.status_code} {response.text[:100]}")
+            if response.status_code == 201:
+                self._add_log("SNAPSHOT", f"Uploaded to server: {os.path.basename(filepath)}")
+            else:
+                self._add_log("SNAPSHOT", f"Upload failed: {response.status_code}")
+        except Exception as e:
+            self._add_log("SNAPSHOT", f"Upload error: {str(e)[:80]}")
 
     def _apply_super_resolution(self, image_path):
         self._add_log("SUPER RES", "Processing snapshot...")
@@ -454,7 +508,7 @@ class RoverTeleopApp(QWidget):
             super().keyReleaseEvent(event)
 
     def _change_speed(self, delta):
-        new_speed = max(150, min(255, self._global_speed + delta))
+        new_speed = max(180, min(255, self._global_speed + delta))
         if new_speed != self._global_speed:
             self._global_speed = new_speed
             self._speed_slider.setValue(self._global_speed)

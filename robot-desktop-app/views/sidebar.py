@@ -14,37 +14,43 @@ def create_sidebar(app):
         border-left: 1px solid #1e293b;
     """)
     main_layout = QVBoxLayout()
-    main_layout.setContentsMargins(16, 16, 16, 16)
-    main_layout.setSpacing(10)
+    main_layout.setContentsMargins(12, 12, 12, 12)
+    main_layout.setSpacing(8)
 
     header_layout = QHBoxLayout()
-    header_label = QLabel("SENSORS")
+    header_layout.setContentsMargins(4, 4, 4, 8)
+    
+    header_col = QVBoxLayout()
+    header_label = QLabel("TELEMETRY SENSORS")
     header_label.setStyleSheet("""
-        color: #06b6d4;
+        color: #f1f5f9;
         font-weight: 700;
         font-size: 11px;
-        letter-spacing: 2px;
+        letter-spacing: 1px;
     """)
-    header_layout.addWidget(header_label)
-    header_layout.addStretch()
-
-    app._link_label = QLabel("98%")
+    header_col.addWidget(header_label)
+    
+    app._link_label = QLabel("Link: 98% (Optimal)")
     app._link_label.setStyleSheet("""
         color: #10b981;
-        font-size: 11px;
-        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        font-weight: 500;
     """)
-    header_layout.addWidget(app._link_label)
+    header_col.addWidget(app._link_label)
+    header_layout.addLayout(header_col)
+    
+    header_layout.addStretch()
 
-    estop_btn = QPushButton("STOP")
-    estop_btn.setFixedWidth(50)
+    estop_btn = QPushButton("E-STOP")
+    estop_btn.setFixedHeight(28)
     estop_btn.setStyleSheet("""
-        background-color: #ef4444;
-        color: white;
+        background-color: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.3);
         font-weight: 700;
         font-size: 10px;
-        padding: 4px 8px;
-        border: none;
+        padding: 4px 12px;
+        border-radius: 4px;
     """)
     estop_btn.clicked.connect(app._emergency_stop)
     header_layout.addWidget(estop_btn)
@@ -56,72 +62,90 @@ def create_sidebar(app):
     sensors_page = QWidget()
     sensors_layout = QVBoxLayout()
     sensors_layout.setContentsMargins(0, 0, 0, 0)
-    sensors_layout.setSpacing(10)
+    sensors_layout.setSpacing(8)
 
-    app._temp_card = SensorCard("Temp", "°C", "T", 0, 60)
-    sensors_layout.addWidget(app._temp_card)
+    compact_sensors = QWidget()
+    compact_sensors.setFixedHeight(40)
+    compact_sensors.setStyleSheet("""
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 6px;
+    """)
+    compact_layout = QHBoxLayout()
+    compact_layout.setContentsMargins(8, 4, 8, 4)
+    compact_layout.setSpacing(12)
 
-    app._humidity_card = SensorCard("Humidity", "%", "H", 0, 100)
-    sensors_layout.addWidget(app._humidity_card)
+    app._temp_label = QLabel("28.5°C")
+    app._temp_label.setStyleSheet("color: #10b981; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    compact_layout.addWidget(app._temp_label)
 
-    app._gas_card = SensorCard("Gas", "PPM", "G", 0, 1000)
-    sensors_layout.addWidget(app._gas_card)
+    app._humidity_label = QLabel("47.0%")
+    app._humidity_label.setStyleSheet("color: #3b82f6; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    compact_layout.addWidget(app._humidity_label)
+
+    app._gas_label = QLabel("150 PPM")
+    app._gas_label.setStyleSheet("color: #f59e0b; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    compact_layout.addWidget(app._gas_label)
+
+    compact_sensors.setLayout(compact_layout)
+    sensors_layout.addWidget(compact_sensors)
 
     app._distance_card = SensorCard("Distance", "cm", "D", 0, 200)
     sensors_layout.addWidget(app._distance_card)
 
-    health_group = QGroupBox("HEALTH")
+    health_group = QGroupBox("SUBSYSTEM HEALTH")
+    health_group.setStyleSheet("""
+        QGroupBox {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 8px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 5px;
+            color: #94a3b8;
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+    """)
     health_layout = QVBoxLayout()
     health_layout.setSpacing(6)
+    health_layout.setContentsMargins(8, 12, 8, 8)
 
-    for name in ["MCU", "Motors", "Servos"]:
+    for name in ["ESP32 Main MCU", "Motor Drivers", "Pan/Tilt Servos"]:
         row = QHBoxLayout()
         label = QLabel(name)
-        label.setStyleSheet("color: #64748b; font-size: 10px;")
+        label.setStyleSheet("color: #94a3b8; font-size: 10px;")
         row.addWidget(label)
         row.addStretch()
         status = QLabel("OK")
-        status.setStyleSheet("color: #10b981; font-size: 10px; font-weight: bold;")
+        status.setStyleSheet("""
+            color: #10b981;
+            font-size: 10px;
+            font-weight: bold;
+            background-color: rgba(16, 185, 129, 0.15);
+            padding: 2px 8px;
+            border-radius: 4px;
+        """)
         row.addWidget(status)
         health_layout.addLayout(row)
 
     battery_row = QHBoxLayout()
-    battery_label = QLabel("Battery")
-    battery_label.setStyleSheet("color: #64748b; font-size: 10px;")
+    battery_label = QLabel("Battery Level")
+    battery_label.setStyleSheet("color: #94a3b8; font-size: 10px;")
     battery_row.addWidget(battery_label)
     battery_row.addStretch()
-    app._battery_label = QLabel("12.4V")
-    app._battery_label.setStyleSheet("color: #e2e8f0; font-size: 10px; font-weight: bold; font-family: 'JetBrains Mono', monospace;")
+    app._battery_label = QLabel("12.4V (88%)")
+    app._battery_label.setStyleSheet("color: #f1f5f9; font-size: 10px; font-weight: bold; font-family: 'JetBrains Mono', monospace;")
     battery_row.addWidget(app._battery_label)
     health_layout.addLayout(battery_row)
 
     health_group.setLayout(health_layout)
     sensors_layout.addWidget(health_group)
-
-    snapshot_btn = QPushButton("📷  Take Snapshot")
-    snapshot_btn.setStyleSheet("""
-        QPushButton {
-            background-color: rgba(6, 182, 212, 0.1);
-            border: 1px solid rgba(6, 182, 212, 0.3);
-            color: #06b6d4;
-            font-weight: 600;
-            font-size: 11px;
-            padding: 8px 12px;
-            border-radius: 6px;
-        }
-        QPushButton:hover {
-            background-color: rgba(6, 182, 212, 0.2);
-        }
-        QPushButton:pressed {
-            background-color: rgba(6, 182, 212, 0.3);
-        }
-    """)
-    snapshot_btn.clicked.connect(app._take_snapshot)
-    sensors_layout.addWidget(snapshot_btn)
-
-    app._super_res_check = QCheckBox("Auto Super-Res on Snapshot")
-    app._super_res_check.setStyleSheet("color: #94a3b8; font-size: 10px;")
-    sensors_layout.addWidget(app._super_res_check)
 
     sensors_layout.addStretch()
     sensors_page.setLayout(sensors_layout)
@@ -281,6 +305,64 @@ def create_sidebar(app):
 
     cam_group.setLayout(cam_layout)
     settings_layout.addWidget(cam_group)
+
+    cloud_group = QGroupBox("CLOUD")
+    cloud_group.setStyleSheet("""
+        background-color: #0f172a;
+        border: 1px solid #1e293b;
+        border-radius: 6px;
+        padding: 8px;
+    """)
+    cloud_layout = QVBoxLayout()
+    cloud_layout.setContentsMargins(8, 4, 8, 4)
+    cloud_layout.setSpacing(6)
+
+    cloud_btn_row = QHBoxLayout()
+    cloud_btn_row.setSpacing(6)
+
+    app._cloud_send_btn = QPushButton("SEND")
+    app._cloud_send_btn.setFixedHeight(26)
+    app._cloud_send_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #7c3aed;
+            color: white;
+            font-weight: 600;
+            font-size: 10px;
+            border: none;
+            padding: 4px 12px;
+            letter-spacing: 1px;
+        }
+        QPushButton:hover {
+            background-color: #6d28d9;
+        }
+    """)
+    app._cloud_send_btn.clicked.connect(app._manual_send_to_cloud)
+    cloud_btn_row.addWidget(app._cloud_send_btn)
+
+    app._toggle_view_btn = QPushButton("DATA")
+    app._toggle_view_btn.setFixedHeight(26)
+    app._toggle_view_btn.setCheckable(True)
+    app._toggle_view_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #06b6d4;
+            font-weight: 600;
+            font-size: 10px;
+            padding: 4px 12px;
+            letter-spacing: 1px;
+        }
+        QPushButton:checked {
+            background-color: #06b6d4;
+            color: #0a0e1a;
+        }
+    """)
+    app._toggle_view_btn.clicked.connect(app._toggle_view)
+    cloud_btn_row.addWidget(app._toggle_view_btn)
+
+    cloud_layout.addLayout(cloud_btn_row)
+    cloud_group.setLayout(cloud_layout)
+    settings_layout.addWidget(cloud_group)
 
     settings_layout.addStretch()
     settings_page.setLayout(settings_layout)

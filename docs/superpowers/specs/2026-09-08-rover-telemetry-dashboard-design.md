@@ -108,3 +108,19 @@ No backend changes are made, so backend test suite is untouched. For the dashboa
 - Cockpit tab (§4 above).
 - Authentication (matches current API state; §11.6 "Auth: None").
 - Media (photo/video) browsing UI — not part of §11's three views or its mockups.
+
+## 10. Manual QA record
+
+Verified by browser walkthrough (Chrome automation) against the local backend at
+`http://localhost/_worktrees/rover-telemetry-dashboard/rover-telemetry-backend/public/api/v1`:
+
+- All three tabs render with real data from `rover-001` and switch without leaking timers.
+- Responsive layout at 375px width: single column, no horizontal overflow, on Live and History.
+  System view initially overflowed (the sensor-limit editor table, with two 70px number inputs
+  per row, forced the page 448px wide against a 356px viewport); fixed by scoping
+  `overflow-x: auto` to that table's containing panel (`.panel:has(#sensor-limits-editor-body)`
+  in `style.css`) so only that panel scrolls horizontally instead of the whole page.
+- Live view: fleet selection, five metric cards, both charts, incoming-readings table, sensor-limit bars, recent events.
+- History view: range/resolution/sensor controls, query-cost panel, aggregated chart, statistics table, obstacle-events chart, gap list, CSV export URL.
+- System view: metric cards, services/database/rejected panels, three history charts, sensor-limit editor round-trip (write-then-restore verified against `distance_cm`).
+- Degraded/offline rendering confirmed via a forced `/latest` failure.

@@ -106,3 +106,8 @@ tr.rejected td { color: #9096a2; }
 
 .system-panels-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px; }
 @media (max-width: 700px) { .system-panels-grid { grid-template-columns: 1fr; } }
+
+/* Sensor-limit editor table (two number inputs per row) is too wide to
+   fit narrow viewports without wrapping labels; scroll it horizontally
+   within its panel instead of letting it overflow the page. */
+.panel:has(#sensor-limits-editor-body) { overflow-x: auto; }

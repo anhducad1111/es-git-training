@@ -165,31 +165,91 @@ window.HistoryView = (function () {
     distance_cm: { label: 'Distance (cm)', colorRgb: '26,127,55' },
   };
 
-  function firstActiveSensor() {
-    return Object.keys(sensors).find((key) => sensors[key]) || 'temperature_c';
+  function activeSensors() {
+    return Object.keys(sensors).filter((key) => sensors[key]);
   }
 
   function renderHistoryChart(data) {
-    const field = firstActiveSensor();
-    const meta = SENSOR_META[field];
+    const active = activeSensors();
     const rawLabels = data.readings.map((r) => TimeUtil.dateTime(r.recorded_at));
     const isAgg = data.resolution !== 'raw';
-    const rawAvg = fieldSeriesHistory(data.readings, field, isAgg);
-    const rawMin = fieldMinHistory(data.readings, field, isAgg);
-    const rawMax = fieldMaxHistory(data.readings, field, isAgg);
     const timestampsMs = data.readings.map((r) => new Date(r.recorded_at).getTime());
     const gapThresholdMs = window.APP_CONFIG.DEGRADED_THRESHOLD_SECONDS * 1000;
+
+    if (active.length === 0) {
+      if (historyChart) { historyChart.destroy(); historyChart = null; }
+      return;
+    }
+
+    if (active.length === 1) {
+      const field = active[0];
+      const meta = SENSOR_META[field];
+      const rawAvg = fieldSeriesHistory(data.readings, field, isAgg);
+      const rawMin = fieldMinHistory(data.readings, field, isAgg);
+      const rawMax = fieldMaxHistory(data.readings, field, isAgg);
+      const { labels, series, noDataFromIndex } = Charts.appendNowGapTail(
+        rawLabels, [rawAvg, rawMin, rawMax], timestampsMs, gapThresholdMs, TimeUtil.dateTime,
+      );
+      const [avg, min, max] = series;
+      if (!historyChart || historyChart.$sensorSignature !== field) {
+        if (historyChart) historyChart.destroy();
+        historyChart = Charts.lineWithBand({
+          canvasId: 'history-chart', labels, avg, min, max, avgLabel: meta.label, colorRgb: meta.colorRgb,
+          yTitle: meta.label, noDataFromIndex,
+        });
+        historyChart.$sensorSignature = field;
+      } else {
+        Charts.updateChart(historyChart, labels, [max, min, avg], noDataFromIndex);
+      }
+      return;
+    }
+
+    // Multiple sensors: one plain average line per sensor, each on its own axis (colored
+    // to match, alternating left/right) so wildly different units (°C vs ppm vs cm) stay
+    // readable. No min/max band here - several overlapping shaded bands would be noise.
+    const signature = active.join(',');
+    const rawSeries = active.map((field) => fieldSeriesHistory(data.readings, field, isAgg));
     const { labels, series, noDataFromIndex } = Charts.appendNowGapTail(
-      rawLabels, [rawAvg, rawMin, rawMax], timestampsMs, gapThresholdMs, TimeUtil.dateTime,
+      rawLabels, rawSeries, timestampsMs, gapThresholdMs, TimeUtil.dateTime,
     );
-    const [avg, min, max] = series;
-    if (!historyChart) {
-      historyChart = Charts.lineWithBand({
-        canvasId: 'history-chart', labels, avg, min, max, avgLabel: meta.label, colorRgb: meta.colorRgb,
-        yTitle: meta.label, noDataFromIndex,
+
+    if (!historyChart || historyChart.$sensorSignature !== signature) {
+      if (historyChart) historyChart.destroy();
+      const datasets = active.map((field, i) => {
+        const meta = SENSOR_META[field];
+        return {
+          label: meta.label, data: series[i], borderColor: `rgb(${meta.colorRgb})`,
+          backgroundColor: `rgb(${meta.colorRgb})`, borderWidth: 2, pointRadius: 0, spanGaps: false,
+          yAxisID: i === 0 ? 'y' : `y${i}`,
+        };
       });
+      const scales = { x: { ticks: { maxTicksLimit: 8, color: Charts.TICK_COLOR }, title: Charts.axisTitle('Time (ICT)') } };
+      active.forEach((field, i) => {
+        const meta = SENSOR_META[field];
+        scales[i === 0 ? 'y' : `y${i}`] = {
+          position: i % 2 === 0 ? 'left' : 'right',
+          beginAtZero: false,
+          ticks: { color: `rgb(${meta.colorRgb})` },
+          title: Charts.axisTitle(meta.label, meta.colorRgb),
+          grid: { drawOnChartArea: i === 0 },
+        };
+      });
+      const ctx = document.getElementById('history-chart').getContext('2d');
+      historyChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false,
+          interaction: { mode: 'index', intersect: false }, scales,
+        },
+      });
+      historyChart.$sensorSignature = signature;
+      historyChart.$noDataFromIndex = noDataFromIndex;
     } else {
-      Charts.updateChart(historyChart, labels, [max, min, avg], noDataFromIndex);
+      historyChart.data.labels = labels;
+      active.forEach((field, i) => { historyChart.data.datasets[i].data = series[i]; });
+      historyChart.$noDataFromIndex = noDataFromIndex;
+      historyChart.update('none');
     }
   }
   function fieldSeriesHistory(readings, field, isAgg) { return readings.map((r) => (r[field] == null ? null : (isAgg ? r[field].avg : r[field]))); }

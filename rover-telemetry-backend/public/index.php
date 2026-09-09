@@ -101,6 +101,9 @@ $router->add('GET', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/events', func
 $router->add('GET', '/api/v1/validation-errors/summary', function () use ($validationErrorController) {
     return $validationErrorController->summary($_GET);
 });
+$router->add('GET', '/api/v1/validation-errors', function () use ($validationErrorController) {
+    return $validationErrorController->list($_GET);
+});
 
 $router->add('GET', '/api/v1/config/sensor-limits', fn() => $sensorLimitsGetController->get());
 $router->add('PUT', '/api/v1/config/sensor-limits/(?P<field>[a-z_]+)', function (array $params) use ($sensorLimitsPutController) {

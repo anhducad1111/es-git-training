@@ -26,4 +26,28 @@ final class ValidationErrorRepository
             'raw_payload' => mb_substr($rawPayload, 0, 4096),
         ]);
     }
+
+    /**
+     * @return list<array{id:int,device_uid:?string,received_at:string,error_code:string,detail:string,raw_payload:?string}>
+     */
+    public function listSince(\DateTimeImmutable $since, ?string $errorCode, int $limit): array
+    {
+        $sql = 'SELECT id, device_uid, received_at, error_code, detail, raw_payload FROM validation_errors '
+            . 'WHERE received_at >= :since';
+        $params = ['since' => $since->format('Y-m-d H:i:s.v')];
+        if ($errorCode !== null) {
+            $sql .= ' AND error_code = :error_code';
+            $params['error_code'] = $errorCode;
+        }
+        $sql .= ' ORDER BY received_at DESC LIMIT :limit';
+
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll();
+    }
 }

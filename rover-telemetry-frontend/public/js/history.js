@@ -152,7 +152,7 @@ window.HistoryView = (function () {
   function renderHistoryChart(data) {
     const field = firstActiveSensor();
     const meta = SENSOR_META[field];
-    const labels = data.readings.map((r) => r.recorded_at.slice(0, 16).replace('T', ' '));
+    const labels = data.readings.map((r) => TimeUtil.dateTime(r.recorded_at));
     const isAgg = data.resolution !== 'raw';
     const avg = fieldSeriesHistory(data.readings, field, isAgg);
     const min = fieldMinHistory(data.readings, field, isAgg);
@@ -170,7 +170,7 @@ window.HistoryView = (function () {
   function renderGapsList(gaps) {
     document.getElementById('history-gaps-list').innerHTML = gaps.length === 0
       ? '<li>No gaps in this range.</li>'
-      : gaps.map((g) => `<li>${Api.escapeHtml(g.start)} → ${Api.escapeHtml(g.end)} · ${g.duration_seconds}s · ${g.missing_readings} readings missing</li>`).join('');
+      : gaps.map((g) => `<li>${Api.escapeHtml(TimeUtil.dateTime(g.start))} → ${Api.escapeHtml(TimeUtil.dateTime(g.end))} · ${g.duration_seconds}s · ${g.missing_readings} readings missing</li>`).join('');
   }
 
   // Mirrors the resolution ladder used for the chart above (see runQuery/Api.readings
@@ -206,7 +206,7 @@ window.HistoryView = (function () {
         return `<tr><td>${meta.label}</td><td>${min.toFixed(1)}</td><td>${avg.toFixed(1)}</td><td>${max.toFixed(1)}</td><td>${samples}</td></tr>`;
       }).join('');
 
-      const obsLabels = buckets.map((b) => b.bucket_start.slice(0, 10));
+      const obsLabels = buckets.map((b) => TimeUtil.date(b.bucket_start));
       const obsCounts = buckets.map((b) => b.obstacle_events);
       if (!historyObstacleChart) {
         const ctx = document.getElementById('history-obstacle-chart').getContext('2d');

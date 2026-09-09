@@ -37,15 +37,11 @@ window.LiveView = (function () {
           <div class="panel-title">Obstacle distance · live</div>
           <canvas id="obstacle-chart" height="70"></canvas>
         </div>
-        <div class="panel">
-          <div class="panel-title">Media Gallery</div>
-          <div id="media-gallery" class="media-gallery"></div>
-        </div>
         <div class="live-bottom-grid">
           <div class="panel">
             <div class="panel-title">Incoming readings</div>
             <table>
-              <thead><tr><th>Time (UTC)</th><th>Temp</th><th>Hum</th><th>Gas</th><th>Dist</th><th>State</th></tr></thead>
+              <thead><tr><th>Time (ICT)</th><th>Temp</th><th>Hum</th><th>Gas</th><th>Dist</th><th>State</th></tr></thead>
               <tbody id="incoming-readings-body"></tbody>
             </table>
           </div>
@@ -82,8 +78,9 @@ window.LiveView = (function () {
   }
 
   function renderFleet(rovers) {
+    const sorted = [...rovers].sort((a, b) => a.device_uid.localeCompare(b.device_uid));
     const list = document.getElementById('fleet-list');
-    list.innerHTML = rovers.map((r) => `
+    list.innerHTML = sorted.map((r) => `
       <div class="fleet-item ${r.device_uid === selectedUid ? 'selected' : ''}" data-uid="${Api.escapeHtml(r.device_uid)}">
         <span class="dot ${statusDotClass(r.status)}"></span>
         <span class="fleet-uid">${Api.escapeHtml(r.device_uid)}</span>
@@ -93,8 +90,8 @@ window.LiveView = (function () {
     list.querySelectorAll('.fleet-item').forEach((item) => {
       item.addEventListener('click', () => selectRover(item.dataset.uid));
     });
-    if (!selectedUid && rovers.length > 0) {
-      selectRover(rovers[0].device_uid);
+    if (!selectedUid && sorted.length > 0) {
+      selectRover(sorted[0].device_uid);
     }
   }
 
@@ -182,7 +179,7 @@ window.LiveView = (function () {
         <div class="card ${stale ? 'warn' : ''}">
           <div class="card-label">${label}</div>
           <div class="card-value">${fmt(latest[key])}</div>
-          <div class="card-sub">${stale ? `at ${latest.recorded_at}` : range}</div>
+          <div class="card-sub">${stale ? `at ${TimeUtil.dateTime(latest.recorded_at)}` : range}</div>
         </div>
       `;
     }).join('') + `
@@ -215,7 +212,7 @@ window.LiveView = (function () {
       })
       .catch((err) => {
         if (myGeneration !== cardsPollGeneration) return;
-        const staleFor = lastGoodCardsAt ? `stale since ${new Date(lastGoodCardsAt).toLocaleTimeString()}` : 'no data yet';
+        const staleFor = lastGoodCardsAt ? `stale since ${TimeUtil.timeHMS(new Date(lastGoodCardsAt).toISOString())}` : 'no data yet';
         showStale(`${err.code === 'NOT_FOUND' ? 'Rover has never reported.' : `Live data unavailable (${err.message || err.code}).`} ${staleFor}`);
       })
       .finally(() => {
@@ -235,7 +232,7 @@ window.LiveView = (function () {
   }
 
   function labelFor(recordedAt) {
-    return recordedAt.slice(11, 16);
+    return TimeUtil.timeHM(recordedAt);
   }
 
   function fieldSeries(readings, field, isAggregated) {
@@ -319,7 +316,7 @@ window.LiveView = (function () {
     const rows = incomingBuffers[uid] || [];
     document.getElementById('incoming-readings-body').innerHTML = rows.map((r) => `
       <tr>
-        <td>${r.recorded_at.slice(11, 19)}</td>
+        <td>${TimeUtil.timeHMS(r.recorded_at)}</td>
         <td>${fmt(r.temperature_c)}</td><td>${fmt(r.humidity_pct)}</td>
         <td>${fmt(r.gas_ppm, 0)}</td><td>${fmt(r.distance_cm)}</td>
         <td>${classifyState(r, recentEvents)}</td>
@@ -351,7 +348,7 @@ window.LiveView = (function () {
 
   function renderRecentEvents(events) {
     document.getElementById('recent-events-list').innerHTML = events.slice(0, 8).map((e) => `
-      <li><span class="event-time">${e.at.slice(11, 19)}</span> ${describeEvent(e)}</li>
+      <li><span class="event-time">${TimeUtil.timeHMS(e.at)}</span> ${describeEvent(e)}</li>
     `).join('');
   }
 
@@ -366,56 +363,15 @@ window.LiveView = (function () {
   function pollEventsAndLimits(uid, latest) {
     Promise.all([Api.events(uid, { limit: 20 }), Api.sensorLimits()]).then(([eventsResp, limits]) => {
       incomingBuffers[uid] = incomingBuffers[uid] || [];
-      incomingBuffers[uid].unshift({ ...latest });
-      incomingBuffers[uid] = incomingBuffers[uid].slice(0, MAX_INCOMING_ROWS);
+      const isNewReading = incomingBuffers[uid][0]?.recorded_at !== latest.recorded_at;
+      if (isNewReading) {
+        incomingBuffers[uid].unshift({ ...latest });
+        incomingBuffers[uid] = incomingBuffers[uid].slice(0, MAX_INCOMING_ROWS);
+      }
       renderIncomingReadings(uid, eventsResp.events);
       renderSensorLimitBars(latest, limits);
       renderRecentEvents(eventsResp.events);
     }).catch((err) => showError(`Events/limits unavailable: ${err.message || err.code}`));
-  }
-
-  function loadMediaGallery(uid) {
-    Api.media(uid, { limit: 50 }).then((data) => {
-      const gallery = document.getElementById('media-gallery');
-      if (!data.media || data.media.length === 0) {
-        gallery.innerHTML = '<p style="color: var(--text-dim);">No media files yet.</p>';
-        return;
-      }
-      gallery.innerHTML = data.media.map((m) => {
-        const icon = m.media_type === 'photo' ? '📷' : '🎥';
-        return `
-          <div class="media-item" data-id="${m.id}">
-            <div class="media-preview" style="background: #eee; border-radius: 4px; padding: 8px; text-align: center; font-size: 28px;">
-              ${icon}
-            </div>
-            <div class="media-info">
-              <div class="media-type">${m.media_type}</div>
-              <div class="media-time">${new Date(m.captured_at).toLocaleString()}</div>
-              <div class="media-size">${(m.file_size_bytes / 1024).toFixed(0)} KB</div>
-            </div>
-            <button class="media-delete-btn" data-id="${m.id}" aria-label="Delete media">✕</button>
-          </div>
-        `;
-      }).join('');
-
-      // Add delete handlers
-      gallery.querySelectorAll('.media-delete-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const id = btn.dataset.id;
-          if (confirm('Delete this media file?')) {
-            Api.deleteMedia(uid, id).then(() => {
-              loadMediaGallery(uid);
-            }).catch((err) => {
-              showError(`Failed to delete media: ${err.message || err.code}`);
-            });
-          }
-        });
-      });
-    }).catch((err) => {
-      showError(`Media gallery unavailable: ${err.message || err.code}`);
-      document.getElementById('media-gallery').innerHTML = '<p style="color: var(--text-dim);">Media unavailable.</p>';
-    });
   }
 
   document.addEventListener('click', (evt) => {
@@ -438,7 +394,6 @@ window.LiveView = (function () {
       cardsPollGeneration += 1;
       lastGoodCardsAt = null;
       pollCards(uid);
-      loadMediaGallery(uid);
     },
   };
 })();

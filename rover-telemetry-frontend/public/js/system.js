@@ -113,7 +113,7 @@ window.SystemView = (function () {
     const start = new Date(Date.now() - HIST_RANGE_TO_MS[historyRange]).toISOString();
     const end = new Date().toISOString();
     Api.systemHistory({ start, end, resolution: 'auto' }).then((data) => {
-      const labels = data.points.map((p) => p.sampled_at.slice(11, 16));
+      const labels = data.points.map((p) => TimeUtil.timeHM(p.sampled_at));
       const cpuTemp = data.points.map((p) => p.cpu_temperature_c);
       const cpuLoad = data.points.map((p) => p.cpu_load_percent);
       const memUsed = data.points.map((p) => p.memory_used_percent);

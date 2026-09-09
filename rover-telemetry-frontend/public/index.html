@@ -12,6 +12,7 @@
   <nav class="tabs">
     <button class="tab-btn active" data-tab="live">LIVE</button>
     <button class="tab-btn" data-tab="history">HISTORY</button>
+    <button class="tab-btn" data-tab="gallery">GALLERY</button>
     <button class="tab-btn" data-tab="system">SYSTEM</button>
   </nav>
   <div class="health-badge" id="health-badge">checking…</div>
@@ -20,15 +21,18 @@
 <main>
   <section id="view-live" class="view active"></section>
   <section id="view-history" class="view"></section>
+  <section id="view-gallery" class="view"></section>
   <section id="view-system" class="view"></section>
 </main>
 
 <script src="vendor/chart.js"></script>
 <script src="js/config.js"></script>
+<script src="js/timeutil.js"></script>
 <script src="js/api.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/live.js"></script>
 <script src="js/history.js"></script>
+<script src="js/gallery.js"></script>
 <script src="js/system.js"></script>
 <script src="js/app.js"></script>
 </body>

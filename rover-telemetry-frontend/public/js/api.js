@@ -57,5 +57,6 @@ window.Api = (function () {
     exportUrl: (uid, params) => `${window.APP_CONFIG.API_BASE_URL}/rovers/${uid}/export${buildQuery(params)}`,
     media: (uid, params) => request(`/rovers/${uid}/media${buildQuery(params)}`),
     deleteMedia: (uid, id) => request(`/rovers/${uid}/media/${id}`, { method: 'DELETE' }),
+    mediaUrl: (uid, id) => `${window.APP_CONFIG.API_BASE_URL}/rovers/${uid}/media/${id}`,
   };
 })();

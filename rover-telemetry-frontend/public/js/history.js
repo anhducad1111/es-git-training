@@ -187,7 +187,7 @@ window.HistoryView = (function () {
       const rawAvg = fieldSeriesHistory(data.readings, field, isAgg);
       const rawMin = fieldMinHistory(data.readings, field, isAgg);
       const rawMax = fieldMaxHistory(data.readings, field, isAgg);
-      const { labels, series, noDataFromIndex } = Charts.appendNowGapTail(
+      const { labels, series, noDataRanges } = Charts.appendGapFills(
         rawLabels, [rawAvg, rawMin, rawMax], timestampsMs, gapThresholdMs, TimeUtil.dateTime,
       );
       const [avg, min, max] = series;
@@ -195,11 +195,11 @@ window.HistoryView = (function () {
         if (historyChart) historyChart.destroy();
         historyChart = Charts.lineWithBand({
           canvasId: 'history-chart', labels, avg, min, max, avgLabel: meta.label, colorRgb: meta.colorRgb,
-          yTitle: meta.label, noDataFromIndex,
+          yTitle: meta.label, noDataRanges,
         });
         historyChart.$sensorSignature = field;
       } else {
-        Charts.updateChart(historyChart, labels, [max, min, avg], noDataFromIndex);
+        Charts.updateChart(historyChart, labels, [max, min, avg], noDataRanges);
       }
       return;
     }
@@ -209,7 +209,7 @@ window.HistoryView = (function () {
     // readable. No min/max band here - several overlapping shaded bands would be noise.
     const signature = active.join(',');
     const rawSeries = active.map((field) => fieldSeriesHistory(data.readings, field, isAgg));
-    const { labels, series, noDataFromIndex } = Charts.appendNowGapTail(
+    const { labels, series, noDataRanges } = Charts.appendGapFills(
       rawLabels, rawSeries, timestampsMs, gapThresholdMs, TimeUtil.dateTime,
     );
 
@@ -244,11 +244,11 @@ window.HistoryView = (function () {
         },
       });
       historyChart.$sensorSignature = signature;
-      historyChart.$noDataFromIndex = noDataFromIndex;
+      historyChart.$noDataRanges = noDataRanges;
     } else {
       historyChart.data.labels = labels;
       active.forEach((field, i) => { historyChart.data.datasets[i].data = series[i]; });
-      historyChart.$noDataFromIndex = noDataFromIndex;
+      historyChart.$noDataRanges = noDataRanges;
       historyChart.update('none');
     }
   }

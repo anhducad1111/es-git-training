@@ -241,8 +241,8 @@ window.LiveView = (function () {
     return TimeUtil.timeHM(recordedAt);
   }
 
-  function gapTail(labels, series, timestampsMs) {
-    return Charts.appendNowGapTail(labels, series, timestampsMs, window.APP_CONFIG.DEGRADED_THRESHOLD_SECONDS * 1000, labelFor);
+  function gapFills(labels, series, timestampsMs) {
+    return Charts.appendGapFills(labels, series, timestampsMs, window.APP_CONFIG.DEGRADED_THRESHOLD_SECONDS * 1000, labelFor);
   }
 
   function fieldSeries(readings, field, isAggregated) {
@@ -281,12 +281,12 @@ window.LiveView = (function () {
       const rawMax = fieldMax(readings, 'temperature_c', isAggregated);
       const rawHumidity = fieldSeries(readings, 'humidity_pct', isAggregated);
       const timestampsMs = readings.map((r) => new Date(r.recorded_at).getTime());
-      const { labels, series, noDataFromIndex } = gapTail(rawLabels, [rawAvg, rawMin, rawMax, rawHumidity], timestampsMs);
+      const { labels, series, noDataRanges } = gapFills(rawLabels, [rawAvg, rawMin, rawMax, rawHumidity], timestampsMs);
       const [avg, min, max, humidity] = series;
       if (!telemetryChart) {
         telemetryChart = Charts.lineWithBand({
           canvasId: 'telemetry-chart', labels, avg, min, max, avgLabel: 'Temperature (°C)', colorRgb: '47,111,237',
-          yTitle: 'Temperature (°C)', noDataFromIndex,
+          yTitle: 'Temperature (°C)', noDataRanges,
         });
         telemetryChart.data.datasets.push({
           label: 'Humidity (%)', data: humidity, borderColor: 'rgb(130,80,223)', backgroundColor: 'rgb(130,80,223)',
@@ -299,7 +299,7 @@ window.LiveView = (function () {
         };
         telemetryChart.update('none');
       } else {
-        Charts.updateChart(telemetryChart, labels, [max, min, avg, humidity], noDataFromIndex);
+        Charts.updateChart(telemetryChart, labels, [max, min, avg, humidity], noDataRanges);
       }
     }).catch((err) => showError(`Telemetry chart unavailable: ${err.message || err.code}`));
   }
@@ -313,13 +313,13 @@ window.LiveView = (function () {
       const rawDistance = readings.map((r) => (r.distance_cm === null ? null : r.distance_cm));
       const rawBrakeFlags = readings.map((r) => (r.auto_brake ? 1 : 0));
       const timestampsMs = readings.map((r) => new Date(r.recorded_at).getTime());
-      const { labels, series, noDataFromIndex } = gapTail(rawLabels, [rawDistance, rawBrakeFlags], timestampsMs);
+      const { labels, series, noDataRanges } = gapFills(rawLabels, [rawDistance, rawBrakeFlags], timestampsMs);
       const [distance, brakeFlags] = series;
       const maxDistance = Math.max(120, ...distance.filter((v) => v !== null));
       if (!obstacleChart) {
         obstacleChart = Charts.lineWithBand({
           canvasId: 'obstacle-chart', labels, avg: distance, min: distance, max: distance,
-          avgLabel: 'Distance (cm)', colorRgb: '26,127,55', yTitle: 'Distance (cm)', noDataFromIndex,
+          avgLabel: 'Distance (cm)', colorRgb: '26,127,55', yTitle: 'Distance (cm)', noDataRanges,
         });
         obstacleChart.data.datasets.push(Charts.thresholdDataset('Auto-brake threshold', window.APP_CONFIG.AUTO_BRAKE_THRESHOLD_CM, labels.length, '207,34,46'));
         obstacleChart.data.datasets.push(Charts.bandDataset('Brake engaged', brakeFlags, maxDistance, 'rgba(207,34,46,0.15)'));
@@ -329,7 +329,7 @@ window.LiveView = (function () {
           distance, distance, distance,
           new Array(labels.length).fill(window.APP_CONFIG.AUTO_BRAKE_THRESHOLD_CM),
           brakeFlags.map((f) => (f ? maxDistance : 0)),
-        ], noDataFromIndex);
+        ], noDataRanges);
       }
     }).catch((err) => showError(`Obstacle chart unavailable: ${err.message || err.code}`));
   }

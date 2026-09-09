@@ -122,7 +122,7 @@ window.SystemView = (function () {
       const rawDbSize = data.points.map((p) => p.database_size_mb);
       const timestampsMs = data.points.map((p) => new Date(p.sampled_at).getTime());
 
-      const { labels, series, noDataFromIndex } = Charts.appendNowGapTail(
+      const { labels, series, noDataRanges } = Charts.appendGapFills(
         rawLabels, [rawCpuTemp, rawCpuLoad, rawMemUsed, rawIngestRate, rawDbSize],
         timestampsMs, GATEWAY_SAMPLE_GAP_THRESHOLD_MS, TimeUtil.timeHM,
       );
@@ -149,14 +149,14 @@ window.SystemView = (function () {
             },
           },
         });
-        resourcesChart.$noDataFromIndex = noDataFromIndex;
+        resourcesChart.$noDataRanges = noDataRanges;
       } else {
         resourcesChart.data.labels = labels;
         resourcesChart.data.datasets[0].data = cpuTemp;
         resourcesChart.data.datasets[1].data = cpuLoad;
         resourcesChart.data.datasets[2].data = memUsed;
         resourcesChart.data.datasets[3].data = new Array(labels.length).fill(80);
-        resourcesChart.$noDataFromIndex = noDataFromIndex;
+        resourcesChart.$noDataRanges = noDataRanges;
         resourcesChart.update('none');
       }
 
@@ -173,12 +173,12 @@ window.SystemView = (function () {
             },
           },
         });
-        ingestChart.$noDataFromIndex = noDataFromIndex;
+        ingestChart.$noDataRanges = noDataRanges;
       } else {
         ingestChart.data.labels = labels;
         ingestChart.data.datasets[0].data = ingestRate;
         ingestChart.data.datasets[0].backgroundColor = ingestRate.map((v) => (v === 0 ? 'rgba(207,34,46,0.4)' : 'rgba(26,127,55,0.6)'));
-        ingestChart.$noDataFromIndex = noDataFromIndex;
+        ingestChart.$noDataRanges = noDataRanges;
         ingestChart.update('none');
       }
 
@@ -202,12 +202,12 @@ window.SystemView = (function () {
             },
           },
         });
-        growthChart.$noDataFromIndex = noDataFromIndex;
+        growthChart.$noDataRanges = noDataRanges;
       } else {
         growthChart.data.labels = labels;
         growthChart.data.datasets[0].data = dbSize;
         growthChart.data.datasets[1].data = projected;
-        growthChart.$noDataFromIndex = noDataFromIndex;
+        growthChart.$noDataRanges = noDataRanges;
         growthChart.update('none');
       }
     }).catch((err) => showError(`Resource history unavailable: ${err.message || err.code}`));

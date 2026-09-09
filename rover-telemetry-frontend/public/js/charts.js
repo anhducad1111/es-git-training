@@ -1,19 +1,24 @@
 window.Charts = (function () {
-  // Fills the chart area from the last real data point to the right edge with a flat
-  // gray rectangle, marking "no data yet" as a single solid block instead of many thin
-  // per-category bars (which show grid lines through them as a striped pattern).
+  // Fills every "no data" span - the trailing one up to now, and any gap in the middle
+  // of the range where the rover was offline and later reconnected - with a flat gray
+  // rectangle, so a gap stays visibly marked even after data resumes on either side of
+  // it. One solid block per span instead of many thin per-category bars (which show
+  // grid lines through them as a striped pattern).
   const noDataBandPlugin = {
     id: 'noDataBand',
     beforeDatasetsDraw(chart) {
-      const fromIndex = chart.$noDataFromIndex;
-      if (fromIndex === undefined || fromIndex === null) return;
+      const ranges = chart.$noDataRanges;
+      if (!ranges || !ranges.length) return;
       const { ctx, chartArea, scales } = chart;
       if (!chartArea) return;
-      const xPixel = fromIndex < 0 ? chartArea.left : scales.x.getPixelForValue(fromIndex);
-      if (xPixel >= chartArea.right) return;
       ctx.save();
       ctx.fillStyle = 'rgba(140,140,140,0.25)';
-      ctx.fillRect(xPixel, chartArea.top, chartArea.right - xPixel, chartArea.bottom - chartArea.top);
+      ranges.forEach(([fromIndex, toIndex]) => {
+        const xFrom = fromIndex < 0 ? chartArea.left : scales.x.getPixelForValue(fromIndex);
+        const xTo = toIndex === null ? chartArea.right : scales.x.getPixelForValue(toIndex);
+        if (xTo <= xFrom) return;
+        ctx.fillRect(xFrom, chartArea.top, xTo - xFrom, chartArea.bottom - chartArea.top);
+      });
       ctx.restore();
     },
   };
@@ -31,7 +36,7 @@ window.Charts = (function () {
     };
   }
 
-  function lineWithBand({ canvasId, labels, avg, min, max, avgLabel, colorRgb, noDataFromIndex, xTitle, yTitle }) {
+  function lineWithBand({ canvasId, labels, avg, min, max, avgLabel, colorRgb, noDataRanges, xTitle, yTitle }) {
     const ctx = document.getElementById(canvasId).getContext('2d');
     const chart = new Chart(ctx, {
       type: 'line',
@@ -61,7 +66,7 @@ window.Charts = (function () {
         },
       },
     });
-    chart.$noDataFromIndex = noDataFromIndex === undefined ? null : noDataFromIndex;
+    chart.$noDataRanges = noDataRanges || [];
     return chart;
   }
 
@@ -76,43 +81,69 @@ window.Charts = (function () {
     };
   }
 
-  function updateChart(chart, labels, datasetsData, noDataFromIndex) {
+  function updateChart(chart, labels, datasetsData, noDataRanges) {
     chart.data.labels = labels;
     datasetsData.forEach((data, i) => { chart.data.datasets[i].data = data; });
-    if (noDataFromIndex !== undefined) chart.$noDataFromIndex = noDataFromIndex;
+    if (noDataRanges !== undefined) chart.$noDataRanges = noDataRanges;
     chart.update('none');
   }
 
-  // Extends a chart's series with synthetic (null-valued) points from the last real
-  // sample up to "now" so the x-axis right edge always reflects the current time, and
-  // reports the index the real data ends at (for the noDataBand plugin above to shade).
+  // Extends a chart's series with synthetic (null-valued) points across every "no data"
+  // span - internal gaps where the rover reconnected after being offline, and the
+  // trailing span up to "now" if the last real sample is stale - so those spans stay a
+  // consistent width on screen and the noDataBand plugin above has something to shade.
   // The x-axis is a category scale (evenly spaced by index, not by real elapsed time),
-  // so the number of synthetic points must roughly match the real data's own spacing -
-  // otherwise a single trailing point would sit at nearly the same pixel as the last
-  // real one regardless of how large the actual time gap is.
-  function appendNowGapTail(labels, series, timestampsMs, gapThresholdMs, labelFn) {
+  // so without synthetic points a gap's width on screen would reflect nothing about its
+  // real duration - two adjacent real readings would sit at the same one-category
+  // distance whether they were 1 second or 1 day apart.
+  function appendGapFills(labels, series, timestampsMs, gapThresholdMs, labelFn) {
     const toLabel = labelFn || ((iso) => TimeUtil.timeHM(iso));
     const nowMs = Date.now();
-    const lastMs = timestampsMs.length ? timestampsMs[timestampsMs.length - 1] : null;
-    const gapMs = lastMs === null ? gapThresholdMs + 1 : nowMs - lastMs;
-    if (gapMs <= gapThresholdMs) {
-      return { labels, series, noDataFromIndex: null };
-    }
-    const stepMs = timestampsMs.length >= 2
+    const avgStepMs = timestampsMs.length >= 2
       ? (timestampsMs[timestampsMs.length - 1] - timestampsMs[0]) / (timestampsMs.length - 1)
-      : gapMs;
-    const pointCount = Math.min(300, Math.max(1, Math.round(gapMs / Math.max(stepMs, 1000))));
-    const base = lastMs === null ? nowMs - gapMs : lastMs;
-    const extraLabels = [];
-    for (let i = 1; i <= pointCount; i += 1) {
-      extraLabels.push(toLabel(new Date(base + (gapMs * i) / pointCount).toISOString()));
+      : gapThresholdMs;
+
+    function spanLabels(fromMs, toMs) {
+      const spanMs = toMs - fromMs;
+      const pointCount = Math.min(60, Math.max(1, Math.round(spanMs / Math.max(avgStepMs, 1000))));
+      const extra = [];
+      for (let i = 1; i <= pointCount; i += 1) {
+        extra.push(toLabel(new Date(fromMs + (spanMs * i) / pointCount).toISOString()));
+      }
+      return extra;
     }
-    return {
-      labels: labels.concat(extraLabels),
-      series: series.map((arr) => arr.concat(new Array(extraLabels.length).fill(null))),
-      noDataFromIndex: labels.length - 1,
+
+    const outLabels = [];
+    const outSeries = series.map(() => []);
+    const noDataRanges = [];
+    const pushNulls = (extraLabels) => {
+      extraLabels.forEach((lbl) => {
+        outLabels.push(lbl);
+        outSeries.forEach((arr) => arr.push(null));
+      });
     };
+
+    for (let i = 0; i < timestampsMs.length; i += 1) {
+      if (i > 0 && (timestampsMs[i] - timestampsMs[i - 1]) > gapThresholdMs) {
+        const fromIndex = outLabels.length - 1;
+        pushNulls(spanLabels(timestampsMs[i - 1], timestampsMs[i]));
+        noDataRanges.push([fromIndex, outLabels.length]);
+      }
+      outLabels.push(labels[i]);
+      series.forEach((arr, si) => outSeries[si].push(arr[i]));
+    }
+
+    const lastMs = timestampsMs.length ? timestampsMs[timestampsMs.length - 1] : null;
+    const trailingGapMs = lastMs === null ? gapThresholdMs + 1 : nowMs - lastMs;
+    if (trailingGapMs > gapThresholdMs) {
+      const fromIndex = outLabels.length - 1;
+      const base = lastMs === null ? nowMs - trailingGapMs : lastMs;
+      pushNulls(spanLabels(base, nowMs));
+      noDataRanges.push([fromIndex, null]);
+    }
+
+    return { labels: outLabels, series: outSeries, noDataRanges };
   }
 
-  return { lineWithBand, thresholdDataset, bandDataset, updateChart, appendNowGapTail, axisTitle, TICK_COLOR };
+  return { lineWithBand, thresholdDataset, bandDataset, updateChart, appendGapFills, axisTitle, TICK_COLOR };
 })();

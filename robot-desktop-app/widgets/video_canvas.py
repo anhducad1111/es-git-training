@@ -116,7 +116,7 @@ class VideoCanvas(QLabel):
             scaled = pixmap.scaled(
                 self.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+                Qt.TransformationMode.FastTransformation,
             )
             self.setPixmap(scaled)
 
@@ -133,7 +133,7 @@ class VideoCanvas(QLabel):
             scaled = pixmap.scaled(
                 self.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+                Qt.TransformationMode.FastTransformation,
             )
             self.setPixmap(scaled)
     

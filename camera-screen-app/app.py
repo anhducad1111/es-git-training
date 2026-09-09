@@ -1,4 +1,5 @@
 from datetime import datetime
+import queue
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QFont, QPainter, QPen, QColor
 from PyQt6.QtWidgets import (
@@ -15,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 from config import load_config, save_config
 from camera_thread import CameraThread
+from detector import DetectionThread
 
 try:
     import requests
@@ -41,6 +43,7 @@ class CameraCanvas(QLabel):
         self.setText("NO SIGNAL")
         self.setFont(QFont("Consolas", 14))
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.detections = []
 
     def update_frame(self, image):
         if isinstance(image, QImage):
@@ -62,26 +65,42 @@ class CameraCanvas(QLabel):
             return
 
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        cx, cy = w / 2, h / 2
 
-        cx = self.width() / 2
-        cy = self.height() / 2
-        color = QColor(255, 255, 255, 200)
-
-        painter.setPen(QPen(color, 2))
+        painter.setPen(QPen(QColor(255, 255, 255, 200), 2))
         painter.drawLine(int(cx), int(cy - 20), int(cx), int(cy - 5))
         painter.drawLine(int(cx), int(cy + 5), int(cx), int(cy + 20))
         painter.drawLine(int(cx - 20), int(cy), int(cx - 5), int(cy))
         painter.drawLine(int(cx + 5), int(cy), int(cx + 20), int(cy))
 
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(color)
+        painter.setBrush(QColor(255, 255, 255, 200))
         painter.drawEllipse(int(cx), int(cy), 2, 2)
 
         painter.setPen(QPen(QColor(16, 185, 129), 1))
         painter.setFont(QFont("Consolas", 10))
-        now = datetime.now().strftime("%H:%M:%S")
-        painter.drawText(10, 20, now)
+        painter.drawText(10, 20, datetime.now().strftime("%H:%M:%S"))
+
+        if self.detections:
+            box_pen = QPen(QColor(0, 255, 0, 200), 2)
+            box_brush = Qt.BrushStyle.NoBrush
+            text_color = QColor(0, 255, 0, 230)
+            bg_color = QColor(0, 0, 0, 160)
+            font = QFont("Consolas", 9)
+            painter.setFont(font)
+            fm = painter.fontMetrics()
+            for det in self.detections:
+                x1, y1, x2, y2 = det["box"]
+                painter.setPen(box_pen)
+                painter.setBrush(box_brush)
+                painter.drawRect(x1, y1, x2 - x1, y2 - y1)
+                text = f"{det['label']} {det['confidence']:.0%}"
+                tr = fm.boundingRect(text)
+                tr.moveTopLeft((x1, y1 - tr.height() - 2))
+                painter.fillRect(tr, bg_color)
+                painter.setPen(text_color)
+                painter.drawText(tr, Qt.AlignmentFlag.AlignCenter, text)
 
         painter.end()
 
@@ -91,7 +110,11 @@ class CameraApp(QWidget):
         super().__init__()
         self._config = load_config()
         self._camera_thread = None
+        self._detection_thread = None
         self._base_url = f"http://{self._config['cam_ip']}"
+        self._detection_enabled = self._config.get("detection_enabled", False)
+        self._detection_interval = self._config.get("detection_interval", 3)
+        self._detection_confidence = self._config.get("detection_confidence", 0.5)
         self.init_ui()
 
     def init_ui(self):
@@ -224,6 +247,14 @@ class CameraApp(QWidget):
         self._quality_value.setFixedWidth(30)
         controls.addWidget(self._quality_value)
 
+        controls.addSpacing(20)
+
+        self._detect_btn = QPushButton("Detect: ON" if self._detection_enabled else "Detect: OFF")
+        self._detect_btn.setCheckable(True)
+        self._detect_btn.setChecked(self._detection_enabled)
+        self._detect_btn.clicked.connect(self._toggle_detection)
+        controls.addWidget(self._detect_btn)
+
         controls.addStretch()
 
         layout.addLayout(controls)
@@ -284,6 +315,11 @@ class CameraApp(QWidget):
         self._camera_thread = CameraThread(url)
         self._camera_thread.start()
 
+        self._detection_thread = DetectionThread()
+        self._detection_thread.enabled = self._detection_enabled
+        self._detection_thread.confidence = self._detection_confidence
+        self._detection_thread.start()
+
         self._frame_timer = QTimer()
         self._frame_timer.timeout.connect(self._poll_frame)
         self._frame_timer.start(33)
@@ -300,6 +336,9 @@ class CameraApp(QWidget):
         if self._camera_thread:
             self._camera_thread.stop()
             self._camera_thread = None
+        if self._detection_thread:
+            self._detection_thread.stop()
+            self._detection_thread = None
         if hasattr(self, '_frame_timer'):
             self._frame_timer.stop()
         if hasattr(self, '_status_timer'):
@@ -310,15 +349,35 @@ class CameraApp(QWidget):
     def _poll_frame(self):
         if not self._camera_thread:
             return
-        dropped = 0
+        image = None
         while not self._camera_thread.frame_queue.empty():
             try:
                 image = self._camera_thread.frame_queue.get_nowait()
-                dropped += 1
-            except Exception:
+            except queue.Empty:
                 break
-        if dropped > 0:
-            self._on_frame(image)
+        if image is None:
+            return
+
+        self._on_frame(image)
+
+        if self._detection_enabled and self._detection_thread:
+            if self._detection_thread.input_queue.full():
+                try:
+                    self._detection_thread.input_queue.get_nowait()
+                except queue.Empty:
+                    pass
+            try:
+                self._detection_thread.input_queue.put_nowait(image)
+            except queue.Full:
+                pass
+
+            if not self._detection_thread.result_queue.empty():
+                try:
+                    self._canvas.detections = self._detection_thread.result_queue.get_nowait()
+                except queue.Empty:
+                    pass
+        else:
+            self._canvas.detections = []
 
     def _poll_status(self):
         if not self._camera_thread:
@@ -360,6 +419,15 @@ class CameraApp(QWidget):
             self._quality_timer.setInterval(100)
             self._quality_timer.timeout.connect(self._send_quality)
         self._quality_timer.start()
+
+    def _toggle_detection(self):
+        self._detection_enabled = self._detect_btn.isChecked()
+        self._detect_btn.setText("Detect: ON" if self._detection_enabled else "Detect: OFF")
+        self._config["detection_enabled"] = self._detection_enabled
+        if self._detection_thread:
+            self._detection_thread.enabled = self._detection_enabled
+        if not self._detection_enabled:
+            self._canvas.detections = []
 
     def _send_quality(self):
         self._send_api(f"/api/quality?val={self._quality_pending}")
@@ -410,5 +478,7 @@ class CameraApp(QWidget):
     def closeEvent(self, event):
         if self._camera_thread:
             self._camera_thread.stop()
+        if self._detection_thread:
+            self._detection_thread.stop()
         save_config(self._config)
         event.accept()

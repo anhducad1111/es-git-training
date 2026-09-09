@@ -78,22 +78,25 @@ class ReceiveThread(QThread):
             if not self._running:
                 break
             buf += chunk
-            while len(buf) > 2:
+
+            while True:
                 soi = buf.find(b"\xff\xd8")
                 if soi == -1:
                     buf = b""
                     break
-                if soi > 0:
-                    buf = buf[soi:]
-                eoi = buf.find(b"\xff\xd9", 2)
+
+                eoi = buf.find(b"\xff\xd9", soi + 2)
                 if eoi == -1:
-                    if len(buf) > 100000:
-                        buf = buf[-100:]
+                    if len(buf) > 200000:
+                        buf = buf[soi + 2:]
                     break
-                jpeg = buf[:eoi + 2]
+
+                jpeg = buf[soi:eoi + 2]
                 buf = buf[eoi + 2:]
+
                 if len(jpeg) > 500:
-                    self.raw_slot.publish(jpeg)
+                    if not self.raw_slot._has_item:
+                        self.raw_slot.publish(jpeg)
 
     def stop(self):
         self._running = False
@@ -116,8 +119,13 @@ class DecodeThread(QThread):
     def run(self):
         self._running = True
         while self._running:
-            raw = self.raw_slot.wait_and_take(timeout=0.5)
+            raw = self.raw_slot.wait_and_take(timeout=0.1)
             if raw:
+                # Skip if another frame is already waiting
+                if self.raw_slot._has_item:
+                    self._drop_count += 1
+                    continue
+
                 image = QImage()
                 image.loadFromData(raw, "JPEG")
                 if not image.isNull():

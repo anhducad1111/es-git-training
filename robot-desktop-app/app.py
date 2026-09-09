@@ -198,18 +198,31 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_video_receiver') and self._video_receiver:
             frame = self._video_receiver.take_frame()
             if frame:
-                if self._recording and isinstance(frame, bytes):
+                if self._recording and isinstance(frame, QImage):
                     self._save_rec_frame(frame)
                 if isinstance(frame, QImage):
                     self._video_canvas.update_frame_jpeg(frame)
                 elif isinstance(frame, bytes):
                     self._video_worker.push_frame(frame)
 
-    def _save_rec_frame(self, frame_bytes):
+    def _save_rec_frame(self, image):
         try:
             import cv2
             import numpy as np
-            nparr = np.frombuffer(frame_bytes, np.uint8)
+            import os
+            from PyQt6.QtCore import QBuffer, QIODevice
+
+            rec_dir = os.path.dirname(self._rec_path)
+            if rec_dir and not os.path.exists(rec_dir):
+                os.makedirs(rec_dir, exist_ok=True)
+
+            buffer = QBuffer()
+            buffer.open(QIODevice.OpenModeFlag.ReadWrite)
+            image.save(buffer, "JPEG")
+            jpeg_data = buffer.data().data()
+            buffer.close()
+
+            nparr = np.frombuffer(jpeg_data, np.uint8)
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             if img is not None:
                 if not hasattr(self, '_rec_writer') or self._rec_writer is None:
@@ -218,9 +231,14 @@ class RoverTeleopApp(QWidget):
                     self._rec_writer = cv2.VideoWriter(
                         self._rec_path, fourcc, 10.0, (w, h)
                     )
+                    self._add_log("REC", f"VideoWriter: {w}x{h}")
                 self._rec_writer.write(img)
-        except Exception:
-            pass
+            else:
+                self._add_log("REC", "Frame decode failed")
+        except ImportError as e:
+            self._add_log("REC", f"Import error: {e}")
+        except Exception as e:
+            self._add_log("REC", f"Save frame error: {e}")
 
     def _on_video_frame_ready(self, pixmap, bgr):
         self._video_canvas.update_frame_jpeg(pixmap)
@@ -531,18 +549,28 @@ class RoverTeleopApp(QWidget):
             if hasattr(self, '_rec_writer') and self._rec_writer is not None:
                 self._rec_writer.release()
                 self._rec_writer = None
-            self._add_log("REC", f"Recording saved: {self._rec_path}")
-            self._upload_recording(self._rec_path)
+            
+            import os
+            if os.path.exists(self._rec_path):
+                size = os.path.getsize(self._rec_path)
+                self._add_log("REC", f"Recording saved: {self._rec_path} ({size} bytes)")
+                self._upload_recording(self._rec_path)
+            else:
+                self._add_log("REC", f"Recording file not found: {self._rec_path}")
 
     def _upload_recording(self, filepath):
         if not self._cloud_api:
             self._add_log("REC", "Cloud API not available")
             return
         
+        import os
+        if not os.path.exists(filepath):
+            self._add_log("REC", f"File not found: {filepath}")
+            return
+        
         self._add_log("REC", "Uploading to cloud...")
         
         from cloud_worker import CloudWorker
-        import os
         
         url = self._cloud_api._url(f"/rovers/{self._cloud_api._device_uid}/media")
         filename = os.path.basename(filepath)

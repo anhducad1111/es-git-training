@@ -9,6 +9,9 @@ DEFAULT_CONFIG = {
     "stream_path": "/640x480.mjpeg",
     "led_brightness": 0,
     "jpeg_quality": 14,
+    "detection_enabled": False,
+    "detection_interval": 3,
+    "detection_confidence": 0.5,
 }
 
 

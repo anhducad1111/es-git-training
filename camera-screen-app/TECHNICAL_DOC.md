@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-A PyQt6 desktop application that receives and displays live MJPEG video streams from ESP32-Cam modules over HTTP. Uses a queue-based producer-consumer pattern for frame handling with automatic frame dropping.
+A PyQt6 desktop application that receives and displays live MJPEG video streams from ESP32-Cam modules over HTTP. Includes real-time object detection using YOLOv8 with toggleable detection and bounding box overlay.
 
 **Target hardware:** ESP32-CAM (AI-Thinker module or compatible) running MJPEG stream firmware.
 
@@ -11,38 +11,47 @@ A PyQt6 desktop application that receives and displays live MJPEG video streams 
 ## 2. Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    CameraApp (QWidget)                       │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────────────────┐  │
-│  │ URL Bar  │  │ Controls │  │      CameraCanvas        │  │
-│  │ (Input)  │  │ (Sliders)│  │ (QLabel + paintEvent)    │  │
-│  └──────────┘  └──────────┘  └──────────────────────────┘  │
-│       │              │                    ▲                  │
-│       │         HTTP GET          _poll_frame()             │
-│       │         (debounced)         QTimer (33ms)           │
-│       │              │                    │                  │
-│       ▼              ▼                    │                  │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │              CameraThread (QThread)                   │   │
-│  │  ┌────────────────────────────────────────────────┐  │   │
-│  │  │  frame_queue (queue.Queue, maxsize=2)         │  │   │
-│  │  │  ┌─────┐ ┌─────┐                             │  │   │
-│  │  │  │ frm │ │ frm │  ← producer puts here       │  │   │
-│  │  │  └─────┘ └─────┘                             │  │   │
-│  │  └────────────────────────────────────────────────┘  │   │
-│  │  - urllib.request.urlopen() stream reader            │   │
-│  │  - JPEG boundary detection (\xff\xd8 / \xff\xd9)      │   │
-│  │  - QImage.loadFromData() decode                      │   │
-│  │  - Frame dropping when queue full                    │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                          │                                  │
-│                          ▼                                  │
-│                 HTTP MJPEG Stream                            │
-│                (ESP32-Cam module)                            │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    CameraApp (QWidget)                           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────────────────┐  │
+│  │ URL Bar  │  │ Controls │  │        CameraCanvas          │  │
+│  │ (Input)  │  │ (Sliders)│  │ (QLabel + paintEvent)        │  │
+│  │          │  │ + Detect │  │  ┌────────────────────────┐  │  │
+│  │          │  │  Toggle  │  │  │ detections: list[dict] │  │  │
+│  └──────────┘  └──────────┘  │  └────────────────────────┘  │  │
+│       │              │        └──────────────────────────────┘  │
+│       │         HTTP GET                ▲                       │
+│       │         (debounced)    _poll_frame()                    │
+│       │              │          QTimer (33ms)                   │
+│       │              │               │                          │
+│       ▼              ▼               │                          │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │              CameraThread (QThread)                       │   │
+│  │  ┌────────────────────────────────────────────────┐      │   │
+│  │  │  frame_queue (queue.Queue, maxsize=2)         │      │   │
+│  │  └────────────────────────────────────────────────┘      │   │
+│  │  - urllib.request.urlopen() stream reader                │   │
+│  │  - JPEG boundary detection (\xff\xd8 / \xff\xd9)          │   │
+│  │  - QImage.loadFromData() decode                          │   │
+│  │  - Frame dropping when queue full                        │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                          │                                      │
+│                          ▼                                      │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  detector.py — YOLOv8 Object Detection                   │   │
+│  │  - YOLO("yolov8n.pt") — nano model (fastest)            │   │
+│  │  - detect(image, conf) → list[dict]                      │   │
+│  │  - Runs every Nth frame (configurable)                   │   │
+│  │  - Returns: [{box, label, confidence}, ...]              │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                          │                                      │
+│                          ▼                                      │
+│                 HTTP MJPEG Stream                                │
+│                (ESP32-Cam module)                                │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Pattern:** Queue-based producer-consumer. `CameraThread` produces `QImage` frames into a bounded queue. `CameraApp` polls the queue via QTimer, drains to the latest frame, and displays it.
+**Pattern:** Queue-based producer-consumer with optional detection stage. `CameraThread` produces `QImage` frames into a bounded queue. `CameraApp` polls the queue, optionally runs YOLOv8 detection, and displays results with bounding box overlay.
 
 ---
 
@@ -75,15 +84,31 @@ if self.frame_queue.full():
 self.frame_queue.put_nowait(image)  # add newest
 ```
 
-**Stream protocol:**
-1. Opens HTTP GET to MJPEG endpoint
-2. Reads 1024-byte chunks into buffer
-3. Scans for JPEG SOI (`\xff\xd8`) and EOI (`\xff\xd9`) markers
-4. Decodes complete JPEG to `QImage`
-5. Puts frame into queue (drops oldest if full)
-6. On disconnect/error, waits 2s then reconnects
+### 3.3 `detector.py` — YOLOv8 Detection
 
-### 3.3 `app.py` — GUI
+**Model:** YOLOv8n (nano) — smallest/fastest YOLOv8 variant.
+
+**Functions:**
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `get_model()` | `() → YOLO` | Lazy-loads YOLOv8n model (singleton) |
+| `detect()` | `(image, conf=0.5) → list[dict]` | Runs detection on QImage |
+
+**Detection output:**
+```python
+[
+    {
+        "box": (x1, y1, x2, y2),   # bounding box pixels
+        "label": "person",          # class label
+        "confidence": 0.87          # confidence score
+    },
+    ...
+]
+```
+
+**Performance:** Detection runs on CPU. YOLOv8n processes ~50ms per frame at 640x480. Detection runs every Nth frame (default 3) to balance accuracy and CPU usage.
+
+### 3.4 `app.py` — GUI
 
 #### Timers
 
@@ -98,20 +123,36 @@ self.frame_queue.put_nowait(image)  # add newest
 
 #### `CameraCanvas(QLabel)`
 
-Displays video. Uses `FastTransformation` (nearest-neighbor) for scaling. `paintEvent` draws:
-- Crosshair overlay (centered, semi-transparent white)
-- Timestamp (top-left, green monospace)
+Displays video. Uses `FastTransformation` (nearest-neighbor) for scaling.
+
+**Attributes:**
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `detections` | `list[dict]` | Current frame detection results |
+
+**`paintEvent` draws:**
+1. Crosshair overlay (centered, semi-transparent white)
+2. Timestamp (top-left, green monospace)
+3. Detection bounding boxes (green rectangles with labels)
 
 #### `CameraApp(QWidget)`
 
 Main window. Layout (top to bottom):
 1. **URL bar** — stream URL input + Connect/Disconnect toggle
-2. **Controls** — resolution combo, LED slider (0-255), quality slider (0-63)
-3. **CameraCanvas** — video display
+2. **Controls** — resolution combo, LED slider, quality slider, **Detect toggle button**
+3. **CameraCanvas** — video display with detection overlay
 4. **Status bar** — connection state, FPS counter, current time
 5. **Log panel** — timestamped event log
 
-### 3.4 `config.py` — Configuration
+**Detection state:**
+| Attribute | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `_detection_enabled` | `bool` | `True` | Toggle detection on/off |
+| `_detection_interval` | `int` | `3` | Run detection every N frames |
+| `_detection_confidence` | `float` | `0.5` | Minimum confidence threshold |
+| `_frame_count_total` | `int` | `0` | Total frames processed |
+
+### 3.5 `config.py` — Configuration
 
 **Default config:**
 ```python
@@ -120,7 +161,10 @@ Main window. Layout (top to bottom):
     "cam_port": 80,
     "stream_path": "/640x480.mjpeg",
     "led_brightness": 0,
-    "jpeg_quality": 14
+    "jpeg_quality": 14,
+    "detection_enabled": true,
+    "detection_interval": 3,
+    "detection_confidence": 0.5
 }
 ```
 
@@ -147,16 +191,43 @@ JPEG extraction
 frame_queue (maxsize=2)
   │
   ▼ _poll_frame() drains queue, keeps latest
-CameraApp._on_frame()
+  │
+  ├─ If detection enabled AND frame_count % interval == 0:
+  │    ▼ detector.detect(image, conf) → detections list
+  │    ▼ canvas.detections = detections
+  │
+  ├─ Else:
+  │    ▼ canvas.detections = []
   │
   ▼ CameraCanvas.update_frame()
 QPixmap → FastTransformation scale → setPixmap()
   │
   ▼ Qt paintEvent
-Crosshair + timestamp overlay → screen
+  ├─ Crosshair + timestamp overlay
+  └─ Bounding boxes + labels (if detections present)
 ```
 
-### 4.2 Control Pipeline (LED / Quality)
+### 4.2 Detection Pipeline
+
+```
+_poll_frame() (every 33ms)
+  │
+  ▼ frame_count_total += 1
+  │
+  ▼ Check: detection_enabled AND frame_count % interval == 0?
+  │
+  ├─ Yes → detector.detect(image, conf=0.5)
+  │         │
+  │         ▼ YOLOv8n inference (~50ms)
+  │         ▼ Returns list of {box, label, confidence}
+  │         ▼ canvas.detections = results
+  │
+  └─ No  → canvas.detections = []
+  │
+  ▼ _on_frame(image) → canvas update → paintEvent draws boxes
+```
+
+### 4.3 Control Pipeline (LED / Quality)
 
 ```
 Slider valueChanged(int)
@@ -169,7 +240,7 @@ Slider valueChanged(int)
 HTTP GET to ESP32-Cam
 ```
 
-### 4.3 Connection State Polling
+### 4.4 Connection State Polling
 
 ```
 _status_timer (500ms)
@@ -191,7 +262,7 @@ _status_timer (500ms)
 Main Thread (Qt Event Loop)
   │
   ├── CameraApp (GUI)
-  ├── QTimer: _frame_timer (33ms)   → polls frame_queue
+  ├── QTimer: _frame_timer (33ms)   → polls frame_queue + runs detection
   ├── QTimer: _status_timer (500ms) → checks connection state
   ├── QTimer: _fps_timer (1000ms)   → updates FPS
   ├── QTimer: _time_timer (1000ms)  → updates clock
@@ -203,6 +274,8 @@ Main Thread (Qt Event Loop)
         ├── JPEG decode
         └── queue.put_nowait() (thread-safe, no lock needed)
 ```
+
+**Note:** Detection runs on the main thread within `_poll_frame()`. At ~50ms per inference, this blocks the event loop briefly. For production use, detection should be moved to a separate thread.
 
 **Thread safety:** `queue.Queue` is inherently thread-safe. No explicit locks required.
 
@@ -237,9 +310,12 @@ Main Thread (Qt Event Loop)
 | Smooth bilinear scaling per frame | `FastTransformation` (nearest-neighbor) |
 | HTTP flood on slider drag | 100ms debounce timers |
 | Frame backlog causing lag | `queue.Queue(maxsize=2)` with frame dropping |
-|paintEvent overhead | Simple vector drawing only |
+| Detection CPU overhead | Runs every Nth frame (default 3) |
+| Detection toggle | Button to enable/disable entirely |
 
 **Frame dropping behavior:** Queue holds max 2 frames. If the ESP32 sends faster than the GUI displays, old frames are silently dropped. The GUI always renders only the latest frame.
+
+**Detection performance:** YOLOv8n processes ~50ms per frame at 640x480. With `detection_interval=3`, effective detection rate is ~10 FPS while display stays at ~30 FPS.
 
 ---
 
@@ -252,6 +328,8 @@ Main Thread (Qt Event Loop)
 | `requests` not installed | `HAS_REQUESTS = False` → API calls silently skipped |
 | Network unreachable | Exception → `error_msg` → auto-reconnect loop |
 | Queue full | Oldest frame dropped, newest queued |
+| YOLOv8 model load fail | First detection call downloads `yolov8n.pt` (~6MB) |
+| Detection error | Exception caught, detection skipped for that frame |
 
 ---
 
@@ -261,6 +339,7 @@ Main Thread (Qt Event Loop)
 |---------|---------|
 | `PyQt6` | GUI framework, threading (QThread, QTimer) |
 | `requests` | HTTP API calls (optional, graceful fallback) |
+| `ultralytics` | YOLOv8 object detection |
 
 Standard library: `queue`, `urllib.request`, `json`, `os`, `datetime`, `time`.
 
@@ -271,8 +350,9 @@ Standard library: `queue`, `urllib.request`, `json`, `os`, `datetime`, `time`.
 ```
 camera-screen-app/
 ├── main.py              # Entry point (15 lines)
-├── app.py               # GUI classes (414 lines)
+├── app.py               # GUI classes + detection integration
 ├── camera_thread.py     # Stream reader thread (76 lines)
+├── detector.py          # YOLOv8 detection wrapper (22 lines)
 ├── config.py            # Config load/save (24 lines)
 ├── config.json          # Persisted settings
 ├── requirements.txt     # Dependencies
@@ -284,15 +364,15 @@ camera-screen-app/
 
 ## 11. Future Extensibility
 
-The queue-based architecture is designed for adding processing stages:
+The queue-based architecture supports adding processing stages:
 
 ```
-CameraThread → frame_queue → [Tracker] → display_queue → Display
-                            → [Servo Controller] → ESP32 API
+CameraThread → frame_queue → [Detector] → [Tracker] → display_queue → Display
+                                           → [Servo Controller] → ESP32 API
 ```
 
 **Following mode integration points:**
 - Insert a frame processor between `frame_queue` and display
 - Read frames from queue without consuming (peek or copy)
-- Send motor/servo commands based on frame analysis
+- Send motor/servo commands based on detection/tracking results
 - Independent processing rate from display rate

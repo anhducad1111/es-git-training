@@ -35,13 +35,13 @@ window.HistoryView = (function () {
     </div>
     <div class="panel">
       <div class="panel-title">Query</div>
-      <div id="history-query-cost">窶・/div>
+      <div id="history-query-cost">–</div>
     </div>
     <div class="panel">
       <div class="chart-box"><canvas id="history-chart"></canvas></div>
     </div>
     <div class="panel">
-      <div class="panel-title">Statistics ﾂｷ selected range</div>
+      <div class="panel-title">Statistics · selected range</div>
       <table>
         <thead><tr><th>Sensor</th><th>Min</th><th>Avg</th><th>Max</th><th>Samples</th></tr></thead>
         <tbody id="history-stats-body"></tbody>
@@ -103,8 +103,8 @@ window.HistoryView = (function () {
       showError(null);
       lastQuery = data;
       document.getElementById('history-query-cost').textContent =
-        `rows returned ${data.count} ﾂｷ raw rows in range ${data.query.raw_rows_in_range} ﾂｷ ` +
-        `query time ${data.query.query_time_ms} ms ﾂｷ gaps found ${data.gaps.length} ﾂｷ ` +
+        `rows returned ${data.count} · raw rows in range ${data.query.raw_rows_in_range} · ` +
+        `query time ${data.query.query_time_ms} ms · gaps found ${data.gaps.length} · ` +
         `${data.buckets_populated} of ${data.count} buckets populated`;
       if (window.HistoryView._onData) window.HistoryView._onData(data);
     }).catch((err) => showError(`Query failed: ${err.message || err.code}`));
@@ -159,7 +159,7 @@ window.HistoryView = (function () {
   let historyObstacleChart = null;
 
   const SENSOR_META = {
-    temperature_c: { label: 'Temperature (ﾂｰC)', colorRgb: '47,111,237' },
+    temperature_c: { label: 'Temperature (°C)', colorRgb: '47,111,237' },
     humidity_pct: { label: 'Humidity (%)', colorRgb: '130,80,223' },
     gas_ppm: { label: 'Gas (ppm)', colorRgb: '184,120,20' },
     distance_cm: { label: 'Distance (cm)', colorRgb: '26,127,55' },
@@ -205,9 +205,9 @@ window.HistoryView = (function () {
     list.innerHTML = gaps.map((g) => `
       <li class="gap-card">
         <div class="gap-card-header">
-          <span class="gap-range">${Api.escapeHtml(TimeUtil.dateTime(g.start))} 竊・${Api.escapeHtml(TimeUtil.dateTime(g.end))}</span>
+          <span class="gap-range">${Api.escapeHtml(TimeUtil.dateTime(g.start))} → ${Api.escapeHtml(TimeUtil.dateTime(g.end))}</span>
           <span class="gap-badge">${g.duration_seconds}s</span>
-          <span class="gap-chevron">笆ｾ</span>
+          <span class="gap-chevron">▾</span>
         </div>
         <div class="gap-card-body">
           <div><span class="gap-field-label">Start</span> ${Api.escapeHtml(TimeUtil.dateTime(g.start))}</div>
@@ -220,7 +220,7 @@ window.HistoryView = (function () {
   }
 
   // Mirrors the resolution ladder used for the chart above (see runQuery/Api.readings
-  // with resolution=auto, and backend design proposal ﾂｧ6.5): sub-day ranges need
+  // with resolution=auto, and backend design proposal §6.5): sub-day ranges need
   // minute/hour buckets or the statistics table silently shows whole-day stats that
   // disagree with a 1h/6h/24h chart. /summary only supports minute/hour/day (no raw),
   // so the finest granularity we can ask for is 'minute'.
@@ -244,7 +244,7 @@ window.HistoryView = (function () {
       const buckets = summaryData.buckets;
       document.getElementById('history-stats-body').innerHTML = Object.entries(SENSOR_META).map(([key, meta]) => {
         const values = buckets.map((b) => b[key]).filter((v) => v && v.avg !== null);
-        if (values.length === 0) return `<tr><td>${meta.label}</td><td>窶・/td><td>窶・/td><td>窶・/td><td>窶・/td></tr>`;
+        if (values.length === 0) return `<tr><td>${meta.label}</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>`;
         const min = Math.min(...values.map((v) => v.min));
         const max = Math.max(...values.map((v) => v.max));
         const avg = values.reduce((sum, v) => sum + v.avg, 0) / values.length;

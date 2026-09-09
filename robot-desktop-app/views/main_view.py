@@ -23,7 +23,12 @@ def create_main_view(app):
     from widgets.gimbal_hud import GimbalHUD
     app._gimbal_hud = GimbalHUD()
     app._gimbal_hud.setParent(app._video_canvas)
-    app._gimbal_hud.move(10, app._video_canvas.height() - 190)
+    app._gimbal_hud.move(10, app._video_canvas.height() - 260)
+
+    from widgets.speed_meter import SpeedMeter
+    app._speed_meter = SpeedMeter()
+    app._speed_meter.setParent(app._video_canvas)
+    app._speed_meter.move(10, app._video_canvas.height() - 330)
 
     resolution_widget = QWidget()
     resolution_widget.setFixedHeight(32)

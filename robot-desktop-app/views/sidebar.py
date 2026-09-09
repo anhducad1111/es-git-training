@@ -93,60 +93,6 @@ def create_sidebar(app):
     app._distance_card = SensorCard("Distance", "cm", "D", 0, 200)
     sensors_layout.addWidget(app._distance_card)
 
-    health_group = QGroupBox("SUBSYSTEM HEALTH")
-    health_group.setStyleSheet("""
-        QGroupBox {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 6px;
-            padding: 10px;
-            margin-top: 8px;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 5px;
-            color: #94a3b8;
-            font-size: 9px;
-            font-weight: 600;
-            letter-spacing: 1px;
-        }
-    """)
-    health_layout = QVBoxLayout()
-    health_layout.setSpacing(6)
-    health_layout.setContentsMargins(8, 12, 8, 8)
-
-    for name in ["ESP32 Main MCU", "Motor Drivers", "Pan/Tilt Servos"]:
-        row = QHBoxLayout()
-        label = QLabel(name)
-        label.setStyleSheet("color: #94a3b8; font-size: 10px;")
-        row.addWidget(label)
-        row.addStretch()
-        status = QLabel("OK")
-        status.setStyleSheet("""
-            color: #10b981;
-            font-size: 10px;
-            font-weight: bold;
-            background-color: rgba(16, 185, 129, 0.15);
-            padding: 2px 8px;
-            border-radius: 4px;
-        """)
-        row.addWidget(status)
-        health_layout.addLayout(row)
-
-    battery_row = QHBoxLayout()
-    battery_label = QLabel("Battery Level")
-    battery_label.setStyleSheet("color: #94a3b8; font-size: 10px;")
-    battery_row.addWidget(battery_label)
-    battery_row.addStretch()
-    app._battery_label = QLabel("12.4V (88%)")
-    app._battery_label.setStyleSheet("color: #f1f5f9; font-size: 10px; font-weight: bold; font-family: 'JetBrains Mono', monospace;")
-    battery_row.addWidget(app._battery_label)
-    health_layout.addLayout(battery_row)
-
-    health_group.setLayout(health_layout)
-    sensors_layout.addWidget(health_group)
-
     sensors_layout.addStretch()
     sensors_page.setLayout(sensors_layout)
     app._sidebar_stack.addWidget(sensors_page)

@@ -270,10 +270,14 @@ class RoverTeleopApp(QWidget):
                     self._forward_speed = int(self._global_speed * ratio)
                 self._forward_speed = max(0, min(255, self._forward_speed))
                 self._send_command(f"speed:{self._forward_speed}")
+                if hasattr(self, '_speed_meter'):
+                    self._speed_meter.set_speed(self._forward_speed)
                 if self._forward_speed == 0:
                     self._send_command("stop")
             else:
                 self._send_command(f"speed:{self._global_speed}")
+                if hasattr(self, '_speed_meter'):
+                    self._speed_meter.set_speed(self._global_speed)
 
     def _send_to_cloud(self, data):
         if not self._cloud_api:
@@ -465,9 +469,15 @@ class RoverTeleopApp(QWidget):
         if self._view_mode == "main":
             self._center_stack.setCurrentIndex(1)
             self._view_mode = "diagnostics"
+            if hasattr(self, '_cloud_api') and self._cloud_api:
+                self._load_history()
         else:
             self._center_stack.setCurrentIndex(0)
             self._view_mode = "main"
+
+    def _load_history(self):
+        from views.diagnostics_view import _load_history as _do_load
+        _do_load(self)
 
     def _toggle_follow_mode(self):
         self._add_log("FOLLOW", "Follow mode toggled (stub)")
@@ -561,6 +571,8 @@ class RoverTeleopApp(QWidget):
         key = event.key()
         if key in (Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D):
             self._send_command("stop")
+            if hasattr(self, '_speed_meter'):
+                self._speed_meter.set_speed(0)
             if self._telemetry_poller:
                 self._telemetry_poller.set_driving(False)
         elif key in (Qt.Key.Key_Shift, Qt.Key.Key_Control):

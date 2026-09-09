@@ -18,30 +18,67 @@ def create_bottom_controls(app):
 
     speed_group = QGroupBox("SPEED")
     speed_group.setStyleSheet("""
-        background-color: #0f172a;
-        border: 1px solid #1e293b;
-        border-radius: 6px;
-        padding: 6px;
+        QGroupBox {
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 6px;
+            padding: 8px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 5px;
+            color: #64748b;
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
     """)
     speed_layout = QHBoxLayout()
-    speed_layout.setContentsMargins(6, 2, 6, 2)
-    speed_layout.setSpacing(4)
+    speed_layout.setContentsMargins(8, 4, 8, 4)
+    speed_layout.setSpacing(8)
 
     app._speed_slider = QSlider(Qt.Orientation.Horizontal)
     app._speed_slider.setRange(180, 255)
     app._speed_slider.setValue(app._current_speed)
-    app._speed_slider.setFixedWidth(60)
+    app._speed_slider.setFixedWidth(120)
+    app._speed_slider.setStyleSheet("""
+        QSlider::groove:horizontal {
+            height: 8px;
+            background: #1e293b;
+            border-radius: 4px;
+        }
+        QSlider::handle:horizontal {
+            background: #06b6d4;
+            width: 16px;
+            height: 16px;
+            margin: -4px 0;
+            border-radius: 8px;
+        }
+        QSlider::handle:horizontal:hover {
+            background: #22d3ee;
+        }
+        QSlider::sub-page:horizontal {
+            background: #06b6d4;
+            border-radius: 4px;
+        }
+    """)
     app._speed_slider.valueChanged.connect(lambda v: _on_speed_change(app, v))
     speed_layout.addWidget(app._speed_slider)
 
     app._speed_label = QLabel(f"{app._current_speed}")
     app._speed_label.setStyleSheet("""
         color: #06b6d4;
-        font-size: 11px;
+        font-size: 14px;
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 4px;
+        padding: 4px 8px;
     """)
-    app._speed_label.setFixedWidth(35)
+    app._speed_label.setFixedWidth(45)
+    app._speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     speed_layout.addWidget(app._speed_label)
 
     speed_group.setLayout(speed_layout)
@@ -251,6 +288,8 @@ def _on_speed_change(app, value):
     app._global_speed = value
     app._speed_label.setText(f"{value}")
     app._send_command(f"speed:{value}")
+    if hasattr(app, '_speed_meter'):
+        app._speed_meter.set_speed(value)
 
 
 def _toggle_brake(app):

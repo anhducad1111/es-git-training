@@ -7,6 +7,8 @@ DEFAULT_CONFIG = {
     "cam_ip": "192.168.1.114",
     "cam_port": 80,
     "stream_path": "/640x480.mjpeg",
+    "led_brightness": 0,
+    "jpeg_quality": 14,
 }
 
 

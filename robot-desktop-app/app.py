@@ -194,8 +194,8 @@ class RoverTeleopApp(QWidget):
             frame = self._video_receiver.take_frame()
             if frame:
                 if isinstance(frame, QImage):
-                    pass
-                else:
+                    self._video_canvas.update_frame_jpeg(frame)
+                elif isinstance(frame, bytes):
                     self._video_worker.push_frame(frame)
 
     def _on_video_frame_ready(self, pixmap, bgr):
@@ -262,18 +262,17 @@ class RoverTeleopApp(QWidget):
         self._distance_card.update_value(f"{distance} cm", distance / 200 * 100)
 
         if hasattr(self, '_brake_toggle') and self._brake_toggle.isChecked():
-            if self._driving_forward and distance < 100:
+            if self._driving_forward and distance < 89:
                 if distance <= 15:
                     self._forward_speed = 0
                 else:
-                    ratio = (distance - 15) / 85.0
-                    self._forward_speed = int(255 * ratio)
+                    ratio = (distance - 15) / 74.0
+                    self._forward_speed = int(self._global_speed * ratio)
                 self._forward_speed = max(0, min(255, self._forward_speed))
                 self._send_command(f"speed:{self._forward_speed}")
                 if self._forward_speed == 0:
                     self._send_command("stop")
             else:
-                self._forward_speed = self._global_speed
                 self._send_command(f"speed:{self._global_speed}")
 
     def _send_to_cloud(self, data):

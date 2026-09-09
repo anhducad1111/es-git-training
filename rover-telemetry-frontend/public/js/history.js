@@ -60,7 +60,11 @@ window.HistoryView = (function () {
   function populateRoverSelect(rovers) {
     const select = document.getElementById('history-rover');
     select.innerHTML = rovers.map((r) => `<option value="${Api.escapeHtml(r.device_uid)}">${Api.escapeHtml(r.device_uid)}</option>`).join('');
-    if (!uid && rovers.length > 0) uid = rovers[0].device_uid;
+    if (!uid) {
+      const shared = RoverSelection.get();
+      const stillPresent = shared && rovers.some((r) => r.device_uid === shared);
+      uid = stillPresent ? shared : (rovers.length > 0 ? rovers[0].device_uid : null);
+    }
     select.value = uid;
   }
 
@@ -112,7 +116,18 @@ window.HistoryView = (function () {
     renderSensorToggles();
     Api.rovers().then((rovers) => { populateRoverSelect(rovers); runQuery(); }).catch((err) => showError(`Rover list unavailable: ${err.message || err.code}`));
 
-    document.getElementById('history-rover').addEventListener('change', (evt) => { uid = evt.target.value; runQuery(); });
+    document.getElementById('history-rover').addEventListener('change', (evt) => {
+      uid = evt.target.value;
+      RoverSelection.set(uid);
+      runQuery();
+    });
+    RoverSelection.subscribe((newUid) => {
+      if (newUid === uid) return;
+      uid = newUid;
+      const select = document.getElementById('history-rover');
+      if (select) select.value = uid;
+      runQuery();
+    });
     document.getElementById('history-resolution').addEventListener('change', (evt) => { resolution = evt.target.value; runQuery(); });
     document.getElementById('history-range-controls').addEventListener('click', (evt) => {
       const btn = evt.target.closest('button');

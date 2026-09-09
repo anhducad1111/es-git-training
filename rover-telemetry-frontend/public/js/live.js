@@ -91,12 +91,16 @@ window.LiveView = (function () {
       item.addEventListener('click', () => selectRover(item.dataset.uid));
     });
     if (!selectedUid && sorted.length > 0) {
-      selectRover(sorted[0].device_uid);
+      const shared = RoverSelection.get();
+      const stillPresent = shared && sorted.some((r) => r.device_uid === shared);
+      selectRover(stillPresent ? shared : sorted[0].device_uid);
     }
   }
 
   function selectRover(uid) {
+    if (uid === selectedUid) return;
     selectedUid = uid;
+    RoverSelection.set(uid);
     document.querySelectorAll('.fleet-item').forEach((item) => {
       item.classList.toggle('selected', item.dataset.uid === uid);
     });
@@ -104,6 +108,8 @@ window.LiveView = (function () {
       window.LiveView.onRoverSelected(uid);
     }
   }
+
+  RoverSelection.subscribe((uid) => selectRover(uid));
 
   function showError(message) {
     document.getElementById('live-error-banner').innerHTML = `<div class="error-banner">${message}</div>`;

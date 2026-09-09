@@ -37,7 +37,11 @@ window.GalleryView = (function () {
   function populateRoverSelect(rovers) {
     const select = document.getElementById('gallery-rover');
     select.innerHTML = rovers.map((r) => `<option value="${Api.escapeHtml(r.device_uid)}">${Api.escapeHtml(r.device_uid)}</option>`).join('');
-    if (!uid && rovers.length > 0) uid = rovers[0].device_uid;
+    if (!uid) {
+      const shared = RoverSelection.get();
+      const stillPresent = shared && rovers.some((r) => r.device_uid === shared);
+      uid = stillPresent ? shared : (rovers.length > 0 ? rovers[0].device_uid : null);
+    }
     select.value = uid;
   }
 
@@ -137,10 +141,21 @@ window.GalleryView = (function () {
     Api.rovers().then((rovers) => { populateRoverSelect(rovers); loadMediaGallery(); })
       .catch((err) => showError(`Rover list unavailable: ${err.message || err.code}`));
 
-    document.getElementById('gallery-rover').addEventListener('change', (evt) => { uid = evt.target.value; loadMediaGallery(); });
+    document.getElementById('gallery-rover').addEventListener('change', (evt) => {
+      uid = evt.target.value;
+      RoverSelection.set(uid);
+      loadMediaGallery();
+    });
     document.getElementById('gallery-refresh').addEventListener('click', () => loadMediaGallery());
     document.getElementById('media-lightbox-close').addEventListener('click', closeLightbox);
     document.querySelector('.media-lightbox-backdrop').addEventListener('click', closeLightbox);
+    RoverSelection.subscribe((newUid) => {
+      if (newUid === uid) return;
+      uid = newUid;
+      const select = document.getElementById('gallery-rover');
+      if (select) select.value = uid;
+      loadMediaGallery();
+    });
   }
 
   function start() {}

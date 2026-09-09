@@ -10,6 +10,9 @@ PyQt6 desktop application for teleoperation of ESP32-based rover with FPV video,
 - **Object Detection**: HOG and YOLOv8m
 - **Gimbal Control**: Mouse drag, IJKL keys, HUD overlay
 - **Snapshot**: Capture frames with sensor overlay, upload to server
+- **Snapshot Gallery**: Paginated view with 6 thumbnails per page
+- **Image Processing**: Auto Correct, Enhance Contrast, Denoise, Bicubic resize
+- **Video Recording**: Record and upload video to cloud
 - **Cloud Integration**: Telemetry upload to backend API
 - **AI Chat**: Ollama integration
 
@@ -35,5 +38,6 @@ python main.py
 - `hog_detector.py` - HOG person detection
 - `yolo_detector.py` - YOLOv8 object detection
 - `super_resolution.py` - Image super resolution
+- `image_processor.py` - Image processing filters
 - `views/` - UI panels
 - `widgets/` - Custom widgets

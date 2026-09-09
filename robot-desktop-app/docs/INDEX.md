@@ -6,7 +6,9 @@
 
 ## Features
 - [Object Detection](OBJECT_DETECTION.md) - HOG and YOLOv8 detection
-- [Snapshot](SNAPSHOT.md) - Frame capture with sensor overlay
+- [Snapshot](SNAPSHOT.md) - Frame capture with sensor overlay and paginated gallery
+- [Image Processing](IMAGE_PROCESSING.md) - Filter processing (Auto Correct, Contrast, Denoise, Bicubic)
+- [Video Recording](VIDEO_RECORDING.md) - Video capture and cloud upload
 - [Gimbal Control](GIMBAL_CONTROL.md) - Pan/tilt control and HUD
 - [Speed Control](SPEED_CONTROL.md) - Motor speed and auto-brake
 
@@ -43,9 +45,13 @@ robot-desktop-app/
 ├── hog_detector.py      # HOG detection
 ├── yolo_detector.py     # YOLOv8 detection
 ├── super_resolution.py  # Image upscale
+├── image_processor.py   # Image processing filters
 ├── views/               # UI panels
+│   ├── snapshots_view.py    # Paginated gallery
+│   └── bottom_controls.py   # Recording button
 ├── widgets/             # Custom widgets
 ├── design/              # HTML designs
 ├── docs/                # Documentation
-└── snapshot/            # Captured frames
+├── snapshot/            # Captured frames
+└── recordings/          # Recorded videos
 ```

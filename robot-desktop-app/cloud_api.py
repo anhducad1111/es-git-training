@@ -123,3 +123,64 @@ class CloudAPI:
             return resp.json()
         except requests.RequestException as e:
             return {"error": str(e)}
+
+    def get_media(self, device_uid=None):
+        """GET /rovers/{uid}/media - List snapshots"""
+        uid = device_uid or self._device_uid
+        try:
+            resp = requests.get(
+                self._url(f"/rovers/{uid}/media"),
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as e:
+            return {"error": str(e)}
+
+    def get_media_item(self, media_id, device_uid=None):
+        """GET /rovers/{uid}/media/{id} - Get snapshot binary"""
+        uid = device_uid or self._device_uid
+        try:
+            resp = requests.get(
+                self._url(f"/rovers/{uid}/media/{media_id}"),
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+            return resp.content
+        except requests.RequestException as e:
+            return None
+
+    def delete_media(self, media_id, device_uid=None):
+        """DELETE /rovers/{uid}/media/{id} - Delete snapshot"""
+        uid = device_uid or self._device_uid
+        try:
+            resp = requests.delete(
+                self._url(f"/rovers/{uid}/media/{media_id}"),
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+            return True
+        except requests.RequestException as e:
+            return False
+
+    def upload_media(self, filepath, media_type="photo"):
+        """POST /rovers/{uid}/media - Upload photo or video"""
+        import os
+        try:
+            url = self._url(f"/rovers/{self._device_uid}/media")
+            filename = os.path.basename(filepath)
+            
+            if media_type == "video":
+                content_type = "video/avi"
+            else:
+                ext = os.path.splitext(filename)[1].lower()
+                content_type = "image/png" if ext == ".png" else "image/jpeg"
+            
+            with open(filepath, 'rb') as f:
+                files = {'file': (filename, f, content_type)}
+                resp = requests.post(url, files=files, timeout=60)
+            
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as e:
+            return {"error": str(e)}

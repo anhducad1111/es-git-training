@@ -225,6 +225,30 @@ def create_bottom_controls(app):
     app._super_res_check.setStyleSheet("color: #64748b; font-size: 9px;")
     layout.addWidget(app._super_res_check)
 
+    app._rec_btn = QPushButton("REC")
+    app._rec_btn.setFixedHeight(28)
+    app._rec_btn.setCheckable(True)
+    app._rec_btn.setStyleSheet("""
+        QPushButton {
+            background-color: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+            font-weight: 600;
+            font-size: 10px;
+            padding: 4px 12px;
+            letter-spacing: 1px;
+        }
+        QPushButton:checked {
+            background-color: #ef4444;
+            color: white;
+        }
+        QPushButton:hover {
+            background-color: rgba(239, 68, 68, 0.25);
+        }
+    """)
+    app._rec_btn.clicked.connect(lambda: _toggle_recording(app))
+    layout.addWidget(app._rec_btn)
+
     layout.addSpacing(6)
 
     app._detect_combo = QComboBox()
@@ -311,3 +335,11 @@ def _on_detect_method_change(app, method):
     if hasattr(app, '_detection_method'):
         app._detection_method = method
         app._add_log("DETECT", f"Detection method: {method}")
+
+
+def _toggle_recording(app):
+    checked = app._rec_btn.isChecked()
+    if checked:
+        app._start_recording()
+    else:
+        app._stop_recording()

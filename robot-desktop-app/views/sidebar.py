@@ -1,4 +1,5 @@
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
     QSlider, QStackedWidget, QVBoxLayout, QWidget
@@ -344,6 +345,28 @@ def create_sidebar(app):
     settings_page.setLayout(settings_layout)
     app._sidebar_stack.addWidget(settings_page)
 
+    snapshots_page = QWidget()
+    snapshots_layout = QVBoxLayout()
+    snapshots_layout.setContentsMargins(0, 0, 0, 0)
+    snapshots_layout.setSpacing(8)
+
+    snap_header = QLabel("SNAPSHOTS")
+    snap_header.setStyleSheet("""
+        color: #f1f5f9;
+        font-weight: 700;
+        font-size: 11px;
+        letter-spacing: 1px;
+    """)
+    snapshots_layout.addWidget(snap_header)
+
+    app._snapshot_list = QVBoxLayout()
+    app._snapshot_list.setSpacing(6)
+    snapshots_layout.addLayout(app._snapshot_list)
+
+    snapshots_layout.addStretch()
+    snapshots_page.setLayout(snapshots_layout)
+    app._sidebar_stack.addWidget(snapshots_page)
+
     main_layout.addWidget(app._sidebar_stack, 1)
 
     settings_btn = QPushButton("SETTINGS")
@@ -389,8 +412,28 @@ def create_sidebar(app):
     follow_btn.clicked.connect(app._toggle_follow_mode)
     main_layout.addWidget(follow_btn)
 
+    snapshot_btn = QPushButton("SNAPSHOTS")
+    snapshot_btn.setStyleSheet("""
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        color: #06b6d4;
+        font-weight: 600;
+        font-size: 10px;
+        letter-spacing: 1px;
+    """)
+    snapshot_btn.clicked.connect(app._toggle_snapshots_view)
+    main_layout.addWidget(snapshot_btn)
+
     sidebar.setLayout(main_layout)
     return sidebar
+
+
+def _toggle_snapshots(app):
+    if app._sidebar_stack.currentIndex() == 2:
+        app._sidebar_stack.setCurrentIndex(0)
+    else:
+        app._sidebar_stack.setCurrentIndex(2)
+        _load_snapshots(app)
 
 
 def _toggle_settings(app, btn):
@@ -468,3 +511,110 @@ def _flash_led(app):
     app._led_flash_state = not getattr(app, '_led_flash_state', False)
     if hasattr(app, '_esp32_api'):
         app._esp32_api.set_led(255 if app._led_flash_state else 0)
+
+
+def _load_snapshots(app):
+    if not hasattr(app, '_cloud_api') or not app._cloud_api:
+        return
+
+    while app._snapshot_list.count():
+        item = app._snapshot_list.takeAt(0)
+        if item.widget():
+            item.widget().deleteLater()
+
+    from cloud_worker import CloudWorker
+    url = f"{app._cloud_api._base_url}/rovers/{app._cloud_api._device_uid}/media"
+    worker = CloudWorker("GET", url)
+    worker.result.connect(lambda data: _on_snapshots_loaded(app, data))
+    worker.error.connect(lambda e: app._add_log("SNAPSHOT", f"Load error: {e}"))
+    app._cloud_workers.append(worker)
+    worker.finished.connect(lambda: app._cloud_workers.remove(worker) if worker in app._cloud_workers else None)
+    worker.start()
+
+
+def _on_snapshots_loaded(app, data):
+    if isinstance(data, dict):
+        data = data.get("media", [])
+    if not isinstance(data, list):
+        return
+
+    for snap in data[:10]:
+        item = QWidget()
+        item.setFixedHeight(60)
+        item.setStyleSheet("""
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            padding: 2px;
+        """)
+        item_layout = QHBoxLayout()
+        item_layout.setContentsMargins(4, 2, 4, 2)
+        item_layout.setSpacing(6)
+
+        thumb_label = QLabel()
+        thumb_label.setFixedSize(52, 52)
+        thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        thumb_label.setStyleSheet("background-color: #0f172a; border-radius: 4px; color: #64748b; font-size: 8px;")
+        thumb_label.setText("...")
+
+        snap_id = snap.get("id")
+        if snap_id:
+            image_data = app._cloud_api.get_media_item(snap_id)
+            if image_data:
+                pixmap = QPixmap()
+                pixmap.loadFromData(image_data)
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(52, 52, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    thumb_label.setPixmap(scaled)
+                else:
+                    thumb_label.setText("N/A")
+            else:
+                thumb_label.setText("N/A")
+
+        item_layout.addWidget(thumb_label)
+
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(2)
+        time_label = QLabel(str(snap.get("captured_at", ""))[:16].replace("T", " "))
+        time_label.setStyleSheet("color: #94a3b8; font-size: 9px; font-family: 'JetBrains Mono', monospace;")
+        info_layout.addWidget(time_label)
+        size = snap.get("file_size_bytes", 0)
+        size_label = QLabel(f"{size // 1024}KB")
+        size_label.setStyleSheet("color: #64748b; font-size: 8px;")
+        info_layout.addWidget(size_label)
+        item_layout.addLayout(info_layout, 1)
+
+        delete_btn = QPushButton("X")
+        delete_btn.setFixedSize(18, 18)
+        delete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(239, 68, 68, 0.2);
+                color: #ef4444;
+                border: none;
+                border-radius: 9px;
+                font-size: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(239, 68, 68, 0.4);
+            }
+        """)
+        delete_btn.clicked.connect(lambda checked, sid=snap_id: _delete_snapshot(app, sid))
+        item_layout.addWidget(delete_btn)
+
+        item.setLayout(item_layout)
+        app._snapshot_list.addWidget(item)
+
+
+def _delete_snapshot(app, snap_id):
+    if not hasattr(app, '_cloud_api') or not app._cloud_api:
+        return
+
+    from cloud_worker import CloudWorker
+    url = f"{app._cloud_api._base_url}/rovers/{app._cloud_api._device_uid}/media/{snap_id}"
+    worker = CloudWorker("DELETE", url)
+    worker.result.connect(lambda: _load_snapshots(app))
+    worker.error.connect(lambda e: app._add_log("SNAPSHOT", f"Delete error: {e}"))
+    app._cloud_workers.append(worker)
+    worker.finished.connect(lambda: app._cloud_workers.remove(worker) if worker in app._cloud_workers else None)
+    worker.start()

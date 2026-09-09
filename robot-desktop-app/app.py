@@ -22,6 +22,7 @@ from styles import DARK_STYLE
 from views.header import create_header, _on_ip_changed
 from views.main_view import create_main_view
 from views.diagnostics_view import create_diagnostics_view
+from views.snapshots_view import create_snapshots_view
 from views.sidebar import create_sidebar
 from views.bottom_controls import create_bottom_controls
 from views.log_panel import create_log_panel
@@ -50,6 +51,9 @@ class RoverTeleopApp(QWidget):
         self._mjpeg_receiver = None
         self._telemetry_poller = None
         self._cloud_workers = []
+        self._recording = False
+        self._rec_path = None
+        self._processed_image = None
 
         self._speed_timer = QTimer()
         self._speed_timer.timeout.connect(self._tick_speed)
@@ -77,6 +81,7 @@ class RoverTeleopApp(QWidget):
         self._center_stack = QStackedWidget()
         self._center_stack.addWidget(create_main_view(self))
         self._center_stack.addWidget(create_diagnostics_view(self))
+        self._center_stack.addWidget(create_snapshots_view(self))
         content.addWidget(self._center_stack, 1)
 
         self._sidebar = create_sidebar(self)
@@ -193,10 +198,29 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_video_receiver') and self._video_receiver:
             frame = self._video_receiver.take_frame()
             if frame:
+                if self._recording and isinstance(frame, bytes):
+                    self._save_rec_frame(frame)
                 if isinstance(frame, QImage):
                     self._video_canvas.update_frame_jpeg(frame)
                 elif isinstance(frame, bytes):
                     self._video_worker.push_frame(frame)
+
+    def _save_rec_frame(self, frame_bytes):
+        try:
+            import cv2
+            import numpy as np
+            nparr = np.frombuffer(frame_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is not None:
+                if not hasattr(self, '_rec_writer') or self._rec_writer is None:
+                    h, w = img.shape[:2]
+                    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                    self._rec_writer = cv2.VideoWriter(
+                        self._rec_path, fourcc, 10.0, (w, h)
+                    )
+                self._rec_writer.write(img)
+        except Exception:
+            pass
 
     def _on_video_frame_ready(self, pixmap, bgr):
         self._video_canvas.update_frame_jpeg(pixmap)
@@ -479,8 +503,62 @@ class RoverTeleopApp(QWidget):
         from views.diagnostics_view import _load_history as _do_load
         _do_load(self)
 
+    def _toggle_snapshots_view(self):
+        if self._view_mode == "snapshots":
+            self._center_stack.setCurrentIndex(0)
+            self._view_mode = "main"
+        else:
+            self._center_stack.setCurrentIndex(2)
+            self._view_mode = "snapshots"
+            from views.snapshots_view import _load_snapshots
+            _load_snapshots(self)
+
     def _toggle_follow_mode(self):
         self._add_log("FOLLOW", "Follow mode toggled (stub)")
+
+    def _start_recording(self):
+        import os
+        from datetime import datetime
+        os.makedirs("recordings", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._rec_path = f"recordings/rec_{timestamp}.avi"
+        self._recording = True
+        self._add_log("REC", f"Recording started: {self._rec_path}")
+
+    def _stop_recording(self):
+        if self._recording:
+            self._recording = False
+            if hasattr(self, '_rec_writer') and self._rec_writer is not None:
+                self._rec_writer.release()
+                self._rec_writer = None
+            self._add_log("REC", f"Recording saved: {self._rec_path}")
+            self._upload_recording(self._rec_path)
+
+    def _upload_recording(self, filepath):
+        if not self._cloud_api:
+            self._add_log("REC", "Cloud API not available")
+            return
+        
+        self._add_log("REC", "Uploading to cloud...")
+        
+        from cloud_worker import CloudWorker
+        import os
+        
+        url = self._cloud_api._url(f"/rovers/{self._cloud_api._device_uid}/media")
+        filename = os.path.basename(filepath)
+        
+        try:
+            with open(filepath, 'rb') as f:
+                files = {'file': (filename, f, 'video/avi')}
+                import requests
+                response = requests.post(url, files=files, timeout=60)
+            
+            if response.status_code == 201:
+                self._add_log("REC", f"Uploaded to cloud: {filename}")
+            else:
+                self._add_log("REC", f"Upload failed: {response.status_code}")
+        except Exception as e:
+            self._add_log("REC", f"Upload error: {str(e)[:60]}")
 
     def _emergency_stop(self):
         self._send_command("stop")
@@ -502,6 +580,7 @@ class RoverTeleopApp(QWidget):
             "SAFETY": "#f59e0b",
             "STOP": "#ef4444",
             "SNAPSHOT": "#06b6d4",
+            "REC": "#ef4444",
             "FOLLOW": "#8b5cf6",
             "ERROR": "#ef4444",
         }

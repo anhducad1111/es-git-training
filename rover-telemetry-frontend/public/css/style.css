@@ -19,7 +19,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
   padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
 }
 .app-header .brand { font-weight: 700; letter-spacing: 0.05em; }
-.tabs { display: flex; gap: 4px; flex: 1; }
+.tabs { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
 .tab-btn {
   background: transparent; border: none; padding: 8px 14px; border-radius: 4px;
   font-weight: 600; letter-spacing: 0.03em; color: var(--text-dim); cursor: pointer;
@@ -161,7 +161,22 @@ tr.rejected td { color: #9096a2; }
 .system-panels-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px; }
 @media (max-width: 700px) { .system-panels-grid { grid-template-columns: 1fr; } }
 
-/* Sensor-limit editor table (two number inputs per row) is too wide to
-   fit narrow viewports without wrapping labels; scroll it horizontally
-   within its panel instead of letting it overflow the page. */
-.panel:has(#sensor-limits-editor-body) { overflow-x: auto; }
+/* Any table wide enough to not fit a narrow viewport scrolls horizontally within its
+   own panel instead of overflowing the page (was previously sensor-limits-only). */
+.panel:has(> table) { overflow-x: auto; }
+
+/* Chart.js needs an explicit-height ancestor when maintainAspectRatio is off; this
+   also keeps charts a predictable height on mobile instead of being squashed by the
+   aspect-ratio math when the panel goes full-width. */
+.chart-box { position: relative; height: 320px; margin-top: 4px; }
+
+@media (max-width: 700px) {
+  .chart-box { height: 240px; }
+
+  /* Bigger tap targets: small text with tight padding is hard to hit on a phone. */
+  .tab-btn { padding: 10px 12px; font-size: 13px; }
+  .range-controls button { padding: 7px 12px; font-size: 13px; }
+  .chip { padding: 6px 12px; font-size: 13px; }
+  .gap-card-header { padding: 10px 12px; }
+  .media-delete-btn, .media-download-btn { opacity: 1; } /* no hover on touch, so always visible */
+}

@@ -31,11 +31,11 @@ window.LiveView = (function () {
             <button data-range="6h" class="active">6 h</button><button data-range="24h">24 h</button>
             <button data-range="7d">7 d</button><button data-range="30d">30 d</button>
           </div>
-          <canvas id="telemetry-chart" height="90"></canvas>
+          <div class="chart-box"><canvas id="telemetry-chart"></canvas></div>
         </div>
         <div class="panel">
           <div class="panel-title">Obstacle distance · live</div>
-          <canvas id="obstacle-chart" height="70"></canvas>
+          <div class="chart-box"><canvas id="obstacle-chart"></canvas></div>
         </div>
         <div class="live-bottom-grid">
           <div class="panel">

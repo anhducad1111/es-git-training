@@ -145,6 +145,11 @@ window.HistoryView = (function () {
     });
     document.getElementById('export-csv').addEventListener('click', () => triggerExport('csv'));
     document.getElementById('export-json').addEventListener('click', () => triggerExport('json'));
+    document.getElementById('history-gaps-list').addEventListener('click', (evt) => {
+      const header = evt.target.closest('.gap-card-header');
+      if (!header) return;
+      header.closest('.gap-card').classList.toggle('expanded');
+    });
   }
 
   function start() {}
@@ -192,9 +197,26 @@ window.HistoryView = (function () {
   function fieldMaxHistory(readings, field, isAgg) { return readings.map((r) => (r[field] == null ? null : (isAgg ? r[field].max : r[field]))); }
 
   function renderGapsList(gaps) {
-    document.getElementById('history-gaps-list').innerHTML = gaps.length === 0
-      ? '<li>No gaps in this range.</li>'
-      : gaps.map((g) => `<li>${Api.escapeHtml(TimeUtil.dateTime(g.start))} → ${Api.escapeHtml(TimeUtil.dateTime(g.end))} · ${g.duration_seconds}s · ${g.missing_readings} readings missing</li>`).join('');
+    const list = document.getElementById('history-gaps-list');
+    if (gaps.length === 0) {
+      list.innerHTML = '<li>No gaps in this range.</li>';
+      return;
+    }
+    list.innerHTML = gaps.map((g) => `
+      <li class="gap-card">
+        <div class="gap-card-header">
+          <span class="gap-range">${Api.escapeHtml(TimeUtil.dateTime(g.start))} → ${Api.escapeHtml(TimeUtil.dateTime(g.end))}</span>
+          <span class="gap-badge">${g.duration_seconds}s</span>
+          <span class="gap-chevron">▾</span>
+        </div>
+        <div class="gap-card-body">
+          <div><span class="gap-field-label">Start</span> ${Api.escapeHtml(TimeUtil.dateTime(g.start))}</div>
+          <div><span class="gap-field-label">End</span> ${Api.escapeHtml(TimeUtil.dateTime(g.end))}</div>
+          <div><span class="gap-field-label">Duration</span> ${g.duration_seconds}s</div>
+          <div><span class="gap-field-label">Missing readings</span> ${g.missing_readings}</div>
+        </div>
+      </li>
+    `).join('');
   }
 
   // Mirrors the resolution ladder used for the chart above (see runQuery/Api.readings

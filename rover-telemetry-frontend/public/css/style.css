@@ -92,6 +92,38 @@ tr.rejected td { color: #9096a2; }
 .history-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 13px; }
 .sensor-toggle { margin-right: 10px; font-size: 12px; }
 
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px;
+  background: #fdeceb; border: 1px solid var(--bad); color: var(--bad); font-size: 12px; font-weight: 600;
+  cursor: pointer; user-select: none; transition: background 0.15s;
+}
+.chip:hover { background: #fbdcda; }
+.chip .chip-chevron { font-size: 9px; transition: transform 0.15s; }
+.chip.expanded { background: var(--bad); color: #fff; }
+.chip.expanded .chip-chevron { transform: rotate(180deg); }
+.chip-detail {
+  margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+  font-size: 12px; max-height: 220px; overflow-y: auto;
+}
+.chip-detail table { width: 100%; border-collapse: collapse; }
+.chip-detail th, .chip-detail td { padding: 4px 8px; text-align: left; border-bottom: 1px solid var(--border); font-size: 11px; }
+.chip-detail-loading, .chip-detail-empty { padding: 8px; color: var(--text-dim); }
+
+.event-list .gap-card { border-bottom: none; padding: 0; margin-bottom: 6px; }
+.gap-card { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.gap-card-header {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; background: var(--panel);
+}
+.gap-card-header:hover { background: #f4f5f7; }
+.gap-range { flex: 1; }
+.gap-badge { background: #fff6e5; color: var(--warn); border-radius: 4px; padding: 1px 6px; font-weight: 600; font-size: 11px; }
+.gap-chevron { font-size: 9px; color: var(--text-dim); transition: transform 0.15s; }
+.gap-card.expanded .gap-chevron { transform: rotate(180deg); }
+.gap-card-body { display: none; padding: 8px 10px; border-top: 1px solid var(--border); background: var(--bg); }
+.gap-card.expanded .gap-card-body { display: block; }
+.gap-field-label { color: var(--text-dim); display: inline-block; min-width: 110px; }
+
 .gallery-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 13px; }
 .gallery-controls button { padding: 5px 12px; border: 1px solid var(--border); background: var(--panel); border-radius: 4px; cursor: pointer; font-size: 12px; }
 

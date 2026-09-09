@@ -126,8 +126,7 @@ window.LiveView = (function () {
         clearError();
         renderFleet(rovers);
         document.getElementById('rejected-total').textContent = rejects.total;
-        document.getElementById('rejected-by-code').textContent = Object.entries(rejects.by_code)
-          .map(([code, count]) => `${code} ${count}`).join(' · ');
+        RejectChips.render(document.getElementById('rejected-by-code'), rejects.by_code);
       })
       .catch((err) => showError(`Fleet list unavailable: ${err.message || err.code}`))
       .finally(() => {

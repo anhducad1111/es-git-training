@@ -50,6 +50,7 @@ window.Api = (function () {
     summary: (uid, params) => request(`/rovers/${uid}/summary${buildQuery(params)}`),
     events: (uid, params) => request(`/rovers/${uid}/events${buildQuery(params)}`),
     validationErrorsSummary: (windowStr) => request(`/validation-errors/summary${buildQuery({ window: windowStr })}`),
+    validationErrors: (params) => request(`/validation-errors${buildQuery(params)}`),
     sensorLimits: () => request('/config/sensor-limits'),
     putSensorLimit: (field, minMax) => request(`/config/sensor-limits/${field}`, jsonBody(minMax)),
     system: () => request('/system'),

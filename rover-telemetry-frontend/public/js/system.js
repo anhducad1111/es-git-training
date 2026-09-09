@@ -96,7 +96,7 @@ window.SystemView = (function () {
       latestSystem = system;
       loadResourceCharts();
       document.getElementById('system-rejected-total').textContent = rejects.total;
-      document.getElementById('system-rejected-by-code').textContent = Object.entries(rejects.by_code).map(([c, n]) => `${c} ${n}`).join(' · ');
+      RejectChips.render(document.getElementById('system-rejected-by-code'), rejects.by_code);
     }).catch((err) => showError(`System data unavailable: ${err.message || err.code}`))
       .finally(() => { pollTimer = setTimeout(poll, window.APP_CONFIG.POLL_INTERVAL_SYSTEM_MS); });
   }

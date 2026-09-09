@@ -555,17 +555,17 @@ INSERT INTO sensor_limits (field, min_value, max_value) VALUES
 | 4 | GET | `/api/v1/rovers/{device_uid}/readings` | Last N records, or a time range | §3.3 | Implemented |
 | 5 | GET | `/api/v1/rovers/{device_uid}/summary` | Aggregated statistics | §3.3 | Implemented |
 | 6 | GET | `/api/v1/rovers/{device_uid}/export` | CSV or JSON export | §3.3 | Implemented |
-| 7 | GET | `/api/v1/health` | Service and database health | §3.4 | |
-| 8 | GET | `/api/v1/system` | Gateway host metrics, current | §3.4 | |
-| 9 | GET | `/api/v1/system/history` | Gateway host metrics over time | §3.4 | |
-| 10 | GET | `/api/v1/rovers/{device_uid}/events` | Threshold and brake events | §3.3 | |
-| 11 | GET | `/api/v1/validation-errors/summary` | Rejected payload counts by code | §3.1 | |
-| 12 | GET | `/api/v1/config/sensor-limits` | Validation ranges as data | §3.1 | |
-| 13 | PUT | `/api/v1/config/sensor-limits/{field}` | Update one validation range | §3.1 | |
-| 14 | POST | `/api/v1/rovers/{device_uid}/media` | Upload a photo or video | §3.1 | |
-| 15 | GET | `/api/v1/rovers/{device_uid}/media` | List media records | §3.3 | |
-| 16 | GET | `/api/v1/rovers/{device_uid}/media/{id}` | Serve one media file | §3.3 | |
-| 17 | DELETE | `/api/v1/rovers/{device_uid}/media/{id}` | Delete a media record and its file | §3.3 | |
+| 7 | GET | `/api/v1/health` | Service and database health | §3.4 | Implemented |
+| 8 | GET | `/api/v1/system` | Gateway host metrics, current | §3.4 | Implemented |
+| 9 | GET | `/api/v1/system/history` | Gateway host metrics over time | §3.4 | Implemented |
+| 10 | GET | `/api/v1/rovers/{device_uid}/events` | Threshold and brake events | §3.3 | Implemented |
+| 11 | GET | `/api/v1/validation-errors/summary` | Rejected payload counts by code | §3.1 | Implemented |
+| 12 | GET | `/api/v1/config/sensor-limits` | Validation ranges as data | §3.1 | Implemented |
+| 13 | PUT | `/api/v1/config/sensor-limits/{field}` | Update one validation range | §3.1 | Implemented |
+| 14 | POST | `/api/v1/rovers/{device_uid}/media` | Upload a photo or video | §3.1 | Implemented |
+| 15 | GET | `/api/v1/rovers/{device_uid}/media` | List media records | §3.3 | Implemented |
+| 16 | GET | `/api/v1/rovers/{device_uid}/media/{id}` | Serve one media file | §3.3 | Implemented |
+| 17 | DELETE | `/api/v1/rovers/{device_uid}/media/{id}` | Delete a media record and its file | §3.3 | Implemented |
 
 `[Proposed]` Rovers are addressed in the path by `device_uid` — the identifier the rover firmware and the Desktop client already hold — rather than by the internal `rovers.id`. This keeps one identifier across ingestion and query (the POST body carries `device_uid` too), removes the lookup round trip a client would otherwise need on startup, and makes access logs readable. The numeric `id` remains internal: it is what `telemetry_readings` stores as a foreign key, since an 8-byte integer per row is cheaper than repeating a 64-character string. The API resolves `device_uid` to `id` once per request.
 

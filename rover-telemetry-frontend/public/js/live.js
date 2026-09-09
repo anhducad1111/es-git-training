@@ -31,21 +31,17 @@ window.LiveView = (function () {
             <button data-range="6h" class="active">6 h</button><button data-range="24h">24 h</button>
             <button data-range="7d">7 d</button><button data-range="30d">30 d</button>
           </div>
-          <canvas id="telemetry-chart" height="90"></canvas>
+          <div class="chart-box"><canvas id="telemetry-chart"></canvas></div>
         </div>
         <div class="panel">
           <div class="panel-title">Obstacle distance · live</div>
-          <canvas id="obstacle-chart" height="70"></canvas>
-        </div>
-        <div class="panel">
-          <div class="panel-title">Media Gallery</div>
-          <div id="media-gallery" class="media-gallery"></div>
+          <div class="chart-box"><canvas id="obstacle-chart"></canvas></div>
         </div>
         <div class="live-bottom-grid">
           <div class="panel">
             <div class="panel-title">Incoming readings</div>
             <table>
-              <thead><tr><th>Time (UTC)</th><th>Temp</th><th>Hum</th><th>Gas</th><th>Dist</th><th>State</th></tr></thead>
+              <thead><tr><th>Time (ICT)</th><th>Temp</th><th>Hum</th><th>Gas</th><th>Dist</th><th>State</th></tr></thead>
               <tbody id="incoming-readings-body"></tbody>
             </table>
           </div>
@@ -82,8 +78,9 @@ window.LiveView = (function () {
   }
 
   function renderFleet(rovers) {
+    const sorted = [...rovers].sort((a, b) => a.device_uid.localeCompare(b.device_uid));
     const list = document.getElementById('fleet-list');
-    list.innerHTML = rovers.map((r) => `
+    list.innerHTML = sorted.map((r) => `
       <div class="fleet-item ${r.device_uid === selectedUid ? 'selected' : ''}" data-uid="${Api.escapeHtml(r.device_uid)}">
         <span class="dot ${statusDotClass(r.status)}"></span>
         <span class="fleet-uid">${Api.escapeHtml(r.device_uid)}</span>
@@ -93,13 +90,17 @@ window.LiveView = (function () {
     list.querySelectorAll('.fleet-item').forEach((item) => {
       item.addEventListener('click', () => selectRover(item.dataset.uid));
     });
-    if (!selectedUid && rovers.length > 0) {
-      selectRover(rovers[0].device_uid);
+    if (!selectedUid && sorted.length > 0) {
+      const shared = RoverSelection.get();
+      const stillPresent = shared && sorted.some((r) => r.device_uid === shared);
+      selectRover(stillPresent ? shared : sorted[0].device_uid);
     }
   }
 
   function selectRover(uid) {
+    if (uid === selectedUid) return;
     selectedUid = uid;
+    RoverSelection.set(uid);
     document.querySelectorAll('.fleet-item').forEach((item) => {
       item.classList.toggle('selected', item.dataset.uid === uid);
     });
@@ -107,6 +108,8 @@ window.LiveView = (function () {
       window.LiveView.onRoverSelected(uid);
     }
   }
+
+  RoverSelection.subscribe((uid) => selectRover(uid));
 
   function showError(message) {
     document.getElementById('live-error-banner').innerHTML = `<div class="error-banner">${message}</div>`;
@@ -123,8 +126,7 @@ window.LiveView = (function () {
         clearError();
         renderFleet(rovers);
         document.getElementById('rejected-total').textContent = rejects.total;
-        document.getElementById('rejected-by-code').textContent = Object.entries(rejects.by_code)
-          .map(([code, count]) => `${code} ${count}`).join(' · ');
+        RejectChips.render(document.getElementById('rejected-by-code'), rejects.by_code);
       })
       .catch((err) => showError(`Fleet list unavailable: ${err.message || err.code}`))
       .finally(() => {
@@ -182,7 +184,8 @@ window.LiveView = (function () {
         <div class="card ${stale ? 'warn' : ''}">
           <div class="card-label">${label}</div>
           <div class="card-value">${fmt(latest[key])}</div>
-          <div class="card-sub">${stale ? `at ${latest.recorded_at}` : range}</div>
+          <div class="card-sub">${stale ? `at ${TimeUtil.dateTime(latest.recorded_at)}` : range}</div>
+          <div class="card-age">${ageLabel(latest.recorded_at)}</div>
         </div>
       `;
     }).join('') + `
@@ -215,7 +218,7 @@ window.LiveView = (function () {
       })
       .catch((err) => {
         if (myGeneration !== cardsPollGeneration) return;
-        const staleFor = lastGoodCardsAt ? `stale since ${new Date(lastGoodCardsAt).toLocaleTimeString()}` : 'no data yet';
+        const staleFor = lastGoodCardsAt ? `stale since ${TimeUtil.timeHMS(new Date(lastGoodCardsAt).toISOString())}` : 'no data yet';
         showStale(`${err.code === 'NOT_FOUND' ? 'Rover has never reported.' : `Live data unavailable (${err.message || err.code}).`} ${staleFor}`);
       })
       .finally(() => {
@@ -235,7 +238,11 @@ window.LiveView = (function () {
   }
 
   function labelFor(recordedAt) {
-    return recordedAt.slice(11, 16);
+    return TimeUtil.timeHM(recordedAt);
+  }
+
+  function gapFills(labels, series, timestampsMs) {
+    return Charts.appendGapFills(labels, series, timestampsMs, window.APP_CONFIG.DEGRADED_THRESHOLD_SECONDS * 1000, labelFor);
   }
 
   function fieldSeries(readings, field, isAggregated) {
@@ -265,18 +272,34 @@ window.LiveView = (function () {
     const end = new Date().toISOString();
     Api.readings(uid, { start, end, resolution: 'auto' }).then((data) => {
       const isAggregated = data.resolution !== 'raw';
-      const labels = data.readings.map((r) => labelFor(r.recorded_at));
+      const readings = data.readings;
       document.getElementById('telemetry-panel-title').textContent =
         `Telemetry · ${data.resolution} · ${data.count} pts`;
-      const avg = fieldSeries(data.readings, 'temperature_c', isAggregated);
-      const min = fieldMin(data.readings, 'temperature_c', isAggregated);
-      const max = fieldMax(data.readings, 'temperature_c', isAggregated);
+      const rawLabels = readings.map((r) => labelFor(r.recorded_at));
+      const rawAvg = fieldSeries(readings, 'temperature_c', isAggregated);
+      const rawMin = fieldMin(readings, 'temperature_c', isAggregated);
+      const rawMax = fieldMax(readings, 'temperature_c', isAggregated);
+      const rawHumidity = fieldSeries(readings, 'humidity_pct', isAggregated);
+      const timestampsMs = readings.map((r) => new Date(r.recorded_at).getTime());
+      const { labels, series, noDataRanges } = gapFills(rawLabels, [rawAvg, rawMin, rawMax, rawHumidity], timestampsMs);
+      const [avg, min, max, humidity] = series;
       if (!telemetryChart) {
         telemetryChart = Charts.lineWithBand({
           canvasId: 'telemetry-chart', labels, avg, min, max, avgLabel: 'Temperature (°C)', colorRgb: '47,111,237',
+          yTitle: 'Temperature (°C)', noDataRanges,
         });
+        telemetryChart.data.datasets.push({
+          label: 'Humidity (%)', data: humidity, borderColor: 'rgb(130,80,223)', backgroundColor: 'rgb(130,80,223)',
+          borderWidth: 2, pointRadius: 0, spanGaps: false, yAxisID: 'y1',
+        });
+        telemetryChart.options.scales.y1 = {
+          position: 'right', beginAtZero: false, grid: { drawOnChartArea: false },
+          ticks: { color: 'rgb(130,80,223)' },
+          title: Charts.axisTitle('Humidity (%)', '130,80,223'),
+        };
+        telemetryChart.update('none');
       } else {
-        Charts.updateChart(telemetryChart, labels, [max, min, avg]);
+        Charts.updateChart(telemetryChart, labels, [max, min, avg, humidity], noDataRanges);
       }
     }).catch((err) => showError(`Telemetry chart unavailable: ${err.message || err.code}`));
   }
@@ -286,14 +309,17 @@ window.LiveView = (function () {
   function loadObstacleChart(uid) {
     Api.readings(uid, { limit: 150, order: 'desc', resolution: 'raw' }).then((data) => {
       const readings = data.readings.slice().reverse();
-      const labels = readings.map((r) => labelFor(r.recorded_at));
-      const distance = readings.map((r) => (r.distance_cm === null ? null : r.distance_cm));
-      const brakeFlags = readings.map((r) => (r.auto_brake ? 1 : 0));
+      const rawLabels = readings.map((r) => labelFor(r.recorded_at));
+      const rawDistance = readings.map((r) => (r.distance_cm === null ? null : r.distance_cm));
+      const rawBrakeFlags = readings.map((r) => (r.auto_brake ? 1 : 0));
+      const timestampsMs = readings.map((r) => new Date(r.recorded_at).getTime());
+      const { labels, series, noDataRanges } = gapFills(rawLabels, [rawDistance, rawBrakeFlags], timestampsMs);
+      const [distance, brakeFlags] = series;
       const maxDistance = Math.max(120, ...distance.filter((v) => v !== null));
       if (!obstacleChart) {
         obstacleChart = Charts.lineWithBand({
           canvasId: 'obstacle-chart', labels, avg: distance, min: distance, max: distance,
-          avgLabel: 'Distance (cm)', colorRgb: '26,127,55',
+          avgLabel: 'Distance (cm)', colorRgb: '26,127,55', yTitle: 'Distance (cm)', noDataRanges,
         });
         obstacleChart.data.datasets.push(Charts.thresholdDataset('Auto-brake threshold', window.APP_CONFIG.AUTO_BRAKE_THRESHOLD_CM, labels.length, '207,34,46'));
         obstacleChart.data.datasets.push(Charts.bandDataset('Brake engaged', brakeFlags, maxDistance, 'rgba(207,34,46,0.15)'));
@@ -303,7 +329,7 @@ window.LiveView = (function () {
           distance, distance, distance,
           new Array(labels.length).fill(window.APP_CONFIG.AUTO_BRAKE_THRESHOLD_CM),
           brakeFlags.map((f) => (f ? maxDistance : 0)),
-        ]);
+        ], noDataRanges);
       }
     }).catch((err) => showError(`Obstacle chart unavailable: ${err.message || err.code}`));
   }
@@ -319,7 +345,7 @@ window.LiveView = (function () {
     const rows = incomingBuffers[uid] || [];
     document.getElementById('incoming-readings-body').innerHTML = rows.map((r) => `
       <tr>
-        <td>${r.recorded_at.slice(11, 19)}</td>
+        <td>${TimeUtil.timeHMS(r.recorded_at)}</td>
         <td>${fmt(r.temperature_c)}</td><td>${fmt(r.humidity_pct)}</td>
         <td>${fmt(r.gas_ppm, 0)}</td><td>${fmt(r.distance_cm)}</td>
         <td>${classifyState(r, recentEvents)}</td>
@@ -351,7 +377,7 @@ window.LiveView = (function () {
 
   function renderRecentEvents(events) {
     document.getElementById('recent-events-list').innerHTML = events.slice(0, 8).map((e) => `
-      <li><span class="event-time">${e.at.slice(11, 19)}</span> ${describeEvent(e)}</li>
+      <li><span class="event-time">${TimeUtil.timeHMS(e.at)}</span> ${describeEvent(e)}</li>
     `).join('');
   }
 
@@ -366,56 +392,15 @@ window.LiveView = (function () {
   function pollEventsAndLimits(uid, latest) {
     Promise.all([Api.events(uid, { limit: 20 }), Api.sensorLimits()]).then(([eventsResp, limits]) => {
       incomingBuffers[uid] = incomingBuffers[uid] || [];
-      incomingBuffers[uid].unshift({ ...latest });
-      incomingBuffers[uid] = incomingBuffers[uid].slice(0, MAX_INCOMING_ROWS);
+      const isNewReading = incomingBuffers[uid][0]?.recorded_at !== latest.recorded_at;
+      if (isNewReading) {
+        incomingBuffers[uid].unshift({ ...latest });
+        incomingBuffers[uid] = incomingBuffers[uid].slice(0, MAX_INCOMING_ROWS);
+      }
       renderIncomingReadings(uid, eventsResp.events);
       renderSensorLimitBars(latest, limits);
       renderRecentEvents(eventsResp.events);
     }).catch((err) => showError(`Events/limits unavailable: ${err.message || err.code}`));
-  }
-
-  function loadMediaGallery(uid) {
-    Api.media(uid, { limit: 50 }).then((data) => {
-      const gallery = document.getElementById('media-gallery');
-      if (!data.media || data.media.length === 0) {
-        gallery.innerHTML = '<p style="color: var(--text-dim);">No media files yet.</p>';
-        return;
-      }
-      gallery.innerHTML = data.media.map((m) => {
-        const icon = m.media_type === 'photo' ? '📷' : '🎥';
-        return `
-          <div class="media-item" data-id="${m.id}">
-            <div class="media-preview" style="background: #eee; border-radius: 4px; padding: 8px; text-align: center; font-size: 28px;">
-              ${icon}
-            </div>
-            <div class="media-info">
-              <div class="media-type">${m.media_type}</div>
-              <div class="media-time">${new Date(m.captured_at).toLocaleString()}</div>
-              <div class="media-size">${(m.file_size_bytes / 1024).toFixed(0)} KB</div>
-            </div>
-            <button class="media-delete-btn" data-id="${m.id}" aria-label="Delete media">✕</button>
-          </div>
-        `;
-      }).join('');
-
-      // Add delete handlers
-      gallery.querySelectorAll('.media-delete-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const id = btn.dataset.id;
-          if (confirm('Delete this media file?')) {
-            Api.deleteMedia(uid, id).then(() => {
-              loadMediaGallery(uid);
-            }).catch((err) => {
-              showError(`Failed to delete media: ${err.message || err.code}`);
-            });
-          }
-        });
-      });
-    }).catch((err) => {
-      showError(`Media gallery unavailable: ${err.message || err.code}`);
-      document.getElementById('media-gallery').innerHTML = '<p style="color: var(--text-dim);">Media unavailable.</p>';
-    });
   }
 
   document.addEventListener('click', (evt) => {
@@ -438,7 +423,6 @@ window.LiveView = (function () {
       cardsPollGeneration += 1;
       lastGoodCardsAt = null;
       pollCards(uid);
-      loadMediaGallery(uid);
     },
   };
 })();

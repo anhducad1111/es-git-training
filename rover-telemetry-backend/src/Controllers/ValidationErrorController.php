@@ -5,12 +5,38 @@ declare(strict_types=1);
 namespace RoverTelemetry\Controllers;
 
 use PDO;
+use RoverTelemetry\Repositories\ValidationErrorRepository;
 use RoverTelemetry\Support\ApiException;
 
 final class ValidationErrorController
 {
+    private ValidationErrorRepository $repository;
+
     public function __construct(private readonly PDO $pdo)
     {
+        $this->repository = new ValidationErrorRepository($pdo);
+    }
+
+    public function list(array $query): array
+    {
+        $window = $query['window'] ?? '24h';
+        $hours = $this->parseWindowToHours($window);
+        $since = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->modify("-{$hours} hours");
+        $errorCode = isset($query['error_code']) && $query['error_code'] !== '' ? $query['error_code'] : null;
+        $limit = isset($query['limit']) ? max(1, min(200, (int) $query['limit'])) : 50;
+
+        $rows = $this->repository->listSince($since, $errorCode, $limit);
+
+        $errors = array_map(static fn (array $row) => [
+            'id' => (int) $row['id'],
+            'device_uid' => $row['device_uid'],
+            'received_at' => str_replace(' ', 'T', $row['received_at']) . 'Z',
+            'error_code' => $row['error_code'],
+            'detail' => $row['detail'],
+            'raw_payload' => $row['raw_payload'],
+        ], $rows);
+
+        return ['status' => 200, 'body' => ['window' => $window, 'count' => count($errors), 'errors' => $errors]];
     }
 
     public function summary(array $query): array

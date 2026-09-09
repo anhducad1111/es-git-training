@@ -50,6 +50,7 @@ window.Api = (function () {
     summary: (uid, params) => request(`/rovers/${uid}/summary${buildQuery(params)}`),
     events: (uid, params) => request(`/rovers/${uid}/events${buildQuery(params)}`),
     validationErrorsSummary: (windowStr) => request(`/validation-errors/summary${buildQuery({ window: windowStr })}`),
+    validationErrors: (params) => request(`/validation-errors${buildQuery(params)}`),
     sensorLimits: () => request('/config/sensor-limits'),
     putSensorLimit: (field, minMax) => request(`/config/sensor-limits/${field}`, jsonBody(minMax)),
     system: () => request('/system'),
@@ -57,5 +58,6 @@ window.Api = (function () {
     exportUrl: (uid, params) => `${window.APP_CONFIG.API_BASE_URL}/rovers/${uid}/export${buildQuery(params)}`,
     media: (uid, params) => request(`/rovers/${uid}/media${buildQuery(params)}`),
     deleteMedia: (uid, id) => request(`/rovers/${uid}/media/${id}`, { method: 'DELETE' }),
+    mediaUrl: (uid, id) => `${window.APP_CONFIG.API_BASE_URL}/rovers/${uid}/media/${id}`,
   };
 })();

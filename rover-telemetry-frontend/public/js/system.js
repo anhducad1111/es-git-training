@@ -26,15 +26,15 @@ window.SystemView = (function () {
         <button data-range="1h">1 h</button><button data-range="6h" class="active">6 h</button>
         <button data-range="24h">24 h</button><button data-range="7d">7 d</button>
       </span>
-      <canvas id="resources-chart" height="80"></canvas>
+      <div class="chart-box"><canvas id="resources-chart"></canvas></div>
     </div>
     <div class="panel">
       <div class="panel-title">Ingest rate</div>
-      <canvas id="ingest-chart" height="60"></canvas>
+      <div class="chart-box"><canvas id="ingest-chart"></canvas></div>
     </div>
     <div class="panel">
       <div class="panel-title">Database growth</div>
-      <canvas id="growth-chart" height="60"></canvas>
+      <div class="chart-box"><canvas id="growth-chart"></canvas></div>
     </div>
     <div class="panel">
       <div class="panel-title">Sensor limits</div>
@@ -96,7 +96,7 @@ window.SystemView = (function () {
       latestSystem = system;
       loadResourceCharts();
       document.getElementById('system-rejected-total').textContent = rejects.total;
-      document.getElementById('system-rejected-by-code').textContent = Object.entries(rejects.by_code).map(([c, n]) => `${c} ${n}`).join(' · ');
+      RejectChips.render(document.getElementById('system-rejected-by-code'), rejects.by_code);
     }).catch((err) => showError(`System data unavailable: ${err.message || err.code}`))
       .finally(() => { pollTimer = setTimeout(poll, window.APP_CONFIG.POLL_INTERVAL_SYSTEM_MS); });
   }
@@ -108,17 +108,25 @@ window.SystemView = (function () {
   let latestSystem = null;
 
   const HIST_RANGE_TO_MS = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
+  const GATEWAY_SAMPLE_GAP_THRESHOLD_MS = 120000; // gateway_metrics samples once/min; 2x that is "stale"
 
   function loadResourceCharts() {
     const start = new Date(Date.now() - HIST_RANGE_TO_MS[historyRange]).toISOString();
     const end = new Date().toISOString();
     Api.systemHistory({ start, end, resolution: 'auto' }).then((data) => {
-      const labels = data.points.map((p) => p.sampled_at.slice(11, 16));
-      const cpuTemp = data.points.map((p) => p.cpu_temperature_c);
-      const cpuLoad = data.points.map((p) => p.cpu_load_percent);
-      const memUsed = data.points.map((p) => p.memory_used_percent);
-      const ingestRate = data.points.map((p) => p.ingest_rate_per_min);
-      const dbSize = data.points.map((p) => p.database_size_mb);
+      const rawLabels = data.points.map((p) => TimeUtil.timeHM(p.sampled_at));
+      const rawCpuTemp = data.points.map((p) => p.cpu_temperature_c);
+      const rawCpuLoad = data.points.map((p) => p.cpu_load_percent);
+      const rawMemUsed = data.points.map((p) => p.memory_used_percent);
+      const rawIngestRate = data.points.map((p) => p.ingest_rate_per_min);
+      const rawDbSize = data.points.map((p) => p.database_size_mb);
+      const timestampsMs = data.points.map((p) => new Date(p.sampled_at).getTime());
+
+      const { labels, series, noDataRanges } = Charts.appendGapFills(
+        rawLabels, [rawCpuTemp, rawCpuLoad, rawMemUsed, rawIngestRate, rawDbSize],
+        timestampsMs, GATEWAY_SAMPLE_GAP_THRESHOLD_MS, TimeUtil.timeHM,
+      );
+      const [cpuTemp, cpuLoad, memUsed, ingestRate, dbSize] = series;
 
       if (!resourcesChart) {
         const ctx = document.getElementById('resources-chart').getContext('2d');
@@ -127,20 +135,28 @@ window.SystemView = (function () {
           data: {
             labels,
             datasets: [
-              { label: 'CPU temp (°C)', data: cpuTemp, borderColor: 'rgb(207,34,46)', pointRadius: 0, borderWidth: 2 },
-              { label: 'CPU load (%)', data: cpuLoad, borderColor: 'rgb(47,111,237)', pointRadius: 0, borderWidth: 2 },
-              { label: 'Memory used (%)', data: memUsed, borderColor: 'rgb(130,80,223)', pointRadius: 0, borderWidth: 2 },
+              { label: 'CPU temp (°C)', data: cpuTemp, borderColor: 'rgb(207,34,46)', pointRadius: 0, borderWidth: 2, spanGaps: false },
+              { label: 'CPU load (%)', data: cpuLoad, borderColor: 'rgb(47,111,237)', pointRadius: 0, borderWidth: 2, spanGaps: false },
+              { label: 'Memory used (%)', data: memUsed, borderColor: 'rgb(130,80,223)', pointRadius: 0, borderWidth: 2, spanGaps: false },
               Charts.thresholdDataset('Throttle limit 80°C', 80, labels.length, '207,34,46'),
             ],
           },
-          options: { responsive: true, animation: false },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            scales: {
+              x: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Time (ICT)') },
+              y: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('°C / %') },
+            },
+          },
         });
+        resourcesChart.$noDataRanges = noDataRanges;
       } else {
         resourcesChart.data.labels = labels;
         resourcesChart.data.datasets[0].data = cpuTemp;
         resourcesChart.data.datasets[1].data = cpuLoad;
         resourcesChart.data.datasets[2].data = memUsed;
         resourcesChart.data.datasets[3].data = new Array(labels.length).fill(80);
+        resourcesChart.$noDataRanges = noDataRanges;
         resourcesChart.update('none');
       }
 
@@ -149,12 +165,20 @@ window.SystemView = (function () {
         ingestChart = new Chart(ctx2, {
           type: 'bar',
           data: { labels, datasets: [{ label: 'Accepted (rec/min)', data: ingestRate, backgroundColor: ingestRate.map((v) => (v === 0 ? 'rgba(207,34,46,0.4)' : 'rgba(26,127,55,0.6)')) }] },
-          options: { responsive: true, animation: false },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            scales: {
+              x: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Time (ICT)') },
+              y: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Readings / min') },
+            },
+          },
         });
+        ingestChart.$noDataRanges = noDataRanges;
       } else {
         ingestChart.data.labels = labels;
         ingestChart.data.datasets[0].data = ingestRate;
         ingestChart.data.datasets[0].backgroundColor = ingestRate.map((v) => (v === 0 ? 'rgba(207,34,46,0.4)' : 'rgba(26,127,55,0.6)'));
+        ingestChart.$noDataRanges = noDataRanges;
         ingestChart.update('none');
       }
 
@@ -166,16 +190,24 @@ window.SystemView = (function () {
           data: {
             labels,
             datasets: [
-              { label: 'Size (MB)', data: dbSize, borderColor: 'rgb(184,120,20)', pointRadius: 0, borderWidth: 2 },
+              { label: 'Size (MB)', data: dbSize, borderColor: 'rgb(184,120,20)', pointRadius: 0, borderWidth: 2, spanGaps: false },
               { label: 'Projected', data: projected, borderColor: 'rgb(184,120,20)', borderDash: [4, 4], pointRadius: 0, borderWidth: 1 },
             ],
           },
-          options: { responsive: true, animation: false },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            scales: {
+              x: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Time (ICT)') },
+              y: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Size (MB)', '184,120,20') },
+            },
+          },
         });
+        growthChart.$noDataRanges = noDataRanges;
       } else {
         growthChart.data.labels = labels;
         growthChart.data.datasets[0].data = dbSize;
         growthChart.data.datasets[1].data = projected;
+        growthChart.$noDataRanges = noDataRanges;
         growthChart.update('none');
       }
     }).catch((err) => showError(`Resource history unavailable: ${err.message || err.code}`));

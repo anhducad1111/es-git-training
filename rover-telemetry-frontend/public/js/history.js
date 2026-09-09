@@ -38,7 +38,7 @@ window.HistoryView = (function () {
       <div id="history-query-cost">–</div>
     </div>
     <div class="panel">
-      <canvas id="history-chart" height="90"></canvas>
+      <div class="chart-box"><canvas id="history-chart"></canvas></div>
     </div>
     <div class="panel">
       <div class="panel-title">Statistics · selected range</div>
@@ -49,7 +49,7 @@ window.HistoryView = (function () {
     </div>
     <div class="panel">
       <div class="panel-title">Obstacle events per bucket</div>
-      <canvas id="history-obstacle-chart" height="60"></canvas>
+      <div class="chart-box"><canvas id="history-obstacle-chart"></canvas></div>
     </div>
     <div class="panel">
       <div class="panel-title">Gaps in range</div>
@@ -60,7 +60,11 @@ window.HistoryView = (function () {
   function populateRoverSelect(rovers) {
     const select = document.getElementById('history-rover');
     select.innerHTML = rovers.map((r) => `<option value="${Api.escapeHtml(r.device_uid)}">${Api.escapeHtml(r.device_uid)}</option>`).join('');
-    if (!uid && rovers.length > 0) uid = rovers[0].device_uid;
+    if (!uid) {
+      const shared = RoverSelection.get();
+      const stillPresent = shared && rovers.some((r) => r.device_uid === shared);
+      uid = stillPresent ? shared : (rovers.length > 0 ? rovers[0].device_uid : null);
+    }
     select.value = uid;
   }
 
@@ -112,7 +116,18 @@ window.HistoryView = (function () {
     renderSensorToggles();
     Api.rovers().then((rovers) => { populateRoverSelect(rovers); runQuery(); }).catch((err) => showError(`Rover list unavailable: ${err.message || err.code}`));
 
-    document.getElementById('history-rover').addEventListener('change', (evt) => { uid = evt.target.value; runQuery(); });
+    document.getElementById('history-rover').addEventListener('change', (evt) => {
+      uid = evt.target.value;
+      RoverSelection.set(uid);
+      runQuery();
+    });
+    RoverSelection.subscribe((newUid) => {
+      if (newUid === uid) return;
+      uid = newUid;
+      const select = document.getElementById('history-rover');
+      if (select) select.value = uid;
+      runQuery();
+    });
     document.getElementById('history-resolution').addEventListener('change', (evt) => { resolution = evt.target.value; runQuery(); });
     document.getElementById('history-range-controls').addEventListener('click', (evt) => {
       const btn = evt.target.closest('button');
@@ -130,6 +145,11 @@ window.HistoryView = (function () {
     });
     document.getElementById('export-csv').addEventListener('click', () => triggerExport('csv'));
     document.getElementById('export-json').addEventListener('click', () => triggerExport('json'));
+    document.getElementById('history-gaps-list').addEventListener('click', (evt) => {
+      const header = evt.target.closest('.gap-card-header');
+      if (!header) return;
+      header.closest('.gap-card').classList.toggle('expanded');
+    });
   }
 
   function start() {}
@@ -145,22 +165,91 @@ window.HistoryView = (function () {
     distance_cm: { label: 'Distance (cm)', colorRgb: '26,127,55' },
   };
 
-  function firstActiveSensor() {
-    return Object.keys(sensors).find((key) => sensors[key]) || 'temperature_c';
+  function activeSensors() {
+    return Object.keys(sensors).filter((key) => sensors[key]);
   }
 
   function renderHistoryChart(data) {
-    const field = firstActiveSensor();
-    const meta = SENSOR_META[field];
-    const labels = data.readings.map((r) => r.recorded_at.slice(0, 16).replace('T', ' '));
+    const active = activeSensors();
+    const rawLabels = data.readings.map((r) => TimeUtil.dateTime(r.recorded_at));
     const isAgg = data.resolution !== 'raw';
-    const avg = fieldSeriesHistory(data.readings, field, isAgg);
-    const min = fieldMinHistory(data.readings, field, isAgg);
-    const max = fieldMaxHistory(data.readings, field, isAgg);
-    if (!historyChart) {
-      historyChart = Charts.lineWithBand({ canvasId: 'history-chart', labels, avg, min, max, avgLabel: meta.label, colorRgb: meta.colorRgb });
+    const timestampsMs = data.readings.map((r) => new Date(r.recorded_at).getTime());
+    const gapThresholdMs = window.APP_CONFIG.DEGRADED_THRESHOLD_SECONDS * 1000;
+
+    if (active.length === 0) {
+      if (historyChart) { historyChart.destroy(); historyChart = null; }
+      return;
+    }
+
+    if (active.length === 1) {
+      const field = active[0];
+      const meta = SENSOR_META[field];
+      const rawAvg = fieldSeriesHistory(data.readings, field, isAgg);
+      const rawMin = fieldMinHistory(data.readings, field, isAgg);
+      const rawMax = fieldMaxHistory(data.readings, field, isAgg);
+      const { labels, series, noDataRanges } = Charts.appendGapFills(
+        rawLabels, [rawAvg, rawMin, rawMax], timestampsMs, gapThresholdMs, TimeUtil.dateTime,
+      );
+      const [avg, min, max] = series;
+      if (!historyChart || historyChart.$sensorSignature !== field) {
+        if (historyChart) historyChart.destroy();
+        historyChart = Charts.lineWithBand({
+          canvasId: 'history-chart', labels, avg, min, max, avgLabel: meta.label, colorRgb: meta.colorRgb,
+          yTitle: meta.label, noDataRanges,
+        });
+        historyChart.$sensorSignature = field;
+      } else {
+        Charts.updateChart(historyChart, labels, [max, min, avg], noDataRanges);
+      }
+      return;
+    }
+
+    // Multiple sensors: one plain average line per sensor, each on its own axis (colored
+    // to match, alternating left/right) so wildly different units (°C vs ppm vs cm) stay
+    // readable. No min/max band here - several overlapping shaded bands would be noise.
+    const signature = active.join(',');
+    const rawSeries = active.map((field) => fieldSeriesHistory(data.readings, field, isAgg));
+    const { labels, series, noDataRanges } = Charts.appendGapFills(
+      rawLabels, rawSeries, timestampsMs, gapThresholdMs, TimeUtil.dateTime,
+    );
+
+    if (!historyChart || historyChart.$sensorSignature !== signature) {
+      if (historyChart) historyChart.destroy();
+      const datasets = active.map((field, i) => {
+        const meta = SENSOR_META[field];
+        return {
+          label: meta.label, data: series[i], borderColor: `rgb(${meta.colorRgb})`,
+          backgroundColor: `rgb(${meta.colorRgb})`, borderWidth: 2, pointRadius: 0, spanGaps: false,
+          yAxisID: i === 0 ? 'y' : `y${i}`,
+        };
+      });
+      const scales = { x: { ticks: { maxTicksLimit: 8, color: Charts.TICK_COLOR }, title: Charts.axisTitle('Time (ICT)') } };
+      active.forEach((field, i) => {
+        const meta = SENSOR_META[field];
+        scales[i === 0 ? 'y' : `y${i}`] = {
+          position: i % 2 === 0 ? 'left' : 'right',
+          beginAtZero: false,
+          ticks: { color: `rgb(${meta.colorRgb})` },
+          title: Charts.axisTitle(meta.label, meta.colorRgb),
+          grid: { drawOnChartArea: i === 0 },
+        };
+      });
+      const ctx = document.getElementById('history-chart').getContext('2d');
+      historyChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false,
+          interaction: { mode: 'index', intersect: false }, scales,
+        },
+      });
+      historyChart.$sensorSignature = signature;
+      historyChart.$noDataRanges = noDataRanges;
     } else {
-      Charts.updateChart(historyChart, labels, [max, min, avg]);
+      historyChart.data.labels = labels;
+      active.forEach((field, i) => { historyChart.data.datasets[i].data = series[i]; });
+      historyChart.$noDataRanges = noDataRanges;
+      historyChart.update('none');
     }
   }
   function fieldSeriesHistory(readings, field, isAgg) { return readings.map((r) => (r[field] == null ? null : (isAgg ? r[field].avg : r[field]))); }
@@ -168,9 +257,26 @@ window.HistoryView = (function () {
   function fieldMaxHistory(readings, field, isAgg) { return readings.map((r) => (r[field] == null ? null : (isAgg ? r[field].max : r[field]))); }
 
   function renderGapsList(gaps) {
-    document.getElementById('history-gaps-list').innerHTML = gaps.length === 0
-      ? '<li>No gaps in this range.</li>'
-      : gaps.map((g) => `<li>${Api.escapeHtml(g.start)} → ${Api.escapeHtml(g.end)} · ${g.duration_seconds}s · ${g.missing_readings} readings missing</li>`).join('');
+    const list = document.getElementById('history-gaps-list');
+    if (gaps.length === 0) {
+      list.innerHTML = '<li>No gaps in this range.</li>';
+      return;
+    }
+    list.innerHTML = gaps.map((g) => `
+      <li class="gap-card">
+        <div class="gap-card-header">
+          <span class="gap-range">${Api.escapeHtml(TimeUtil.dateTime(g.start))} → ${Api.escapeHtml(TimeUtil.dateTime(g.end))}</span>
+          <span class="gap-badge">${g.duration_seconds}s</span>
+          <span class="gap-chevron">▾</span>
+        </div>
+        <div class="gap-card-body">
+          <div><span class="gap-field-label">Start</span> ${Api.escapeHtml(TimeUtil.dateTime(g.start))}</div>
+          <div><span class="gap-field-label">End</span> ${Api.escapeHtml(TimeUtil.dateTime(g.end))}</div>
+          <div><span class="gap-field-label">Duration</span> ${g.duration_seconds}s</div>
+          <div><span class="gap-field-label">Missing readings</span> ${g.missing_readings}</div>
+        </div>
+      </li>
+    `).join('');
   }
 
   // Mirrors the resolution ladder used for the chart above (see runQuery/Api.readings
@@ -206,14 +312,20 @@ window.HistoryView = (function () {
         return `<tr><td>${meta.label}</td><td>${min.toFixed(1)}</td><td>${avg.toFixed(1)}</td><td>${max.toFixed(1)}</td><td>${samples}</td></tr>`;
       }).join('');
 
-      const obsLabels = buckets.map((b) => b.bucket_start.slice(0, 10));
+      const obsLabels = buckets.map((b) => TimeUtil.date(b.bucket_start));
       const obsCounts = buckets.map((b) => b.obstacle_events);
       if (!historyObstacleChart) {
         const ctx = document.getElementById('history-obstacle-chart').getContext('2d');
         historyObstacleChart = new Chart(ctx, {
           type: 'bar',
           data: { labels: obsLabels, datasets: [{ label: 'Obstacle events', data: obsCounts, backgroundColor: 'rgba(207,34,46,0.6)' }] },
-          options: { responsive: true, animation: false },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            scales: {
+              x: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Date') },
+              y: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Obstacle events', '207,34,46') },
+            },
+          },
         });
       } else {
         historyObstacleChart.data.labels = obsLabels;

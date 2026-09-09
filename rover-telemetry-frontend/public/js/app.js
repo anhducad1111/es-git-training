@@ -1,5 +1,5 @@
 (function () {
-  const views = { live: window.LiveView, history: window.HistoryView, system: window.SystemView };
+  const views = { live: window.LiveView, history: window.HistoryView, gallery: window.GalleryView, system: window.SystemView };
   let activeTab = 'live';
 
   function activateTabButton(tab, isActive) {
@@ -37,6 +37,7 @@
 
   views.live.mount(document.getElementById('view-live'));
   views.history.mount(document.getElementById('view-history'));
+  views.gallery.mount(document.getElementById('view-gallery'));
   views.system.mount(document.getElementById('view-system'));
 
   views[activeTab].start();

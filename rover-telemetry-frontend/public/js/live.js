@@ -180,6 +180,7 @@ window.LiveView = (function () {
           <div class="card-label">${label}</div>
           <div class="card-value">${fmt(latest[key])}</div>
           <div class="card-sub">${stale ? `at ${TimeUtil.dateTime(latest.recorded_at)}` : range}</div>
+          <div class="card-age">${ageLabel(latest.recorded_at)}</div>
         </div>
       `;
     }).join('') + `
@@ -235,6 +236,35 @@ window.LiveView = (function () {
     return TimeUtil.timeHM(recordedAt);
   }
 
+  // Pads the series with synthetic (null-valued) points from the last real reading up to
+  // "now" so the chart's right edge always reflects the current time. A single trailing
+  // point would be only one category-slot wide and invisible next to hundreds of real
+  // points, so the gap is filled with enough synthetic points (matching the real data's
+  // own spacing, capped at 100) that the "no data" band is actually visible.
+  function appendNowGapTail(labels, series, timestampsMs) {
+    const nowMs = Date.now();
+    const gapThresholdMs = window.APP_CONFIG.DEGRADED_THRESHOLD_SECONDS * 1000;
+    const lastMs = timestampsMs.length ? timestampsMs[timestampsMs.length - 1] : null;
+    const gapMs = lastMs === null ? gapThresholdMs + 1 : nowMs - lastMs;
+    if (gapMs <= gapThresholdMs) {
+      return { labels, series, noDataFlags: new Array(labels.length).fill(0) };
+    }
+    const stepMs = timestampsMs.length >= 2
+      ? (timestampsMs[timestampsMs.length - 1] - timestampsMs[0]) / (timestampsMs.length - 1)
+      : gapMs;
+    const pointCount = Math.min(100, Math.max(1, Math.round(gapMs / Math.max(stepMs, 1000))));
+    const base = lastMs === null ? nowMs - gapMs : lastMs;
+    const extraLabels = [];
+    for (let i = 1; i <= pointCount; i += 1) {
+      extraLabels.push(labelFor(new Date(base + (gapMs * i) / pointCount).toISOString()));
+    }
+    return {
+      labels: labels.concat(extraLabels),
+      series: series.map((arr) => arr.concat(new Array(extraLabels.length).fill(null))),
+      noDataFlags: new Array(labels.length).fill(0).concat(new Array(extraLabels.length).fill(1)),
+    };
+  }
+
   function fieldSeries(readings, field, isAggregated) {
     return readings.map((r) => {
       const v = r[field];
@@ -262,18 +292,25 @@ window.LiveView = (function () {
     const end = new Date().toISOString();
     Api.readings(uid, { start, end, resolution: 'auto' }).then((data) => {
       const isAggregated = data.resolution !== 'raw';
-      const labels = data.readings.map((r) => labelFor(r.recorded_at));
+      const readings = data.readings;
       document.getElementById('telemetry-panel-title').textContent =
         `Telemetry · ${data.resolution} · ${data.count} pts`;
-      const avg = fieldSeries(data.readings, 'temperature_c', isAggregated);
-      const min = fieldMin(data.readings, 'temperature_c', isAggregated);
-      const max = fieldMax(data.readings, 'temperature_c', isAggregated);
+      const rawLabels = readings.map((r) => labelFor(r.recorded_at));
+      const rawAvg = fieldSeries(readings, 'temperature_c', isAggregated);
+      const rawMin = fieldMin(readings, 'temperature_c', isAggregated);
+      const rawMax = fieldMax(readings, 'temperature_c', isAggregated);
+      const timestampsMs = readings.map((r) => new Date(r.recorded_at).getTime());
+      const { labels, series, noDataFlags } = appendNowGapTail(rawLabels, [rawAvg, rawMin, rawMax], timestampsMs);
+      const [avg, min, max] = series;
+      const yMax = Math.max(1, ...max.filter((v) => v !== null && v !== undefined));
       if (!telemetryChart) {
         telemetryChart = Charts.lineWithBand({
           canvasId: 'telemetry-chart', labels, avg, min, max, avgLabel: 'Temperature (°C)', colorRgb: '47,111,237',
         });
+        telemetryChart.data.datasets.push(Charts.bandDataset('No data yet', noDataFlags, yMax, 'rgba(140,140,140,0.25)'));
+        telemetryChart.update('none');
       } else {
-        Charts.updateChart(telemetryChart, labels, [max, min, avg]);
+        Charts.updateChart(telemetryChart, labels, [max, min, avg, noDataFlags.map((f) => (f ? yMax : 0))]);
       }
     }).catch((err) => showError(`Telemetry chart unavailable: ${err.message || err.code}`));
   }
@@ -283,9 +320,12 @@ window.LiveView = (function () {
   function loadObstacleChart(uid) {
     Api.readings(uid, { limit: 150, order: 'desc', resolution: 'raw' }).then((data) => {
       const readings = data.readings.slice().reverse();
-      const labels = readings.map((r) => labelFor(r.recorded_at));
-      const distance = readings.map((r) => (r.distance_cm === null ? null : r.distance_cm));
-      const brakeFlags = readings.map((r) => (r.auto_brake ? 1 : 0));
+      const rawLabels = readings.map((r) => labelFor(r.recorded_at));
+      const rawDistance = readings.map((r) => (r.distance_cm === null ? null : r.distance_cm));
+      const rawBrakeFlags = readings.map((r) => (r.auto_brake ? 1 : 0));
+      const timestampsMs = readings.map((r) => new Date(r.recorded_at).getTime());
+      const { labels, series, noDataFlags } = appendNowGapTail(rawLabels, [rawDistance, rawBrakeFlags], timestampsMs);
+      const [distance, brakeFlags] = series;
       const maxDistance = Math.max(120, ...distance.filter((v) => v !== null));
       if (!obstacleChart) {
         obstacleChart = Charts.lineWithBand({
@@ -294,12 +334,14 @@ window.LiveView = (function () {
         });
         obstacleChart.data.datasets.push(Charts.thresholdDataset('Auto-brake threshold', window.APP_CONFIG.AUTO_BRAKE_THRESHOLD_CM, labels.length, '207,34,46'));
         obstacleChart.data.datasets.push(Charts.bandDataset('Brake engaged', brakeFlags, maxDistance, 'rgba(207,34,46,0.15)'));
+        obstacleChart.data.datasets.push(Charts.bandDataset('No data yet', noDataFlags, maxDistance, 'rgba(140,140,140,0.25)'));
         obstacleChart.update('none');
       } else {
         Charts.updateChart(obstacleChart, labels, [
           distance, distance, distance,
           new Array(labels.length).fill(window.APP_CONFIG.AUTO_BRAKE_THRESHOLD_CM),
           brakeFlags.map((f) => (f ? maxDistance : 0)),
+          noDataFlags.map((f) => (f ? maxDistance : 0)),
         ]);
       }
     }).catch((err) => showError(`Obstacle chart unavailable: ${err.message || err.code}`));

@@ -167,15 +167,24 @@ window.HistoryView = (function () {
   function renderHistoryChart(data) {
     const field = firstActiveSensor();
     const meta = SENSOR_META[field];
-    const labels = data.readings.map((r) => TimeUtil.dateTime(r.recorded_at));
+    const rawLabels = data.readings.map((r) => TimeUtil.dateTime(r.recorded_at));
     const isAgg = data.resolution !== 'raw';
-    const avg = fieldSeriesHistory(data.readings, field, isAgg);
-    const min = fieldMinHistory(data.readings, field, isAgg);
-    const max = fieldMaxHistory(data.readings, field, isAgg);
+    const rawAvg = fieldSeriesHistory(data.readings, field, isAgg);
+    const rawMin = fieldMinHistory(data.readings, field, isAgg);
+    const rawMax = fieldMaxHistory(data.readings, field, isAgg);
+    const timestampsMs = data.readings.map((r) => new Date(r.recorded_at).getTime());
+    const gapThresholdMs = window.APP_CONFIG.DEGRADED_THRESHOLD_SECONDS * 1000;
+    const { labels, series, noDataFromIndex } = Charts.appendNowGapTail(
+      rawLabels, [rawAvg, rawMin, rawMax], timestampsMs, gapThresholdMs, TimeUtil.dateTime,
+    );
+    const [avg, min, max] = series;
     if (!historyChart) {
-      historyChart = Charts.lineWithBand({ canvasId: 'history-chart', labels, avg, min, max, avgLabel: meta.label, colorRgb: meta.colorRgb });
+      historyChart = Charts.lineWithBand({
+        canvasId: 'history-chart', labels, avg, min, max, avgLabel: meta.label, colorRgb: meta.colorRgb,
+        yTitle: meta.label, noDataFromIndex,
+      });
     } else {
-      Charts.updateChart(historyChart, labels, [max, min, avg]);
+      Charts.updateChart(historyChart, labels, [max, min, avg], noDataFromIndex);
     }
   }
   function fieldSeriesHistory(readings, field, isAgg) { return readings.map((r) => (r[field] == null ? null : (isAgg ? r[field].avg : r[field]))); }
@@ -228,7 +237,10 @@ window.HistoryView = (function () {
         historyObstacleChart = new Chart(ctx, {
           type: 'bar',
           data: { labels: obsLabels, datasets: [{ label: 'Obstacle events', data: obsCounts, backgroundColor: 'rgba(207,34,46,0.6)' }] },
-          options: { responsive: true, animation: false },
+          options: {
+            responsive: true, animation: false,
+            scales: { x: { title: Charts.axisTitle('Date') }, y: { title: Charts.axisTitle('Obstacle events') } },
+          },
         });
       } else {
         historyObstacleChart.data.labels = obsLabels;

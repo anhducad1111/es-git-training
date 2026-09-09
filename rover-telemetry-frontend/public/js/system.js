@@ -108,17 +108,25 @@ window.SystemView = (function () {
   let latestSystem = null;
 
   const HIST_RANGE_TO_MS = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
+  const GATEWAY_SAMPLE_GAP_THRESHOLD_MS = 120000; // gateway_metrics samples once/min; 2x that is "stale"
 
   function loadResourceCharts() {
     const start = new Date(Date.now() - HIST_RANGE_TO_MS[historyRange]).toISOString();
     const end = new Date().toISOString();
     Api.systemHistory({ start, end, resolution: 'auto' }).then((data) => {
-      const labels = data.points.map((p) => TimeUtil.timeHM(p.sampled_at));
-      const cpuTemp = data.points.map((p) => p.cpu_temperature_c);
-      const cpuLoad = data.points.map((p) => p.cpu_load_percent);
-      const memUsed = data.points.map((p) => p.memory_used_percent);
-      const ingestRate = data.points.map((p) => p.ingest_rate_per_min);
-      const dbSize = data.points.map((p) => p.database_size_mb);
+      const rawLabels = data.points.map((p) => TimeUtil.timeHM(p.sampled_at));
+      const rawCpuTemp = data.points.map((p) => p.cpu_temperature_c);
+      const rawCpuLoad = data.points.map((p) => p.cpu_load_percent);
+      const rawMemUsed = data.points.map((p) => p.memory_used_percent);
+      const rawIngestRate = data.points.map((p) => p.ingest_rate_per_min);
+      const rawDbSize = data.points.map((p) => p.database_size_mb);
+      const timestampsMs = data.points.map((p) => new Date(p.sampled_at).getTime());
+
+      const { labels, series, noDataFromIndex } = Charts.appendNowGapTail(
+        rawLabels, [rawCpuTemp, rawCpuLoad, rawMemUsed, rawIngestRate, rawDbSize],
+        timestampsMs, GATEWAY_SAMPLE_GAP_THRESHOLD_MS, TimeUtil.timeHM,
+      );
+      const [cpuTemp, cpuLoad, memUsed, ingestRate, dbSize] = series;
 
       if (!resourcesChart) {
         const ctx = document.getElementById('resources-chart').getContext('2d');
@@ -127,20 +135,25 @@ window.SystemView = (function () {
           data: {
             labels,
             datasets: [
-              { label: 'CPU temp (°C)', data: cpuTemp, borderColor: 'rgb(207,34,46)', pointRadius: 0, borderWidth: 2 },
-              { label: 'CPU load (%)', data: cpuLoad, borderColor: 'rgb(47,111,237)', pointRadius: 0, borderWidth: 2 },
-              { label: 'Memory used (%)', data: memUsed, borderColor: 'rgb(130,80,223)', pointRadius: 0, borderWidth: 2 },
+              { label: 'CPU temp (°C)', data: cpuTemp, borderColor: 'rgb(207,34,46)', pointRadius: 0, borderWidth: 2, spanGaps: false },
+              { label: 'CPU load (%)', data: cpuLoad, borderColor: 'rgb(47,111,237)', pointRadius: 0, borderWidth: 2, spanGaps: false },
+              { label: 'Memory used (%)', data: memUsed, borderColor: 'rgb(130,80,223)', pointRadius: 0, borderWidth: 2, spanGaps: false },
               Charts.thresholdDataset('Throttle limit 80°C', 80, labels.length, '207,34,46'),
             ],
           },
-          options: { responsive: true, animation: false },
+          options: {
+            responsive: true, animation: false,
+            scales: { x: { title: Charts.axisTitle('Time (ICT)') }, y: { title: Charts.axisTitle('°C / %') } },
+          },
         });
+        resourcesChart.$noDataFromIndex = noDataFromIndex;
       } else {
         resourcesChart.data.labels = labels;
         resourcesChart.data.datasets[0].data = cpuTemp;
         resourcesChart.data.datasets[1].data = cpuLoad;
         resourcesChart.data.datasets[2].data = memUsed;
         resourcesChart.data.datasets[3].data = new Array(labels.length).fill(80);
+        resourcesChart.$noDataFromIndex = noDataFromIndex;
         resourcesChart.update('none');
       }
 
@@ -149,12 +162,17 @@ window.SystemView = (function () {
         ingestChart = new Chart(ctx2, {
           type: 'bar',
           data: { labels, datasets: [{ label: 'Accepted (rec/min)', data: ingestRate, backgroundColor: ingestRate.map((v) => (v === 0 ? 'rgba(207,34,46,0.4)' : 'rgba(26,127,55,0.6)')) }] },
-          options: { responsive: true, animation: false },
+          options: {
+            responsive: true, animation: false,
+            scales: { x: { title: Charts.axisTitle('Time (ICT)') }, y: { title: Charts.axisTitle('Readings / min') } },
+          },
         });
+        ingestChart.$noDataFromIndex = noDataFromIndex;
       } else {
         ingestChart.data.labels = labels;
         ingestChart.data.datasets[0].data = ingestRate;
         ingestChart.data.datasets[0].backgroundColor = ingestRate.map((v) => (v === 0 ? 'rgba(207,34,46,0.4)' : 'rgba(26,127,55,0.6)'));
+        ingestChart.$noDataFromIndex = noDataFromIndex;
         ingestChart.update('none');
       }
 
@@ -166,16 +184,21 @@ window.SystemView = (function () {
           data: {
             labels,
             datasets: [
-              { label: 'Size (MB)', data: dbSize, borderColor: 'rgb(184,120,20)', pointRadius: 0, borderWidth: 2 },
+              { label: 'Size (MB)', data: dbSize, borderColor: 'rgb(184,120,20)', pointRadius: 0, borderWidth: 2, spanGaps: false },
               { label: 'Projected', data: projected, borderColor: 'rgb(184,120,20)', borderDash: [4, 4], pointRadius: 0, borderWidth: 1 },
             ],
           },
-          options: { responsive: true, animation: false },
+          options: {
+            responsive: true, animation: false,
+            scales: { x: { title: Charts.axisTitle('Time (ICT)') }, y: { title: Charts.axisTitle('Size (MB)') } },
+          },
         });
+        growthChart.$noDataFromIndex = noDataFromIndex;
       } else {
         growthChart.data.labels = labels;
         growthChart.data.datasets[0].data = dbSize;
         growthChart.data.datasets[1].data = projected;
+        growthChart.$noDataFromIndex = noDataFromIndex;
         growthChart.update('none');
       }
     }).catch((err) => showError(`Resource history unavailable: ${err.message || err.code}`));

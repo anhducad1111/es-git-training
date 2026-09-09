@@ -19,7 +19,11 @@ window.Charts = (function () {
   };
   Chart.register(noDataBandPlugin);
 
-  function lineWithBand({ canvasId, labels, avg, min, max, avgLabel, colorRgb, noDataFromIndex }) {
+  function axisTitle(text) {
+    return { display: !!text, text: text || '' };
+  }
+
+  function lineWithBand({ canvasId, labels, avg, min, max, avgLabel, colorRgb, noDataFromIndex, xTitle, yTitle }) {
     const ctx = document.getElementById(canvasId).getContext('2d');
     const chart = new Chart(ctx, {
       type: 'line',
@@ -35,7 +39,10 @@ window.Charts = (function () {
         responsive: true,
         animation: false,
         interaction: { mode: 'index', intersect: false },
-        scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { beginAtZero: false } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 8 }, title: axisTitle(xTitle === undefined ? 'Time (ICT)' : xTitle) },
+          y: { beginAtZero: false, title: axisTitle(yTitle) },
+        },
       },
     });
     chart.$noDataFromIndex = noDataFromIndex === undefined ? null : noDataFromIndex;
@@ -60,5 +67,36 @@ window.Charts = (function () {
     chart.update('none');
   }
 
-  return { lineWithBand, thresholdDataset, bandDataset, updateChart };
+  // Extends a chart's series with synthetic (null-valued) points from the last real
+  // sample up to "now" so the x-axis right edge always reflects the current time, and
+  // reports the index the real data ends at (for the noDataBand plugin above to shade).
+  // The x-axis is a category scale (evenly spaced by index, not by real elapsed time),
+  // so the number of synthetic points must roughly match the real data's own spacing -
+  // otherwise a single trailing point would sit at nearly the same pixel as the last
+  // real one regardless of how large the actual time gap is.
+  function appendNowGapTail(labels, series, timestampsMs, gapThresholdMs, labelFn) {
+    const toLabel = labelFn || ((iso) => TimeUtil.timeHM(iso));
+    const nowMs = Date.now();
+    const lastMs = timestampsMs.length ? timestampsMs[timestampsMs.length - 1] : null;
+    const gapMs = lastMs === null ? gapThresholdMs + 1 : nowMs - lastMs;
+    if (gapMs <= gapThresholdMs) {
+      return { labels, series, noDataFromIndex: null };
+    }
+    const stepMs = timestampsMs.length >= 2
+      ? (timestampsMs[timestampsMs.length - 1] - timestampsMs[0]) / (timestampsMs.length - 1)
+      : gapMs;
+    const pointCount = Math.min(300, Math.max(1, Math.round(gapMs / Math.max(stepMs, 1000))));
+    const base = lastMs === null ? nowMs - gapMs : lastMs;
+    const extraLabels = [];
+    for (let i = 1; i <= pointCount; i += 1) {
+      extraLabels.push(toLabel(new Date(base + (gapMs * i) / pointCount).toISOString()));
+    }
+    return {
+      labels: labels.concat(extraLabels),
+      series: series.map((arr) => arr.concat(new Array(extraLabels.length).fill(null))),
+      noDataFromIndex: labels.length - 1,
+    };
+  }
+
+  return { lineWithBand, thresholdDataset, bandDataset, updateChart, appendNowGapTail, axisTitle };
 })();

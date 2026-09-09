@@ -242,35 +242,8 @@ window.LiveView = (function () {
     return TimeUtil.timeHM(recordedAt);
   }
 
-  // Extends the series with synthetic (null-valued) points from the last real reading up
-  // to "now" so the chart's right edge always reflects the current time. The x-axis is a
-  // category scale (evenly spaced by index, not by real elapsed time), so the number of
-  // synthetic points must roughly match the real data's own spacing - otherwise a single
-  // trailing point would sit at nearly the same pixel as the last real one regardless of
-  // how large the actual time gap is. Rendering itself is one plugin-drawn rectangle (see
-  // Charts' noDataBand), not a per-point dataset, so this never looks like a stripe.
-  function appendNowGapTail(labels, series, timestampsMs) {
-    const nowMs = Date.now();
-    const gapThresholdMs = window.APP_CONFIG.DEGRADED_THRESHOLD_SECONDS * 1000;
-    const lastMs = timestampsMs.length ? timestampsMs[timestampsMs.length - 1] : null;
-    const gapMs = lastMs === null ? gapThresholdMs + 1 : nowMs - lastMs;
-    if (gapMs <= gapThresholdMs) {
-      return { labels, series, noDataFromIndex: null };
-    }
-    const stepMs = timestampsMs.length >= 2
-      ? (timestampsMs[timestampsMs.length - 1] - timestampsMs[0]) / (timestampsMs.length - 1)
-      : gapMs;
-    const pointCount = Math.min(300, Math.max(1, Math.round(gapMs / Math.max(stepMs, 1000))));
-    const base = lastMs === null ? nowMs - gapMs : lastMs;
-    const extraLabels = [];
-    for (let i = 1; i <= pointCount; i += 1) {
-      extraLabels.push(labelFor(new Date(base + (gapMs * i) / pointCount).toISOString()));
-    }
-    return {
-      labels: labels.concat(extraLabels),
-      series: series.map((arr) => arr.concat(new Array(extraLabels.length).fill(null))),
-      noDataFromIndex: labels.length - 1,
-    };
+  function gapTail(labels, series, timestampsMs) {
+    return Charts.appendNowGapTail(labels, series, timestampsMs, window.APP_CONFIG.DEGRADED_THRESHOLD_SECONDS * 1000, labelFor);
   }
 
   function fieldSeries(readings, field, isAggregated) {
@@ -307,15 +280,26 @@ window.LiveView = (function () {
       const rawAvg = fieldSeries(readings, 'temperature_c', isAggregated);
       const rawMin = fieldMin(readings, 'temperature_c', isAggregated);
       const rawMax = fieldMax(readings, 'temperature_c', isAggregated);
+      const rawHumidity = fieldSeries(readings, 'humidity_pct', isAggregated);
       const timestampsMs = readings.map((r) => new Date(r.recorded_at).getTime());
-      const { labels, series, noDataFromIndex } = appendNowGapTail(rawLabels, [rawAvg, rawMin, rawMax], timestampsMs);
-      const [avg, min, max] = series;
+      const { labels, series, noDataFromIndex } = gapTail(rawLabels, [rawAvg, rawMin, rawMax, rawHumidity], timestampsMs);
+      const [avg, min, max, humidity] = series;
       if (!telemetryChart) {
         telemetryChart = Charts.lineWithBand({
-          canvasId: 'telemetry-chart', labels, avg, min, max, avgLabel: 'Temperature (°C)', colorRgb: '47,111,237', noDataFromIndex,
+          canvasId: 'telemetry-chart', labels, avg, min, max, avgLabel: 'Temperature (°C)', colorRgb: '47,111,237',
+          yTitle: 'Temperature (°C)', noDataFromIndex,
         });
+        telemetryChart.data.datasets.push({
+          label: 'Humidity (%)', data: humidity, borderColor: 'rgb(130,80,223)', backgroundColor: 'rgb(130,80,223)',
+          borderWidth: 2, pointRadius: 0, spanGaps: false, yAxisID: 'y1',
+        });
+        telemetryChart.options.scales.y1 = {
+          position: 'right', beginAtZero: false, grid: { drawOnChartArea: false },
+          title: Charts.axisTitle('Humidity (%)'),
+        };
+        telemetryChart.update('none');
       } else {
-        Charts.updateChart(telemetryChart, labels, [max, min, avg], noDataFromIndex);
+        Charts.updateChart(telemetryChart, labels, [max, min, avg, humidity], noDataFromIndex);
       }
     }).catch((err) => showError(`Telemetry chart unavailable: ${err.message || err.code}`));
   }
@@ -329,13 +313,13 @@ window.LiveView = (function () {
       const rawDistance = readings.map((r) => (r.distance_cm === null ? null : r.distance_cm));
       const rawBrakeFlags = readings.map((r) => (r.auto_brake ? 1 : 0));
       const timestampsMs = readings.map((r) => new Date(r.recorded_at).getTime());
-      const { labels, series, noDataFromIndex } = appendNowGapTail(rawLabels, [rawDistance, rawBrakeFlags], timestampsMs);
+      const { labels, series, noDataFromIndex } = gapTail(rawLabels, [rawDistance, rawBrakeFlags], timestampsMs);
       const [distance, brakeFlags] = series;
       const maxDistance = Math.max(120, ...distance.filter((v) => v !== null));
       if (!obstacleChart) {
         obstacleChart = Charts.lineWithBand({
           canvasId: 'obstacle-chart', labels, avg: distance, min: distance, max: distance,
-          avgLabel: 'Distance (cm)', colorRgb: '26,127,55', noDataFromIndex,
+          avgLabel: 'Distance (cm)', colorRgb: '26,127,55', yTitle: 'Distance (cm)', noDataFromIndex,
         });
         obstacleChart.data.datasets.push(Charts.thresholdDataset('Auto-brake threshold', window.APP_CONFIG.AUTO_BRAKE_THRESHOLD_CM, labels.length, '207,34,46'));
         obstacleChart.data.datasets.push(Charts.bandDataset('Brake engaged', brakeFlags, maxDistance, 'rgba(207,34,46,0.15)'));

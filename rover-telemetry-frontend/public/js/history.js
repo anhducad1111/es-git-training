@@ -239,7 +239,10 @@ window.HistoryView = (function () {
           data: { labels: obsLabels, datasets: [{ label: 'Obstacle events', data: obsCounts, backgroundColor: 'rgba(207,34,46,0.6)' }] },
           options: {
             responsive: true, animation: false,
-            scales: { x: { title: Charts.axisTitle('Date') }, y: { title: Charts.axisTitle('Obstacle events') } },
+            scales: {
+              x: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Date') },
+              y: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Obstacle events', '207,34,46') },
+            },
           },
         });
       } else {

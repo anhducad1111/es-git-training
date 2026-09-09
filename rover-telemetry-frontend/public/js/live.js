@@ -295,7 +295,8 @@ window.LiveView = (function () {
         });
         telemetryChart.options.scales.y1 = {
           position: 'right', beginAtZero: false, grid: { drawOnChartArea: false },
-          title: Charts.axisTitle('Humidity (%)'),
+          ticks: { color: 'rgb(130,80,223)' },
+          title: Charts.axisTitle('Humidity (%)', '130,80,223'),
         };
         telemetryChart.update('none');
       } else {

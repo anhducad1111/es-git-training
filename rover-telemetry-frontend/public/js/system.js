@@ -143,7 +143,10 @@ window.SystemView = (function () {
           },
           options: {
             responsive: true, animation: false,
-            scales: { x: { title: Charts.axisTitle('Time (ICT)') }, y: { title: Charts.axisTitle('°C / %') } },
+            scales: {
+              x: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Time (ICT)') },
+              y: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('°C / %') },
+            },
           },
         });
         resourcesChart.$noDataFromIndex = noDataFromIndex;
@@ -164,7 +167,10 @@ window.SystemView = (function () {
           data: { labels, datasets: [{ label: 'Accepted (rec/min)', data: ingestRate, backgroundColor: ingestRate.map((v) => (v === 0 ? 'rgba(207,34,46,0.4)' : 'rgba(26,127,55,0.6)')) }] },
           options: {
             responsive: true, animation: false,
-            scales: { x: { title: Charts.axisTitle('Time (ICT)') }, y: { title: Charts.axisTitle('Readings / min') } },
+            scales: {
+              x: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Time (ICT)') },
+              y: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Readings / min') },
+            },
           },
         });
         ingestChart.$noDataFromIndex = noDataFromIndex;
@@ -190,7 +196,10 @@ window.SystemView = (function () {
           },
           options: {
             responsive: true, animation: false,
-            scales: { x: { title: Charts.axisTitle('Time (ICT)') }, y: { title: Charts.axisTitle('Size (MB)') } },
+            scales: {
+              x: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Time (ICT)') },
+              y: { ticks: { color: Charts.TICK_COLOR }, title: Charts.axisTitle('Size (MB)', '184,120,20') },
+            },
           },
         });
         growthChart.$noDataFromIndex = noDataFromIndex;

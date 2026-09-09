@@ -19,8 +19,16 @@ window.Charts = (function () {
   };
   Chart.register(noDataBandPlugin);
 
-  function axisTitle(text) {
-    return { display: !!text, text: text || '' };
+  const AXIS_LABEL_COLOR = '#5b6270'; // matches --text-dim, used when a color can't be attributed to one series
+  const TICK_COLOR = '#8a909c'; // slightly muted so tick labels don't compete with the plotted lines
+
+  function axisTitle(text, colorRgb) {
+    return {
+      display: !!text,
+      text: text || '',
+      color: colorRgb ? `rgb(${colorRgb})` : AXIS_LABEL_COLOR,
+      font: { weight: '600', size: 12 },
+    };
   }
 
   function lineWithBand({ canvasId, labels, avg, min, max, avgLabel, colorRgb, noDataFromIndex, xTitle, yTitle }) {
@@ -40,8 +48,15 @@ window.Charts = (function () {
         animation: false,
         interaction: { mode: 'index', intersect: false },
         scales: {
-          x: { ticks: { maxTicksLimit: 8 }, title: axisTitle(xTitle === undefined ? 'Time (ICT)' : xTitle) },
-          y: { beginAtZero: false, title: axisTitle(yTitle) },
+          x: {
+            ticks: { maxTicksLimit: 8, color: TICK_COLOR },
+            title: axisTitle(xTitle === undefined ? 'Time (ICT)' : xTitle),
+          },
+          y: {
+            beginAtZero: false,
+            ticks: { color: TICK_COLOR },
+            title: axisTitle(yTitle, yTitle ? colorRgb : null),
+          },
         },
       },
     });
@@ -98,5 +113,5 @@ window.Charts = (function () {
     };
   }
 
-  return { lineWithBand, thresholdDataset, bandDataset, updateChart, appendNowGapTail, axisTitle };
+  return { lineWithBand, thresholdDataset, bandDataset, updateChart, appendNowGapTail, axisTitle, TICK_COLOR };
 })();

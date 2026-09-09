@@ -1,7 +1,27 @@
 window.Charts = (function () {
-  function lineWithBand({ canvasId, labels, avg, min, max, avgLabel, colorRgb }) {
+  // Fills the chart area from the last real data point to the right edge with a flat
+  // gray rectangle, marking "no data yet" as a single solid block instead of many thin
+  // per-category bars (which show grid lines through them as a striped pattern).
+  const noDataBandPlugin = {
+    id: 'noDataBand',
+    beforeDatasetsDraw(chart) {
+      const fromIndex = chart.$noDataFromIndex;
+      if (fromIndex === undefined || fromIndex === null) return;
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea) return;
+      const xPixel = fromIndex < 0 ? chartArea.left : scales.x.getPixelForValue(fromIndex);
+      if (xPixel >= chartArea.right) return;
+      ctx.save();
+      ctx.fillStyle = 'rgba(140,140,140,0.25)';
+      ctx.fillRect(xPixel, chartArea.top, chartArea.right - xPixel, chartArea.bottom - chartArea.top);
+      ctx.restore();
+    },
+  };
+  Chart.register(noDataBandPlugin);
+
+  function lineWithBand({ canvasId, labels, avg, min, max, avgLabel, colorRgb, noDataFromIndex }) {
     const ctx = document.getElementById(canvasId).getContext('2d');
-    return new Chart(ctx, {
+    const chart = new Chart(ctx, {
       type: 'line',
       data: {
         labels,
@@ -18,6 +38,8 @@ window.Charts = (function () {
         scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { beginAtZero: false } },
       },
     });
+    chart.$noDataFromIndex = noDataFromIndex === undefined ? null : noDataFromIndex;
+    return chart;
   }
 
   function thresholdDataset(label, value, count, colorRgb) {
@@ -31,9 +53,10 @@ window.Charts = (function () {
     };
   }
 
-  function updateChart(chart, labels, datasetsData) {
+  function updateChart(chart, labels, datasetsData, noDataFromIndex) {
     chart.data.labels = labels;
     datasetsData.forEach((data, i) => { chart.data.datasets[i].data = data; });
+    if (noDataFromIndex !== undefined) chart.$noDataFromIndex = noDataFromIndex;
     chart.update('none');
   }
 

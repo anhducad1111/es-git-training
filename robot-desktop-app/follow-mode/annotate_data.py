@@ -29,22 +29,15 @@ front(前)/rear(後)のキーポイントを自動検出し、1枚ずつ確認�
 
 import sys
 import os
-
-try:
-    import site
-    for _sp in site.getsitepackages() if hasattr(site, 'getsitepackages') else []:
-        _d = os.path.join(_sp, "torch", "lib")
-        if os.path.isdir(_d):
-            os.add_dll_directory(_d)
-            os.environ["PATH"] = _d + os.pathsep + os.environ.get("PATH", "")
-            break
-except Exception:
-    pass
-
 import glob
 import math
 
 import numpy as np
+
+try:
+    from ultralytics import YOLO
+except ImportError:
+    YOLO = None
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -53,11 +46,6 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QPixmap, QPen, QBrush, QColor, QFont, QPainter
 from PyQt5.QtCore import Qt, QRectF
-
-try:
-    from ultralytics import YOLO
-except ImportError:
-    YOLO = None
 
 
 POINT_RADIUS = 7

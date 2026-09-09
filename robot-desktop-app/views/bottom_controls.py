@@ -13,18 +13,18 @@ def create_bottom_controls(app):
         border-top: 1px solid #1e293b;
     """)
     layout = QHBoxLayout()
-    layout.setContentsMargins(16, 8, 16, 8)
-    layout.setSpacing(10)
+    layout.setContentsMargins(8, 8, 8, 8)
+    layout.setSpacing(6)
 
     speed_group = QGroupBox("SPEED")
     speed_group.setStyleSheet("""
         background-color: #0f172a;
         border: 1px solid #1e293b;
         border-radius: 6px;
-        padding: 8px;
+        padding: 6px;
     """)
     speed_layout = QHBoxLayout()
-    speed_layout.setContentsMargins(8, 4, 8, 4)
+    speed_layout.setContentsMargins(6, 2, 6, 2)
     speed_layout.setSpacing(4)
 
     app._speed_slider = QSlider(Qt.Orientation.Horizontal)
@@ -37,11 +37,11 @@ def create_bottom_controls(app):
     app._speed_label = QLabel(f"{app._current_speed}")
     app._speed_label.setStyleSheet("""
         color: #06b6d4;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
     """)
-    app._speed_label.setFixedWidth(30)
+    app._speed_label.setFixedWidth(35)
     speed_layout.addWidget(app._speed_label)
 
     speed_group.setLayout(speed_layout)
@@ -52,11 +52,11 @@ def create_bottom_controls(app):
         background-color: #0f172a;
         border: 1px solid #1e293b;
         border-radius: 6px;
-        padding: 8px;
+        padding: 6px;
     """)
     brake_layout = QHBoxLayout()
-    brake_layout.setContentsMargins(8, 4, 8, 4)
-    brake_layout.setSpacing(8)
+    brake_layout.setContentsMargins(6, 2, 6, 2)
+    brake_layout.setSpacing(6)
 
     app._brake_toggle = QPushButton("ON")
     app._brake_toggle.setCheckable(True)
@@ -83,39 +83,39 @@ def create_bottom_controls(app):
     brake_group.setLayout(brake_layout)
     layout.addWidget(brake_group)
 
-    layout.addSpacing(10)
+    layout.addSpacing(6)
 
     gimbal_group = QGroupBox("GIMBAL")
     gimbal_group.setStyleSheet("""
         background-color: #0f172a;
         border: 1px solid #1e293b;
         border-radius: 6px;
-        padding: 8px;
+        padding: 6px;
     """)
     gimbal_layout = QHBoxLayout()
-    gimbal_layout.setContentsMargins(8, 4, 8, 4)
-    gimbal_layout.setSpacing(8)
+    gimbal_layout.setContentsMargins(6, 2, 6, 2)
+    gimbal_layout.setSpacing(6)
 
     pan_label = QLabel("PAN")
-    pan_label.setStyleSheet("color: #475569; font-size: 9px; letter-spacing: 1px;")
+    pan_label.setStyleSheet("color: #475569; font-size: 8px; letter-spacing: 1px;")
     gimbal_layout.addWidget(pan_label)
 
     app._gimbal_pan_label = QLabel(f"{app._gimbal_pan}°")
     app._gimbal_pan_label.setStyleSheet("""
         color: #e2e8f0;
-        font-size: 11px;
+        font-size: 10px;
         font-family: 'JetBrains Mono', monospace;
     """)
     gimbal_layout.addWidget(app._gimbal_pan_label)
 
     tilt_label = QLabel("TILT")
-    tilt_label.setStyleSheet("color: #475569; font-size: 9px; letter-spacing: 1px;")
+    tilt_label.setStyleSheet("color: #475569; font-size: 8px; letter-spacing: 1px;")
     gimbal_layout.addWidget(tilt_label)
 
     app._gimbal_tilt_label = QLabel(f"{app._gimbal_tilt}°")
     app._gimbal_tilt_label.setStyleSheet("""
         color: #e2e8f0;
-        font-size: 11px;
+        font-size: 10px;
         font-family: 'JetBrains Mono', monospace;
     """)
     gimbal_layout.addWidget(app._gimbal_tilt_label)
@@ -163,18 +163,18 @@ def create_bottom_controls(app):
     gimbal_group.setLayout(gimbal_layout)
     layout.addWidget(gimbal_group)
 
-    layout.addSpacing(10)
+    layout.addSpacing(6)
 
-    snapshot_btn = QPushButton("SNAPSHOT")
-    snapshot_btn.setFixedHeight(32)
+    snapshot_btn = QPushButton("SNAP")
+    snapshot_btn.setFixedHeight(28)
     snapshot_btn.setStyleSheet("""
         QPushButton {
             background-color: rgba(59, 130, 246, 0.15);
             border: 1px solid rgba(59, 130, 246, 0.3);
             color: #3b82f6;
             font-weight: 600;
-            font-size: 11px;
-            padding: 6px 20px;
+            font-size: 10px;
+            padding: 4px 12px;
             letter-spacing: 1px;
         }
         QPushButton:hover {
@@ -184,23 +184,23 @@ def create_bottom_controls(app):
     snapshot_btn.clicked.connect(app._take_snapshot)
     layout.addWidget(snapshot_btn)
 
-    app._super_res_check = QCheckBox("Super-Res")
+    app._super_res_check = QCheckBox("SR")
     app._super_res_check.setStyleSheet("color: #64748b; font-size: 9px;")
     layout.addWidget(app._super_res_check)
 
-    layout.addSpacing(10)
+    layout.addSpacing(6)
 
     app._detect_combo = QComboBox()
     app._detect_combo.addItems(["HOG", "YOLO"])
-    app._detect_combo.setFixedHeight(28)
-    app._detect_combo.setFixedWidth(60)
+    app._detect_combo.setFixedHeight(26)
+    app._detect_combo.setFixedWidth(55)
     app._detect_combo.setStyleSheet("""
         QComboBox {
             background-color: #1e293b;
             border: 1px solid #334155;
             color: #e2e8f0;
             font-size: 10px;
-            padding: 2px 8px;
+            padding: 2px 6px;
         }
         QComboBox::drop-down {
             border: none;
@@ -218,7 +218,7 @@ def create_bottom_controls(app):
     layout.addWidget(app._detect_combo)
 
     app._hog_btn = QPushButton("DETECT")
-    app._hog_btn.setFixedHeight(32)
+    app._hog_btn.setFixedHeight(28)
     app._hog_btn.setCheckable(True)
     app._hog_btn.setStyleSheet("""
         QPushButton {
@@ -226,8 +226,8 @@ def create_bottom_controls(app):
             border: 1px solid rgba(16, 185, 129, 0.3);
             color: #10b981;
             font-weight: 600;
-            font-size: 11px;
-            padding: 6px 16px;
+            font-size: 10px;
+            padding: 4px 12px;
             letter-spacing: 1px;
         }
         QPushButton:hover {

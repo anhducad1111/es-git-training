@@ -13,6 +13,7 @@ DEFAULT_CONFIG = {
     "motor_speed": 220,
     "auto_brake": True,
     "brake_threshold": 30,
+    "hf_token": "",
     "center_charts": {},
     "custom_charts": {},
     "custom_charts_normalize": {},

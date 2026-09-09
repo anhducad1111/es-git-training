@@ -306,6 +306,36 @@ def create_sidebar(app):
     cam_group.setLayout(cam_layout)
     settings_layout.addWidget(cam_group)
 
+    hf_group = QGroupBox("HF TOKEN")
+    hf_group.setStyleSheet("""
+        background-color: #0f172a;
+        border: 1px solid #1e293b;
+        border-radius: 6px;
+        padding: 8px;
+    """)
+    hf_layout = QVBoxLayout()
+    hf_layout.setContentsMargins(8, 4, 8, 4)
+    hf_layout.setSpacing(4)
+
+    from PyQt6.QtWidgets import QLineEdit
+    app._hf_token_input = QLineEdit()
+    app._hf_token_input.setPlaceholderText("Enter HF token...")
+    app._hf_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+    app._hf_token_input.setText(app._config.get("hf_token", ""))
+    app._hf_token_input.setStyleSheet("""
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        color: #e2e8f0;
+        font-size: 9px;
+        padding: 4px 8px;
+        border-radius: 4px;
+    """)
+    app._hf_token_input.returnPressed.connect(lambda: _save_hf_token(app))
+    hf_layout.addWidget(app._hf_token_input)
+
+    hf_group.setLayout(hf_layout)
+    settings_layout.addWidget(hf_group)
+
     cloud_group = QGroupBox("CLOUD")
     cloud_group.setStyleSheet("""
         background-color: #0f172a;
@@ -423,6 +453,14 @@ def _toggle_settings(app, btn):
         app._sidebar_stack.setCurrentIndex(1)
     else:
         app._sidebar_stack.setCurrentIndex(0)
+
+
+def _save_hf_token(app):
+    from config import save_config
+    token = app._hf_token_input.text().strip()
+    app._config["hf_token"] = token
+    save_config(app._config)
+    app._add_log("CONFIG", f"HF token saved ({len(token)} chars)")
 
 
 def _toggle_brake(app):

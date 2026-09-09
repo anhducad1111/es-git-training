@@ -15,6 +15,7 @@ from cloud_api import CloudAPI
 from cloud_worker import CloudWorker
 from rover_ws import RoverWebSocket
 from mjpeg_receiver import MJPEGReceiver
+from video_worker import VideoWorker
 from telemetry_poller import TelemetryPoller
 from esp32_api import ESP32API
 from styles import DARK_STYLE
@@ -122,6 +123,10 @@ class RoverTeleopApp(QWidget):
         self._video_timer.timeout.connect(self._update_video_frame)
         self._video_timer.start(33)
 
+        self._video_worker = VideoWorker()
+        self._video_worker.frame_ready.connect(self._on_video_frame_ready)
+        self._video_worker.start()
+
         self._latest_telemetry = {}
         self._cloud_timer = QTimer()
         self._cloud_timer.timeout.connect(self._send_cloud_update)
@@ -144,6 +149,9 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_video_receiver') and self._video_receiver:
             self._video_receiver.stop()
             self._video_receiver = None
+        if hasattr(self, '_video_worker') and self._video_worker:
+            self._video_worker.stop()
+            self._video_worker = None
         if self._telemetry_poller:
             self._telemetry_poller.stop()
             self._telemetry_poller = None
@@ -185,24 +193,20 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_video_receiver') and self._video_receiver:
             frame = self._video_receiver.take_frame()
             if frame:
-                self._video_canvas.update_frame_jpeg(frame)
-                if (self._hog_detector and self._hog_detector.isRunning()) or \
-                   (self._yolo_detector and self._yolo_detector.isRunning()):
-                    import cv2
-                    import numpy as np
-                    if isinstance(frame, QImage):
-                        ptr = frame.bits()
-                        ptr.setsize(frame.sizeInBytes())
-                        arr = np.array(ptr).reshape(frame.height(), frame.width(), 4)
-                        bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
-                    else:
-                        nparr = np.frombuffer(frame, np.uint8)
-                        bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    if bgr is not None:
-                        if self._hog_detector and self._hog_detector.isRunning():
-                            self._hog_detector.set_frame(bgr)
-                        if self._yolo_detector and self._yolo_detector.isRunning():
-                            self._yolo_detector.set_frame(bgr)
+                if isinstance(frame, QImage):
+                    pass
+                else:
+                    self._video_worker.push_frame(frame)
+
+    def _on_video_frame_ready(self, pixmap, bgr):
+        self._video_canvas.update_frame_jpeg(pixmap)
+        if (self._hog_detector and self._hog_detector.isRunning()) or \
+           (self._yolo_detector and self._yolo_detector.isRunning()):
+            if bgr is not None:
+                if self._hog_detector and self._hog_detector.isRunning():
+                    self._hog_detector.set_frame(bgr)
+                if self._yolo_detector and self._yolo_detector.isRunning():
+                    self._yolo_detector.set_frame(bgr)
 
     def _toggle_hog_detection(self):
         if self._detection_method == "HOG":
@@ -377,22 +381,20 @@ class RoverTeleopApp(QWidget):
         painter = QPainter(overlay)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        panel_w = 400
-        panel_h = 30
-        panel_x = overlay.width() - panel_w - 10
-        panel_y = 10
-        
         from datetime import timezone, timedelta
         vn_tz = timezone(timedelta(hours=7))
         vn_time = datetime.now(vn_tz).strftime("%H:%M:%S")
         
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 0))
-        painter.drawRoundedRect(panel_x, panel_y, panel_w, panel_h, 6, 6)
+        panel_x = overlay.width() - 120
+        panel_y = 15
+        line_h = 18
         
         painter.setPen(QPen(QColor(16, 185, 129), 1))
-        painter.setFont(QFont("JetBrains Mono", 10, QFont.Weight.Bold))
-        painter.drawText(panel_x - 30, panel_y + 20, f"T:{temp}°C  H:{humidity}%  G:{int(gas)}PPM  {vn_time}")
+        painter.setFont(QFont("JetBrains Mono", 9, QFont.Weight.Bold))
+        painter.drawText(panel_x, panel_y, f"T: {temp}°C")
+        painter.drawText(panel_x, panel_y + line_h, f"H: {humidity}%")
+        painter.drawText(panel_x, panel_y + line_h * 2, f"G: {int(gas)} PPM")
+        painter.drawText(panel_x, panel_y + line_h * 3, vn_time)
         
         painter.end()
         
@@ -441,14 +443,20 @@ class RoverTeleopApp(QWidget):
             
             directory = os.path.dirname(image_path)
             filename = os.path.basename(image_path)
-            output_path = os.path.join(directory, f"high_{filename}")
             
-            self._sr_worker = SuperResolutionWorker(image_path, output_path)
+            use_hf = bool(self._config.get("hf_token", ""))
+            prefix = "hg_" if use_hf else "high_"
+            output_path = os.path.join(directory, f"{prefix}{filename}")
+            
+            self._sr_worker = SuperResolutionWorker(image_path, output_path, use_hf=use_hf)
             self._sr_worker.finished.connect(
                 lambda path: self._add_log("SUPER RES", f"Saved: {os.path.basename(path)}")
             )
             self._sr_worker.error.connect(
                 lambda err: self._add_log("SUPER RES", f"Error: {err[:50]}")
+            )
+            self._sr_worker.status.connect(
+                lambda msg: self._add_log("SUPER RES", msg)
             )
             self._sr_worker.start()
         except Exception as e:

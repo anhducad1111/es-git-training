@@ -1,0 +1,113 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --border: #d9dce1;
+  --text: #1c2128;
+  --text-dim: #5b6270;
+  --accent: #2f6fed;
+  --ok: #1a7f37;
+  --warn: #b35900;
+  --bad: #cf222e;
+  --font: "Segoe UI", -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+
+.app-header {
+  display: flex; align-items: center; gap: 24px;
+  padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.app-header .brand { font-weight: 700; letter-spacing: 0.05em; }
+.tabs { display: flex; gap: 4px; flex: 1; }
+.tab-btn {
+  background: transparent; border: none; padding: 8px 14px; border-radius: 4px;
+  font-weight: 600; letter-spacing: 0.03em; color: var(--text-dim); cursor: pointer;
+}
+.tab-btn.active { background: var(--accent); color: #fff; }
+.health-badge { font-size: 12px; color: var(--text-dim); }
+.health-badge.down { color: var(--bad); font-weight: 700; }
+
+main { padding: 16px 20px; }
+.view { display: none; }
+.view.active { display: block; }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px;
+}
+.card .card-label { font-size: 11px; letter-spacing: 0.06em; color: var(--text-dim); text-transform: uppercase; }
+.card .card-value { font-size: 26px; font-weight: 700; margin-top: 4px; }
+.card .card-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.card.warn { border-color: var(--warn); }
+.card.warn .card-sub { color: var(--warn); }
+.card.bad { border-color: var(--bad); }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin-top: 12px; }
+.panel-title { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+tr.rejected td { color: #9096a2; }
+
+.error-banner { background: #fdeceb; border: 1px solid var(--bad); color: var(--bad); padding: 6px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
+.stale-banner { background: #fff6e5; border: 1px solid var(--warn); color: var(--warn); padding: 6px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
+
+.live-layout { display: grid; grid-template-columns: 240px 1fr; gap: 16px; }
+.live-rail .fleet-item { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.live-rail .fleet-item.selected { background: #eaf0fe; }
+.live-rail .fleet-uid { font-weight: 600; }
+.live-rail .fleet-status { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-ok { background: var(--ok); }
+.dot-warn { background: var(--warn); }
+.dot-bad { background: var(--bad); }
+
+.range-controls { display: flex; gap: 4px; margin-bottom: 8px; }
+.range-controls button { padding: 4px 10px; border: 1px solid var(--border); background: var(--panel); border-radius: 4px; cursor: pointer; font-size: 12px; }
+.range-controls button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+@media (max-width: 700px) {
+  .app-header { flex-wrap: wrap; }
+  .card-grid { grid-template-columns: 1fr; }
+  .live-layout { grid-template-columns: 1fr; }
+}
+
+.live-bottom-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-top: 12px; }
+.limit-row { margin-bottom: 10px; font-size: 12px; }
+.limit-label { text-transform: uppercase; color: var(--text-dim); font-size: 11px; }
+.limit-track { background: #eceef1; border-radius: 3px; height: 6px; margin: 3px 0; overflow: hidden; }
+.limit-fill { background: var(--ok); height: 100%; }
+.limit-fill.over { background: var(--bad); }
+.limit-status { margin-left: 8px; font-size: 11px; color: var(--text-dim); }
+.event-list { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+.event-list li { padding: 3px 0; border-bottom: 1px solid var(--border); }
+.event-time { color: var(--text-dim); margin-right: 6px; }
+@media (max-width: 700px) {
+  .live-bottom-grid { grid-template-columns: 1fr; }
+}
+
+.history-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 13px; }
+.sensor-toggle { margin-right: 10px; font-size: 12px; }
+
+.media-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+.media-item { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; transition: border-color 0.2s; }
+.media-item:hover { border-color: var(--accent); }
+.media-preview { width: 100%; aspect-ratio: 1; background: #eee; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 32px; }
+.media-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.media-type { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--accent); }
+.media-time { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.media-size { font-size: 11px; color: var(--text-dim); }
+.media-delete-btn { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border: none; background: var(--bad); color: #fff; border-radius: 50%; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; padding: 0; opacity: 0; transition: opacity 0.2s; }
+.media-item:hover .media-delete-btn { opacity: 1; }
+@media (max-width: 700px) {
+  .media-gallery { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+}
+
+.system-panels-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 700px) { .system-panels-grid { grid-template-columns: 1fr; } }
+
+/* Sensor-limit editor table (two number inputs per row) is too wide to
+   fit narrow viewports without wrapping labels; scroll it horizontally
+   within its panel instead of letting it overflow the page. */
+.panel:has(#sensor-limits-editor-body) { overflow-x: auto; }

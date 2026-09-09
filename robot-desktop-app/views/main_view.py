@@ -17,13 +17,8 @@ def create_main_view(app):
     video_layout.setSpacing(0)
 
     from widgets.video_canvas import VideoCanvas
-    app._video_canvas = VideoCanvas(app)
+    app._video_canvas = VideoCanvas()
     video_layout.addWidget(app._video_canvas, 1)
-
-    from widgets.gimbal_hud import GimbalHUD
-    app._gimbal_hud = GimbalHUD()
-    app._gimbal_hud.setParent(app._video_canvas)
-    app._gimbal_hud.move(10, app._video_canvas.height() - 190)
 
     resolution_widget = QWidget()
     resolution_widget.setFixedHeight(32)

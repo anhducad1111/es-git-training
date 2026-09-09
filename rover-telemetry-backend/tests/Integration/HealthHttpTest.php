@@ -32,6 +32,14 @@ final class HealthHttpTest extends HttpTestCase
         // manual verification runs already created it), so that one is asserted 'ok'.
         $this->assertSame('never_run', $body['services']['retention_job']['status']);
         $this->assertSame('ok', $body['services']['aggregate_job']['status']);
+        // Both marker files exist by the time this runs (Tasks 14/17 and 25's manual
+        // verification runs have already created storage/aggregate.lastrun and
+        // storage/retention.lastrun), so just check the shape rather than a specific
+        // never_run/ok value that would depend on execution order across sessions.
+        $this->assertContains($body['services']['aggregate_job']['status'], ['ok', 'never_run']);
+        $this->assertContains($body['services']['retention_job']['status'], ['ok', 'never_run']);
+        $this->assertArrayHasKey('last_run', $body['services']['aggregate_job']);
+        $this->assertArrayHasKey('last_run', $body['services']['retention_job']);
         $this->assertIsArray($body['warnings']);
     }
 }

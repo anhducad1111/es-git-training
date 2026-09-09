@@ -1,0 +1,1365 @@
+from datetime import datetime
+import requests
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
+from PyQt6.QtGui import QPixmap, QImage, QFont, QColor, QPalette, QCursor
+from PyQt6.QtWidgets import (
+    QApplication,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QProgressBar,
+    QScrollArea,
+    QSlider,
+    QSplitter,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+    QStackedWidget,
+)
+from config import load_config, save_config
+from cloud_api import CloudAPI
+from cloud_worker import CloudWorker
+from rover_ws import RoverWebSocket
+from mjpeg_receiver import MJPEGReceiver
+from telemetry_poller import TelemetryPoller
+from stream_quality import AdaptiveStreamController
+
+
+DARK_STYLE = """
+QMainWindow, QWidget {
+    background-color: #0b1326;
+    color: #f1f5f9;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    font-size: 12px;
+}
+QGroupBox {
+    font-weight: 600;
+    border: 1px solid #243147;
+    border-radius: 6px;
+    margin-top: 10px;
+    padding: 10px 8px 8px 8px;
+    background-color: #171f33;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px;
+    color: #94a3b8;
+    font-size: 11px;
+}
+QPushButton {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 16px;
+    font-weight: 600;
+    font-size: 12px;
+}
+QPushButton:hover {
+    background-color: #2563eb;
+}
+QPushButton:pressed {
+    background-color: #1d4ed8;
+}
+QSlider::groove:horizontal {
+    border: 1px solid #243147;
+    height: 6px;
+    background: #0f172a;
+    border-radius: 3px;
+}
+QSlider::handle:horizontal {
+    background: #3b82f6;
+    border: none;
+    width: 14px;
+    height: 14px;
+    margin: -4px 0;
+    border-radius: 7px;
+}
+QSlider::sub-page:horizontal {
+    background: #3b82f6;
+    border-radius: 3px;
+}
+QLineEdit {
+    background-color: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: #f1f5f9;
+    font-size: 11px;
+}
+QLineEdit:focus {
+    border: 1px solid #3b82f6;
+}
+QTextEdit {
+    background-color: #0f172a;
+    border: 1px solid #243147;
+    border-radius: 4px;
+    color: #94a3b8;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 11px;
+}
+QLabel {
+    color: #94a3b8;
+}
+QProgressBar {
+    background-color: #0f172a;
+    border: none;
+    border-radius: 3px;
+    height: 6px;
+    text-align: center;
+    color: transparent;
+}
+QProgressBar::chunk {
+    background-color: #3b82f6;
+    border-radius: 3px;
+}
+"""
+
+
+class VideoCanvas(QLabel):
+    resized = pyqtSignal(int, int)
+
+    def __init__(self):
+        super().__init__()
+        self.setMinimumSize(640, 480)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet("background-color: #0f172a; border: 1px solid #334155;")
+        self.setText("No Video Feed")
+        self.setFont(QFont("JetBrains Mono", 14))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.resized.emit(self.width(), self.height())
+
+    def update_frame(self, jpeg_data):
+        pixmap = QPixmap()
+        pixmap.loadFromData(jpeg_data)
+        scaled = pixmap.scaled(
+            self.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.setPixmap(scaled)
+
+    def update_frame_jpeg(self, image):
+        if isinstance(image, QPixmap):
+            pixmap = image
+        elif isinstance(image, QImage):
+            pixmap = QPixmap.fromImage(image)
+        else:
+            pixmap = QPixmap()
+            pixmap.loadFromData(image, "JPEG")
+
+        if not pixmap.isNull():
+            # The worker thread already scales QImage frames to our size
+            # (see MJPEGReceiver.set_target_size), so this is normally a
+            # no-op check, not a full smooth resize on the GUI thread.
+            # FastTransformation here only covers the brief window right
+            # after a resize, before the worker catches up.
+            if pixmap.size() != self.size():
+                pixmap = pixmap.scaled(
+                    self.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.FastTransformation,
+                )
+            self.setPixmap(pixmap)
+
+
+class SensorCard(QWidget):
+    def __init__(self, name, unit, icon="", min_val=0, max_val=100):
+        super().__init__()
+        self.min_val = min_val
+        self.max_val = max_val
+        layout = QVBoxLayout()
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
+
+        self.icon_label = QLabel(icon)
+        self.icon_label.setFixedWidth(20)
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        top_row.addWidget(self.icon_label)
+
+        self.name_label = QLabel(name)
+        self.name_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        top_row.addWidget(self.name_label)
+
+        top_row.addStretch()
+
+        self.value_label = QLabel("--")
+        self.value_label.setStyleSheet("color: #f1f5f9; font-size: 12px; font-weight: 600; font-family: 'JetBrains Mono', monospace;")
+        top_row.addWidget(self.value_label)
+
+        layout.addLayout(top_row)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(4)
+        self.progress.setStyleSheet("""
+            QProgressBar {
+                background-color: #0f172a;
+                border: none;
+                border-radius: 2px;
+            }
+            QProgressBar::chunk {
+                background-color: #3b82f6;
+                border-radius: 2px;
+            }
+        """)
+        layout.addWidget(self.progress)
+
+        self.setLayout(layout)
+        self.setStyleSheet(
+            "background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 4px;"
+        )
+
+    def update_value(self, value, progress=None):
+        self.value_label.setText(str(value))
+        if progress is not None:
+            self.progress.setValue(int(min(100, max(0, progress))))
+
+
+class RoverTeleopApp(QWidget):
+    log_message = pyqtSignal(str, str)
+
+    def __init__(self):
+        super().__init__()
+        self._config = load_config()
+        self._is_driving = False
+        self._current_speed = self._config.get("motor_speed", 220)
+        self._gimbal_pan = 90
+        self._gimbal_tilt = 90
+        self._held_drive_keys = set()
+        self._view_mode = "main"
+        self._commands_log = []
+
+        self._pid_apply_timer = QTimer()
+        self._pid_apply_timer.setSingleShot(True)
+        self._pid_apply_timer.timeout.connect(self._apply_pid_params)
+
+        self._fps_mode_active = False
+        self._fps_pending_dx = 0.0
+        self._fps_pending_dy = 0.0
+        self._fps_cursor_center = None
+        self._fps_mode_timer = QTimer()
+        self._fps_mode_timer.setInterval(33)
+        self._fps_mode_timer.timeout.connect(self._apply_fps_look)
+
+        self._video_thread = None
+        self._telemetry_thread = None
+        self._rover_ws = None
+        self._mjpeg_receiver = None
+        self._telemetry_poller = None
+        self._adaptive_stream = None
+        self._cloud_workers = []
+
+        self.init_ui()
+        self.connect_signals()
+        self.start_connections()
+
+        # The IP inputs are the first focusable widgets in tab order, so Qt
+        # hands them keyboard focus on startup and WASD/gimbal keys silently
+        # go nowhere until the operator clicks elsewhere. Grab focus for the
+        # main widget instead, deferred so it wins after the window is shown.
+        QTimer.singleShot(0, self.setFocus)
+
+    def init_ui(self):
+        self.setWindowTitle("Rover Teleop Cockpit v2.4.0")
+        self.setMinimumSize(1400, 900)
+        self.setStyleSheet(DARK_STYLE)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        main_layout.addWidget(self._create_header())
+
+        content = QHBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
+
+        self._center_stack = QStackedWidget()
+        self._center_stack.addWidget(self._create_main_view())
+        self._center_stack.addWidget(self._create_diagnostics_view())
+        content.addWidget(self._center_stack, 1)
+
+        self._sidebar = self._create_sidebar()
+        content.addWidget(self._sidebar)
+
+        main_layout.addLayout(content, 1)
+
+        main_layout.addWidget(self._create_bottom_controls())
+        main_layout.addWidget(self._create_log_panel())
+
+    def _create_header(self):
+        header = QWidget()
+        header.setFixedHeight(48)
+        header.setStyleSheet("background-color: #131b2e; border-bottom: 1px solid #243147;")
+        layout = QHBoxLayout()
+        layout.setContentsMargins(16, 0, 16, 0)
+
+        title_label = QLabel("Rover Teleop Cockpit")
+        title_label.setStyleSheet("color: #f1f5f9; font-weight: 600; font-size: 13px;")
+        layout.addWidget(title_label)
+
+        version_label = QLabel("v2.4.0")
+        version_label.setStyleSheet("color: #94a3b8; font-size: 10px; background-color: #1e293b; padding: 2px 6px; border-radius: 3px; border: 1px solid #334155; font-family: 'JetBrains Mono', monospace;")
+        layout.addWidget(version_label)
+
+        layout.addStretch()
+
+        rover_label = QLabel("Rover IP:")
+        rover_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        layout.addWidget(rover_label)
+
+        self._rover_ip_input = QLineEdit(self._config['car_ip'])
+        self._rover_ip_input.setFixedWidth(120)
+        self._rover_ip_input.setStyleSheet("background-color: #0f172a; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
+        self._rover_ip_input.returnPressed.connect(self._on_ip_changed)
+        layout.addWidget(self._rover_ip_input)
+
+        separator1 = QLabel()
+        separator1.setFixedWidth(1)
+        separator1.setFixedHeight(16)
+        separator1.setStyleSheet("background-color: #243147;")
+        layout.addWidget(separator1)
+
+        cam_label = QLabel("Camera IP:")
+        cam_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        layout.addWidget(cam_label)
+
+        self._cam_ip_input = QLineEdit(self._config['cam_ip'])
+        self._cam_ip_input.setFixedWidth(120)
+        self._cam_ip_input.setStyleSheet("background-color: #0f172a; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
+        self._cam_ip_input.returnPressed.connect(self._on_ip_changed)
+        layout.addWidget(self._cam_ip_input)
+
+        separator2 = QLabel()
+        separator2.setFixedWidth(1)
+        separator2.setFixedHeight(16)
+        separator2.setStyleSheet("background-color: #243147;")
+        layout.addWidget(separator2)
+
+        self._rover_status = QLabel("Rover: Offline")
+        self._rover_status.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: 500;")
+        layout.addWidget(self._rover_status)
+
+        self._cam_status = QLabel("Cam: Offline")
+        self._cam_status.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: 500; margin-left: 8px;")
+        layout.addWidget(self._cam_status)
+
+        header.setLayout(layout)
+        return header
+
+    def _on_ip_changed(self):
+        self._config['car_ip'] = self._rover_ip_input.text()
+        self._config['cam_ip'] = self._cam_ip_input.text()
+        save_config(self._config)
+        self._add_log("CONFIG", f"IPs updated: Rover={self._config['car_ip']}, Cam={self._config['cam_ip']}")
+
+    def _create_main_view(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        video_container = QWidget()
+        video_layout = QVBoxLayout()
+        video_layout.setContentsMargins(0, 0, 0, 0)
+        video_layout.setSpacing(0)
+
+        self._video_canvas = VideoCanvas()
+        video_layout.addWidget(self._video_canvas, 1)
+
+        resolution_widget = QWidget()
+        resolution_widget.setFixedHeight(32)
+        resolution_widget.setStyleSheet("background-color: #131b2e; border-top: 1px solid #334155;")
+        res_layout = QHBoxLayout()
+        res_layout.setContentsMargins(8, 4, 8, 4)
+
+        from PyQt6.QtWidgets import QComboBox
+        self._resolution_combo = QComboBox()
+        self._resolution_combo.addItems([
+            "320x240 (Low Latency)",
+            "640x480 (Recommended)",
+            "800x600",
+            "1024x768 (HD)",
+            "1600x1200 (High-Res)",
+        ])
+        self._resolution_combo.setCurrentIndex(1)
+        self._resolution_combo.setFixedWidth(180)
+        self._resolution_combo.setStyleSheet("background-color: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 2px 6px; color: #f1f5f9; font-size: 11px;")
+        self._resolution_combo.currentTextChanged.connect(self._on_resolution_change)
+        res_layout.addWidget(self._resolution_combo)
+
+        from PyQt6.QtWidgets import QCheckBox
+        self._auto_quality_checkbox = QCheckBox("Auto Quality")
+        self._auto_quality_checkbox.setChecked(True)
+        self._auto_quality_checkbox.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self._auto_quality_checkbox.toggled.connect(self._on_auto_quality_toggled)
+        res_layout.addWidget(self._auto_quality_checkbox)
+
+        self._test_mode_checkbox = QCheckBox("Test Mode (ESP32 /stream)")
+        self._test_mode_checkbox.setChecked(False)
+        self._test_mode_checkbox.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self._test_mode_checkbox.toggled.connect(self._on_test_mode_toggled)
+        res_layout.addWidget(self._test_mode_checkbox)
+
+        res_layout.addStretch()
+        resolution_widget.setLayout(res_layout)
+        video_layout.addWidget(resolution_widget)
+
+        video_container.setLayout(video_layout)
+        layout.addWidget(video_container, 1)
+
+        widget.setLayout(layout)
+        return widget
+
+    def _on_resolution_change(self, text):
+        width, height = text.split(" ")[0].split("x")
+        width, height = int(width), int(height)
+        if hasattr(self, '_video_receiver') and self._video_receiver:
+            self._video_receiver.set_resolution(width, height)
+        if self._adaptive_stream:
+            self._adaptive_stream.set_baseline_resolution(width, height)
+        self._add_log("VIDEO", f"Resolution changed to {text}")
+
+    def _on_auto_quality_toggled(self, checked):
+        if self._adaptive_stream:
+            self._adaptive_stream.set_enabled(checked)
+        self._add_log("VIDEO", f"Auto-quality {'enabled' if checked else 'disabled'}")
+
+    def _on_test_mode_toggled(self, checked):
+        # The test-bench ESP32-Cam only serves a fixed /stream endpoint - it
+        # has no per-resolution URLs or quality API, so those controls don't
+        # apply while test mode is on.
+        self._resolution_combo.setEnabled(not checked)
+        self._auto_quality_checkbox.setEnabled(not checked)
+        if checked:
+            self._auto_quality_checkbox.setChecked(False)
+        if hasattr(self, '_video_receiver') and self._video_receiver:
+            self._video_receiver.set_test_mode(checked)
+        if self._adaptive_stream:
+            self._adaptive_stream.set_enabled(not checked and self._auto_quality_checkbox.isChecked())
+        self._add_log("VIDEO", f"Test mode {'enabled (http://' + self._config['cam_ip'] + ':81/stream)' if checked else 'disabled'}")
+
+    def _create_diagnostics_view(self):
+        widget = QWidget()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(16)
+
+        left_panel = QWidget()
+        left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        charts_title = QLabel("Historical Sensor Analytics")
+        charts_title.setStyleSheet("color: #f1f5f9; font-size: 16px; font-weight: bold;")
+        left_layout.addWidget(charts_title)
+
+        charts_placeholder = QLabel("Charts will be displayed here")
+        charts_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        charts_placeholder.setStyleSheet(
+            "background-color: #1e293b; border-radius: 6px; padding: 40px; color: #64748b;"
+        )
+        left_layout.addWidget(charts_placeholder)
+
+        left_panel.setLayout(left_layout)
+        layout.addWidget(left_panel, 1)
+
+        right_panel = QWidget()
+        right_panel.setFixedWidth(384)
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        chat_title = QLabel("Local AI Sensor Analyst (Ollama)")
+        chat_title.setStyleSheet("color: #f1f5f9; font-size: 14px; font-weight: bold;")
+        right_layout.addWidget(chat_title)
+
+        self._chat_display = QTextEdit()
+        self._chat_display.setReadOnly(True)
+        self._chat_display.setStyleSheet("background-color: #131b2e; border-radius: 6px; padding: 8px;")
+        right_layout.addWidget(self._chat_display, 1)
+
+        chat_input_layout = QHBoxLayout()
+        self._chat_input = QLineEdit()
+        self._chat_input.setPlaceholderText("Ask about sensor data...")
+        chat_input_layout.addWidget(self._chat_input)
+
+        send_btn = QPushButton("Send")
+        send_btn.setFixedWidth(60)
+        send_btn.clicked.connect(self._send_chat)
+        chat_input_layout.addWidget(send_btn)
+
+        right_layout.addLayout(chat_input_layout)
+
+        right_panel.setLayout(right_layout)
+        layout.addWidget(right_panel)
+
+        widget.setLayout(layout)
+        return widget
+
+    def _create_sidebar(self):
+        sidebar = QWidget()
+        sidebar.setFixedWidth(320)
+        sidebar.setStyleSheet("background-color: #131b2e; border-left: 1px solid #334155;")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        header_layout = QHBoxLayout()
+        header_label = QLabel("Telemetry Sensors")
+        header_label.setStyleSheet("color: #f1f5f9; font-weight: bold; font-size: 13px;")
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+
+        self._link_label = QLabel("Link: 98% (Optimal)")
+        self._link_label.setStyleSheet("color: #10b981; font-size: 11px;")
+        header_layout.addWidget(self._link_label)
+
+        estop_btn = QPushButton("E-STOP")
+        estop_btn.setFixedWidth(60)
+        estop_btn.setStyleSheet("background-color: #ef4444; font-weight: bold; padding: 4px 8px;")
+        estop_btn.clicked.connect(self._emergency_stop)
+        header_layout.addWidget(estop_btn)
+
+        layout.addLayout(header_layout)
+
+        self._temp_card = SensorCard("Chassis Core Temp", "°C", "🌡", 0, 60)
+        layout.addWidget(self._temp_card)
+
+        self._humidity_card = SensorCard("Ambient Humidity", "%", "💧", 0, 100)
+        layout.addWidget(self._humidity_card)
+
+        self._gas_card = SensorCard("Air Purity Metric", "PPM", "🌫", 0, 1000)
+        layout.addWidget(self._gas_card)
+
+        self._distance_card = SensorCard("Obstacle Distance", "cm", "📏", 0, 200)
+        layout.addWidget(self._distance_card)
+
+        health_group = QGroupBox("Subsystem Health")
+        health_layout = QVBoxLayout()
+
+        for name in ["ESP32 Main MCU", "Motor Drivers", "Pan/Tilt Servos"]:
+            row = QHBoxLayout()
+            label = QLabel(name)
+            label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+            row.addWidget(label)
+            row.addStretch()
+            status = QLabel("OK")
+            status.setStyleSheet("color: #10b981; font-size: 11px; font-weight: bold;")
+            row.addWidget(status)
+            health_layout.addLayout(row)
+
+        battery_row = QHBoxLayout()
+        battery_label = QLabel("Battery Level")
+        battery_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        battery_row.addWidget(battery_label)
+        battery_row.addStretch()
+        self._battery_label = QLabel("12.4V")
+        self._battery_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-weight: bold;")
+        battery_row.addWidget(self._battery_label)
+        health_layout.addLayout(battery_row)
+
+        health_group.setLayout(health_layout)
+        layout.addWidget(health_group)
+
+        layout.addWidget(self._create_pid_group())
+
+        snapshot_btn = QPushButton("Take Snapshot")
+        snapshot_btn.setStyleSheet("background-color: #1d4ed8;")
+        snapshot_btn.clicked.connect(self._take_snapshot)
+        layout.addWidget(snapshot_btn)
+
+        diag_btn = QPushButton("System Diagnostics")
+        diag_btn.setStyleSheet("background-color: #475569;")
+        diag_btn.clicked.connect(self._toggle_view)
+        layout.addWidget(diag_btn)
+
+        config_btn = QPushButton("Device Configuration")
+        config_btn.setStyleSheet("background-color: #475569;")
+        layout.addWidget(config_btn)
+
+        follow_btn = QPushButton("Follow Mode")
+        follow_btn.setStyleSheet("background-color: #7c3aed;")
+        follow_btn.clicked.connect(self._toggle_follow_mode)
+        layout.addWidget(follow_btn)
+
+        layout.addStretch()
+
+        sidebar.setLayout(layout)
+        return sidebar
+
+    def _create_pid_group(self):
+        from PyQt6.QtWidgets import QDoubleSpinBox, QSpinBox, QCheckBox
+
+        group = QGroupBox("Straight-Line PID (Gyro)")
+        layout = QVBoxLayout()
+        layout.setSpacing(4)
+
+        enable_row = QHBoxLayout()
+        self._pid_enabled_checkbox = QCheckBox("Enabled")
+        self._pid_enabled_checkbox.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        enable_row.addWidget(self._pid_enabled_checkbox)
+        enable_row.addStretch()
+        layout.addLayout(enable_row)
+
+        def spin_row(label_text, spin_widget):
+            row = QHBoxLayout()
+            label = QLabel(label_text)
+            label.setFixedWidth(28)
+            label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+            row.addWidget(label)
+            spin_widget.setFixedWidth(70)
+            row.addWidget(spin_widget)
+            row.addStretch()
+            layout.addLayout(row)
+
+        self._pid_kp_spin = QDoubleSpinBox()
+        self._pid_kp_spin.setRange(0.0, 5.0)
+        self._pid_kp_spin.setSingleStep(0.05)
+        self._pid_kp_spin.setDecimals(2)
+        spin_row("Kp", self._pid_kp_spin)
+
+        self._pid_ki_spin = QDoubleSpinBox()
+        self._pid_ki_spin.setRange(0.0, 1.0)
+        self._pid_ki_spin.setSingleStep(0.01)
+        self._pid_ki_spin.setDecimals(2)
+        spin_row("Ki", self._pid_ki_spin)
+
+        self._pid_kd_spin = QDoubleSpinBox()
+        self._pid_kd_spin.setRange(0.0, 2.0)
+        self._pid_kd_spin.setSingleStep(0.05)
+        self._pid_kd_spin.setDecimals(2)
+        spin_row("Kd", self._pid_kd_spin)
+
+        self._pid_bias_spin = QSpinBox()
+        self._pid_bias_spin.setRange(-50, 50)
+        spin_row("Bias", self._pid_bias_spin)
+
+        for widget in (self._pid_kp_spin, self._pid_ki_spin, self._pid_kd_spin, self._pid_bias_spin):
+            widget.valueChanged.connect(self._on_pid_param_changed)
+        self._pid_enabled_checkbox.toggled.connect(self._on_pid_param_changed)
+
+        group.setLayout(layout)
+        return group
+
+    def _create_bottom_controls(self):
+        widget = QWidget()
+        widget.setFixedHeight(80)
+        widget.setStyleSheet("background-color: #131b2e; border-top: 1px solid #243147;")
+        layout = QHBoxLayout()
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(8)
+
+        speed_group = QGroupBox("Motor Speed")
+        speed_group.setStyleSheet("background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 6px;")
+        speed_layout = QHBoxLayout()
+        speed_layout.setContentsMargins(8, 4, 8, 4)
+        speed_layout.setSpacing(8)
+
+        self._speed_slider = QSlider(Qt.Orientation.Horizontal)
+        self._speed_slider.setRange(150, 255)
+        self._speed_slider.setValue(self._current_speed)
+        self._speed_slider.setFixedWidth(120)
+        self._speed_slider.valueChanged.connect(self._on_speed_change)
+        speed_layout.addWidget(self._speed_slider)
+
+        self._speed_label = QLabel(f"{self._current_speed} ({int(self._current_speed / 255 * 100)}%)")
+        self._speed_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
+        self._speed_label.setFixedWidth(70)
+        speed_layout.addWidget(self._speed_label)
+
+        speed_group.setLayout(speed_layout)
+        layout.addWidget(speed_group)
+
+        brake_group = QGroupBox("Auto-Brake")
+        brake_group.setStyleSheet("background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 6px;")
+        brake_layout = QHBoxLayout()
+        brake_layout.setContentsMargins(8, 4, 8, 4)
+        brake_layout.setSpacing(8)
+
+        self._brake_toggle = QPushButton("ON")
+        self._brake_toggle.setCheckable(True)
+        self._brake_toggle.setChecked(True)
+        self._brake_toggle.setFixedWidth(50)
+        self._brake_toggle.setFixedHeight(28)
+        self._brake_toggle.setStyleSheet("""
+            QPushButton {
+                background-color: #10b981;
+                color: white;
+                font-weight: 600;
+                font-size: 11px;
+                border-radius: 4px;
+                border: none;
+            }
+            QPushButton:!checked {
+                background-color: #64748b;
+            }
+        """)
+        self._brake_toggle.clicked.connect(self._toggle_brake)
+        brake_layout.addWidget(self._brake_toggle)
+
+        brake_label = QLabel("30cm")
+        brake_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
+        brake_layout.addWidget(brake_label)
+
+        brake_group.setLayout(brake_layout)
+        layout.addWidget(brake_group)
+
+        gimbal_group = QGroupBox("Gimbal")
+        gimbal_group.setStyleSheet("background-color: #171f33; border: 1px solid #243147; border-radius: 6px; padding: 6px;")
+        gimbal_layout = QHBoxLayout()
+        gimbal_layout.setContentsMargins(8, 4, 8, 4)
+        gimbal_layout.setSpacing(6)
+
+        pan_label = QLabel("Pan")
+        pan_label.setStyleSheet("color: #94a3b8; font-size: 10px;")
+        gimbal_layout.addWidget(pan_label)
+
+        self._gimbal_pan_label = QLabel(f"{self._gimbal_pan}°")
+        self._gimbal_pan_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
+        gimbal_layout.addWidget(self._gimbal_pan_label)
+
+        tilt_label = QLabel("Tilt")
+        tilt_label.setStyleSheet("color: #94a3b8; font-size: 10px;")
+        gimbal_layout.addWidget(tilt_label)
+
+        self._gimbal_tilt_label = QLabel(f"{self._gimbal_tilt}°")
+        self._gimbal_tilt_label.setStyleSheet("color: #f1f5f9; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
+        gimbal_layout.addWidget(self._gimbal_tilt_label)
+
+        center_btn = QPushButton("Center")
+        center_btn.setFixedHeight(28)
+        center_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3b82f6;
+                color: white;
+                font-weight: 600;
+                font-size: 11px;
+                border-radius: 4px;
+                border: none;
+                padding: 4px 12px;
+            }
+            QPushButton:hover {
+                background-color: #2563eb;
+            }
+        """)
+        center_btn.clicked.connect(self._center_gimbal)
+        gimbal_layout.addWidget(center_btn)
+
+        self._fps_mode_btn = QPushButton("Enter FPS Mode (F)")
+        self._fps_mode_btn.setFixedHeight(28)
+        self._fps_mode_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7c3aed;
+                color: white;
+                font-weight: 600;
+                font-size: 11px;
+                border-radius: 4px;
+                border: none;
+                padding: 4px 12px;
+            }
+            QPushButton:hover {
+                background-color: #6d28d9;
+            }
+        """)
+        self._fps_mode_btn.clicked.connect(self._toggle_fps_mode)
+        gimbal_layout.addWidget(self._fps_mode_btn)
+
+        gimbal_group.setLayout(gimbal_layout)
+        layout.addWidget(gimbal_group)
+
+        cloud_group = QGroupBox("Cloud")
+        cloud_layout = QVBoxLayout()
+
+        self._cloud_send_btn = QPushButton("POST")
+        self._cloud_send_btn.setFixedHeight(40)
+        self._cloud_send_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #8b5cf6;
+                color: white;
+                font-weight: bold;
+                font-size: 13px;
+                border-radius: 4px;
+                padding: 4px 16px;
+            }
+            QPushButton:hover {
+                background-color: #7c3aed;
+            }
+        """)
+        self._cloud_send_btn.clicked.connect(self._manual_send_to_cloud)
+        cloud_layout.addWidget(self._cloud_send_btn)
+
+        cloud_label = QLabel("Send telemetry")
+        cloud_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        cloud_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cloud_layout.addWidget(cloud_label)
+
+        cloud_group.setLayout(cloud_layout)
+        layout.addWidget(cloud_group, 1)
+
+        keys_group = QGroupBox("Controls")
+        keys_layout = QVBoxLayout()
+
+        keys_label = QLabel("W/S: Drive  A/D: Turn")
+        keys_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        keys_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        keys_layout.addWidget(keys_label)
+
+        keys_label2 = QLabel("I/J/K/L: Gimbal  C: Center")
+        keys_label2.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        keys_label2.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        keys_layout.addWidget(keys_label2)
+
+        keys_group.setLayout(keys_layout)
+        layout.addWidget(keys_group, 1)
+
+        stop_group = QGroupBox("")
+        stop_layout = QVBoxLayout()
+
+        stop_btn = QPushButton("STOP")
+        stop_btn.setFixedHeight(40)
+        stop_btn.setStyleSheet("background-color: #ef4444; font-size: 14px;")
+        stop_btn.clicked.connect(self._emergency_stop)
+        stop_layout.addWidget(stop_btn)
+
+        stop_group.setLayout(stop_layout)
+        layout.addWidget(stop_group, 1)
+
+        widget.setLayout(layout)
+        return widget
+
+    def _create_log_panel(self):
+        widget = QWidget()
+        widget.setFixedHeight(180)
+        widget.setStyleSheet("background-color: #0f172a; border-top: 1px solid #334155;")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(16, 4, 16, 4)
+
+        header_layout = QHBoxLayout()
+        log_toggle = QLabel("[LOG] Click to expand/collapse")
+        log_toggle.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        header_layout.addWidget(log_toggle)
+
+        header_layout.addStretch()
+
+        baud_label = QLabel("115200 Baud")
+        baud_label.setStyleSheet("color: #64748b; font-size: 11px;")
+        header_layout.addWidget(baud_label)
+        layout.addLayout(header_layout)
+
+        self._log_display = QTextEdit()
+        self._log_display.setReadOnly(True)
+        self._log_display.setStyleSheet("background-color: #0f172a; border: none; color: #94a3b8; font-size: 11px;")
+        self._log_display.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        layout.addWidget(self._log_display)
+
+        widget.setLayout(layout)
+        return widget
+
+    def connect_signals(self):
+        self.log_message.connect(self._add_log)
+
+    def start_connections(self):
+        self._stop_real_connections()
+
+        ws_url = f"ws://{self._config['car_ip']}:81/"
+        self._rover_ws = RoverWebSocket(ws_url)
+        self._rover_ws.connected.connect(self._on_rover_connected)
+        self._rover_ws.disconnected.connect(self._on_rover_disconnected)
+        self._rover_ws.message_received.connect(self._on_rover_message)
+        self._rover_ws.error.connect(self._on_rover_error)
+        self._rover_ws.start()
+
+        self._video_receiver = MJPEGReceiver(
+            self._config['cam_ip'], 640, 480,
+            test_mode=self._test_mode_checkbox.isChecked(),
+        )
+        self._video_receiver.connected.connect(self._on_camera_connected)
+        self._video_receiver.disconnected.connect(self._on_camera_disconnected)
+        self._video_receiver.error.connect(self._on_camera_error)
+        self._video_receiver.stats_updated.connect(self._on_video_stats)
+        self._video_receiver.frame_ready.connect(self._update_video_frame)
+        self._video_receiver.set_target_size(self._video_canvas.width(), self._video_canvas.height())
+        self._video_canvas.resized.connect(self._video_receiver.set_target_size)
+        self._video_receiver.start()
+
+        self._adaptive_stream = AdaptiveStreamController(self._config['cam_ip'], self._video_receiver)
+        self._video_receiver.stats_updated.connect(self._adaptive_stream.on_stats)
+        self._video_receiver.error.connect(lambda _e: self._adaptive_stream.on_camera_trouble())
+        self._video_receiver.disconnected.connect(self._adaptive_stream.on_camera_trouble)
+        self._adaptive_stream.level_changed.connect(lambda msg: self._add_log("VIDEO", f"Auto-quality: {msg}"))
+
+        self._telemetry_poller = TelemetryPoller(self._config['car_ip'])
+        self._telemetry_poller.data_received.connect(self._on_telemetry_data)
+        self._telemetry_poller.error.connect(self._on_telemetry_error)
+        self._telemetry_poller.start()
+
+        # Fallback poll: catches the display up if a frame_ready signal is
+        # ever missed. The signal above is the fast path (near-zero added
+        # latency); this just bounds worst-case staleness.
+        self._video_timer = QTimer()
+        self._video_timer.timeout.connect(self._update_video_frame)
+        self._video_timer.start(200)
+
+        self._add_log("MODE", "Connecting to REAL ESP32 hardware...")
+
+        self._cloud_api = CloudAPI()
+        self._test_cloud_connection()
+
+    def _stop_real_connections(self):
+        if self._rover_ws:
+            self._rover_ws.stop()
+            self._rover_ws = None
+        if hasattr(self, '_video_receiver') and self._video_receiver:
+            self._video_receiver.stop()
+            self._video_receiver = None
+        if self._telemetry_poller:
+            self._telemetry_poller.stop()
+            self._telemetry_poller = None
+
+    def _on_rover_connected(self):
+        self._add_log("ROVER", f"WebSocket connected - ws://{self._config['car_ip']}:81/")
+        self._rover_status.setText("Rover: Online")
+        self._rover_status.setStyleSheet("color: #10b981; font-size: 11px; font-weight: 500;")
+        self._fetch_pid_state()
+
+    def _on_rover_disconnected(self):
+        self._add_log("ROVER", "WebSocket disconnected")
+        self._rover_status.setText("Rover: Offline")
+        self._rover_status.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: 500;")
+
+    def _on_rover_message(self, data):
+        msg_type = data.get("type", "")
+        if msg_type == "status":
+            self._add_log("ROVER", f"Status: {data.get('msg', '')}")
+        elif msg_type == "imu":
+            pass
+
+    def _on_rover_error(self, error):
+        self._add_log("ROVER", f"Error: {error}")
+
+    def _on_camera_connected(self):
+        url = (self._video_receiver.receive_thread.stream_url
+               if hasattr(self, '_video_receiver') and self._video_receiver
+               else f"http://{self._config['cam_ip']}/640x480.mjpeg")
+        self._add_log("CAMERA", f"MJPEG stream connected - {url}")
+        self._cam_status.setText("Cam: Online")
+        self._cam_status.setStyleSheet("color: #10b981; font-size: 11px; font-weight: 500; margin-left: 8px;")
+
+    def _on_camera_disconnected(self):
+        self._add_log("CAMERA", "MJPEG stream disconnected")
+        self._cam_status.setText("Cam: Offline")
+        self._cam_status.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: 500; margin-left: 8px;")
+
+    def _on_camera_error(self, error):
+        self._add_log("CAMERA", f"Error: {error}")
+
+    def _update_video_frame(self):
+        if hasattr(self, '_video_receiver') and self._video_receiver:
+            frame = self._video_receiver.take_frame()
+            if frame:
+                self._video_canvas.update_frame_jpeg(frame)
+
+    def _on_video_stats(self, stats):
+        pass
+
+    def _on_telemetry_data(self, data):
+        self._update_telemetry(data)
+        self._send_to_cloud(data)
+
+    def _on_telemetry_error(self, error):
+        self._add_log("TELEMETRY", f"Error: {error[:60]}")
+
+    def _update_telemetry(self, data):
+        temp = data.get("temperature", 0)
+        humidity = data.get("humidity", 0)
+        gas = data.get("gas", 0)
+        distance = data.get("distance", 0)
+
+        self._temp_card.update_value(f"{temp}°C", temp / 60 * 100)
+        self._humidity_card.update_value(f"{humidity}%", humidity)
+        self._gas_card.update_value(f"{int(gas)} PPM", gas / 1000 * 100)
+        self._distance_card.update_value(f"{distance} cm", distance / 200 * 100)
+
+    def _send_to_cloud(self, data):
+        if not self._cloud_api:
+            return
+        
+        url = f"{self._cloud_api._base_url}/telemetry"
+        payload = {
+            "device_uid": self._cloud_api._device_uid,
+            "recorded_at": __import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            "temperature_c": data.get("temperature", 0),
+            "humidity_pct": data.get("humidity", 0),
+            "gas_ppm": data.get("gas", 0),
+            "distance_cm": data.get("distance", 0),
+            "auto_brake": data.get("obstacle", False),
+        }
+        worker = CloudWorker("POST", url, payload=payload)
+        self._cloud_workers.append(worker)
+        worker.finished.connect(lambda: self._cloud_workers.remove(worker) if worker in self._cloud_workers else None)
+        worker.start()
+
+    def _manual_send_to_cloud(self):
+        if not self._cloud_api:
+            self._add_log("CLOUD", "Cloud API not initialized")
+            return
+
+        url = f"{self._cloud_api._base_url}/telemetry"
+        payload = {
+            "device_uid": self._cloud_api._device_uid,
+            "recorded_at": __import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            "temperature_c": 25.0,
+            "humidity_pct": 60.0,
+            "gas_ppm": 100.0,
+            "distance_cm": 50.0,
+            "auto_brake": False,
+        }
+        worker = CloudWorker("POST", url, payload=payload)
+        worker.result.connect(self._on_cloud_post_success)
+        worker.error.connect(self._on_cloud_post_error)
+        self._cloud_workers.append(worker)
+        worker.finished.connect(lambda: self._cloud_workers.remove(worker) if worker in self._cloud_workers else None)
+        worker.start()
+
+    def _on_cloud_post_success(self, data):
+        if data.get("success"):
+            self._add_log("CLOUD", "POST sent to cloud OK")
+        else:
+            self._add_log("CLOUD", f"POST response: {data}")
+
+    def _on_cloud_post_error(self, error):
+        self._add_log("CLOUD", f"POST failed: {error}")
+
+    def _test_cloud_connection(self):
+        url = f"{self._cloud_api._base_url}/rovers"
+        self._cloud_worker = CloudWorker("GET", url)
+        self._cloud_worker.result.connect(self._on_cloud_test_success)
+        self._cloud_worker.error.connect(self._on_cloud_test_error)
+        self._cloud_workers.append(self._cloud_worker)
+        self._cloud_worker.finished.connect(lambda: self._cloud_workers.remove(self._cloud_worker) if self._cloud_worker in self._cloud_workers else None)
+        self._cloud_worker.start()
+
+    def _on_cloud_test_success(self, data):
+        self._add_log("CLOUD", f"Connected to cloud API OK - {self._cloud_api._base_url}")
+
+    def _on_cloud_test_error(self, error):
+        if "timed out" in error or "ConnectTimeout" in error:
+            self._add_log("CLOUD", f"Server offline (timeout) - {self._cloud_api._base_url}")
+        elif "NameResolutionError" in error or "resolve" in error:
+            self._add_log("CLOUD", f"Cannot resolve hostname - {self._cloud_api._base_url}")
+        else:
+            self._add_log("CLOUD", f"Connection failed: {error}")
+
+    def _on_speed_change(self, value):
+        self._current_speed = value
+        percent = int(value / 255 * 100)
+        self._speed_label.setText(f"{value} ({percent}%)")
+        if self._held_drive_keys:
+            self._update_drive_command()
+
+    def _on_pid_param_changed(self, *_args):
+        # Debounce: wait for the operator to stop turning the dial before
+        # hitting the network, instead of firing a request per tick.
+        self._pid_apply_timer.start(400)
+
+    def _apply_pid_params(self):
+        params = {
+            "kp": round(self._pid_kp_spin.value(), 3),
+            "ki": round(self._pid_ki_spin.value(), 3),
+            "kd": round(self._pid_kd_spin.value(), 3),
+            "enabled": 1 if self._pid_enabled_checkbox.isChecked() else 0,
+            "bias": self._pid_bias_spin.value(),
+        }
+        query = "&".join(f"{k}={v}" for k, v in params.items())
+        url = f"http://{self._config['car_ip']}/api/pid?{query}"
+        worker = CloudWorker("GET", url)
+        worker.result.connect(self._on_pid_apply_result)
+        worker.error.connect(lambda e: self._add_log("PID", f"Apply failed: {e}"))
+        self._cloud_workers.append(worker)
+        worker.finished.connect(lambda: self._cloud_workers.remove(worker) if worker in self._cloud_workers else None)
+        worker.start()
+
+    def _on_pid_apply_result(self, data):
+        self._add_log(
+            "PID",
+            f"Applied kp={data.get('kp')} ki={data.get('ki')} kd={data.get('kd')} "
+            f"enabled={data.get('enabled')} bias={data.get('bias')}",
+        )
+
+    def _fetch_pid_state(self):
+        url = f"http://{self._config['car_ip']}/api/pid"
+        worker = CloudWorker("GET", url)
+        worker.result.connect(self._on_pid_fetch_result)
+        worker.error.connect(lambda e: self._add_log("PID", f"Fetch failed: {e}"))
+        self._cloud_workers.append(worker)
+        worker.finished.connect(lambda: self._cloud_workers.remove(worker) if worker in self._cloud_workers else None)
+        worker.start()
+
+    def _on_pid_fetch_result(self, data):
+        spins = (
+            (self._pid_kp_spin, "kp", float),
+            (self._pid_ki_spin, "ki", float),
+            (self._pid_kd_spin, "kd", float),
+            (self._pid_bias_spin, "bias", int),
+        )
+        for spin, key, cast in spins:
+            if key in data:
+                spin.blockSignals(True)
+                spin.setValue(cast(data[key]))
+                spin.blockSignals(False)
+        if "enabled" in data:
+            self._pid_enabled_checkbox.blockSignals(True)
+            self._pid_enabled_checkbox.setChecked(bool(data["enabled"]))
+            self._pid_enabled_checkbox.blockSignals(False)
+        self._add_log("PID", "Loaded current gyro-PID settings from rover")
+
+    def _toggle_brake(self):
+        checked = self._brake_toggle.isChecked()
+        self._brake_toggle.setText("ON" if checked else "OFF")
+        self._add_log("SAFETY", f"Auto-brake {'enabled' if checked else 'disabled'}")
+
+    def _center_gimbal(self):
+        self._gimbal_pan = 90
+        self._gimbal_tilt = 90
+        self._gimbal_pan_label.setText(f"90°")
+        self._gimbal_tilt_label.setText(f"90°")
+        self._send_command("servo:90,90")
+
+    def _take_snapshot(self):
+        self._add_log("SNAPSHOT", "Frame captured (stub)")
+
+    def _toggle_view(self):
+        if self._view_mode == "main":
+            self._center_stack.setCurrentIndex(1)
+            self._view_mode = "diagnostics"
+        else:
+            self._center_stack.setCurrentIndex(0)
+            self._view_mode = "main"
+
+    def _toggle_follow_mode(self):
+        self._add_log("FOLLOW", "Follow mode toggled (stub)")
+
+    def _emergency_stop(self):
+        self._held_drive_keys.clear()
+        self._send_motion("stop")
+        self._add_log("STOP", "Emergency stop activated")
+
+    def _send_chat(self):
+        text = self._chat_input.text().strip()
+        if not text:
+            return
+        self._chat_display.append(f"You: {text}")
+        self._chat_input.clear()
+
+        self._chat_display.append(f"AI: [Stub] Received: {text}")
+
+    def _send_command(self, command):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self._commands_log.append((timestamp, command))
+        self._add_log("CMD", command)
+
+        if self._rover_ws and self._rover_ws.is_connected:
+            self._rover_ws.send(command)
+
+    def _send_motion(self, command):
+        """Directional drive / E-STOP commands. Uses set_motion (not send)
+        so the intent is remembered and reasserted on reconnect / heartbeat
+        even if the rover is briefly unreachable when this is called."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self._commands_log.append((timestamp, command))
+        self._add_log("CMD", command)
+
+        if self._rover_ws:
+            self._rover_ws.set_motion(command)
+
+    def _add_log(self, category, message):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        colors = {
+            "CONNECTED": "#10b981",
+            "CMD": "#f1f5f9",
+            "SAFETY": "#f59e0b",
+            "STOP": "#ef4444",
+            "SNAPSHOT": "#06b6d4",
+            "FOLLOW": "#8b5cf6",
+            "ERROR": "#ef4444",
+        }
+        color = colors.get(category, "#94a3b8")
+        html = f'<span style="color: #64748b;">[{timestamp}]</span> <span style="color: {color};">[{category}]</span> <span style="color: #94a3b8;">{message}</span>'
+        self._log_display.append(html)
+
+    DRIVE_KEYS = (Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D)
+
+    def keyPressEvent(self, event):
+        if event.isAutoRepeat():
+            return
+
+        key = event.key()
+        if key in self.DRIVE_KEYS:
+            self._held_drive_keys.add(key)
+            self._update_drive_command()
+        elif key == Qt.Key.Key_Space:
+            self._emergency_stop()
+        elif key == Qt.Key.Key_I:
+            self._gimbal_tilt = min(180, self._gimbal_tilt + 5)
+            self._update_gimbal()
+        elif key == Qt.Key.Key_K:
+            self._gimbal_tilt = max(0, self._gimbal_tilt - 5)
+            self._update_gimbal()
+        elif key == Qt.Key.Key_J:
+            self._gimbal_pan = max(0, self._gimbal_pan - 5)
+            self._update_gimbal()
+        elif key == Qt.Key.Key_L:
+            self._gimbal_pan = min(180, self._gimbal_pan + 5)
+            self._update_gimbal()
+        elif key == Qt.Key.Key_C:
+            self._center_gimbal()
+        elif key == Qt.Key.Key_F:
+            self._toggle_fps_mode()
+        elif key == Qt.Key.Key_Escape:
+            if self._fps_mode_active:
+                self._exit_fps_mode()
+            else:
+                super().keyPressEvent(event)
+        else:
+            super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.isAutoRepeat():
+            return
+        key = event.key()
+        if key in self.DRIVE_KEYS:
+            self._held_drive_keys.discard(key)
+            self._update_drive_command()
+        else:
+            super().keyReleaseEvent(event)
+
+    # Steering authority applied when turning while also moving forward/
+    # backward (W+A, W+D, ...), as a fraction of the linear speed - mirrors
+    # the firmware's own turn_ratio used by /forwardleft etc. A pure turn
+    # (A/D alone, no W/S) still uses full speed as the angular component.
+    TURN_RATIO = 0.6
+
+    def _update_drive_command(self):
+        forward = Qt.Key.Key_W in self._held_drive_keys
+        backward = Qt.Key.Key_S in self._held_drive_keys
+        left = Qt.Key.Key_A in self._held_drive_keys
+        right = Qt.Key.Key_D in self._held_drive_keys
+
+        linear_dir = int(forward) - int(backward)
+        angular_dir = int(right) - int(left)
+        speed = self._current_speed
+
+        if linear_dir and angular_dir:
+            v = linear_dir * speed
+            w = angular_dir * int(speed * self.TURN_RATIO)
+        elif linear_dir:
+            v = linear_dir * speed
+            w = 0
+        elif angular_dir:
+            v = 0
+            w = angular_dir * speed
+        else:
+            v = 0
+            w = 0
+
+        if v == 0 and w == 0:
+            self._send_motion("stop")
+        else:
+            self._send_motion(f"drive:{v},{w}")
+
+    def _update_gimbal(self):
+        self._gimbal_pan_label.setText(f"{self._gimbal_pan}°")
+        self._gimbal_tilt_label.setText(f"{self._gimbal_tilt}°")
+        self._send_command(f"servo:{self._gimbal_pan},{self._gimbal_tilt}")
+
+    # Degrees of gimbal movement per pixel of mouse motion while in FPS mode.
+    FPS_MOUSE_SENSITIVITY = 0.15
+
+    def _toggle_fps_mode(self):
+        if self._fps_mode_active:
+            self._exit_fps_mode()
+        else:
+            self._enter_fps_mode()
+
+    def _enter_fps_mode(self):
+        if self._fps_mode_active:
+            return
+        self._fps_mode_active = True
+        self._fps_pending_dx = 0.0
+        self._fps_pending_dy = 0.0
+        self.setMouseTracking(True)
+        self.setCursor(Qt.CursorShape.BlankCursor)
+        self.grabMouse()
+        self._fps_cursor_center = self.mapToGlobal(self.rect().center())
+        QCursor.setPos(self._fps_cursor_center)
+        self._fps_mode_timer.start()
+        if hasattr(self, '_fps_mode_btn'):
+            self._fps_mode_btn.setText("Exit FPS Mode (Esc)")
+        self._add_log("FPS", "FPS look mode activated - move mouse to aim, Esc to exit")
+
+    def _exit_fps_mode(self):
+        if not self._fps_mode_active:
+            return
+        self._fps_mode_active = False
+        self._fps_mode_timer.stop()
+        self.releaseMouse()
+        self.unsetCursor()
+        if hasattr(self, '_fps_mode_btn'):
+            self._fps_mode_btn.setText("Enter FPS Mode (F)")
+        self._add_log("FPS", "FPS look mode deactivated")
+
+    def _apply_fps_look(self):
+        dx, dy = self._fps_pending_dx, self._fps_pending_dy
+        self._fps_pending_dx = 0.0
+        self._fps_pending_dy = 0.0
+        if dx == 0 and dy == 0:
+            return
+
+        self._gimbal_pan = max(0, min(180, int(round(self._gimbal_pan + dx * self.FPS_MOUSE_SENSITIVITY))))
+        self._gimbal_tilt = max(0, min(180, int(round(self._gimbal_tilt - dy * self.FPS_MOUSE_SENSITIVITY))))
+        self._update_gimbal()
+
+    def mouseMoveEvent(self, event):
+        if self._fps_mode_active and self._fps_cursor_center is not None:
+            pos = event.globalPosition().toPoint()
+            self._fps_pending_dx += pos.x() - self._fps_cursor_center.x()
+            self._fps_pending_dy += pos.y() - self._fps_cursor_center.y()
+            QCursor.setPos(self._fps_cursor_center)
+        else:
+            super().mouseMoveEvent(event)
+
+    def focusOutEvent(self, event):
+        # Safety net: don't leave the mouse grabbed/hidden if the operator
+        # alt-tabs or otherwise moves focus away from the app mid-FPS-mode.
+        if self._fps_mode_active:
+            self._exit_fps_mode()
+        super().focusOutEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.setFocus()
+
+    def closeEvent(self, event):
+        if hasattr(self, '_video_timer'):
+            self._video_timer.stop()
+        
+        self._stop_real_connections()
+        
+        for worker in self._cloud_workers:
+            if worker.isRunning():
+                worker.quit()
+                worker.wait(1000)
+        self._cloud_workers.clear()
+        
+        save_config(self._config)
+        event.accept()

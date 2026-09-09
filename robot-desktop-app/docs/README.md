@@ -1,39 +1,78 @@
-# Space Rover Desktop Teleoperation Cockpit
+# Space Rover Desktop Teleoperation Cockpit — Documentation
 
-## Overview
-PyQt6 desktop application for teleoperation of ESP32-based rover with FPV video, gimbal control, telemetry, AI chat, and object detection.
+This folder contains all design and specification documents for the project.
 
-## Features
-- **Video Streaming**: MJPEG from ESP32-Cam
-- **Rover Control**: WebSocket commands (WASD, speed, gimbal)
-- **Telemetry**: Temperature, humidity, gas, distance sensors
-- **Object Detection**: HOG and YOLOv8m
-- **Gimbal Control**: Mouse drag, IJKL keys, HUD overlay
-- **Snapshot**: Capture frames with sensor overlay, upload to server
-- **Cloud Integration**: Telemetry upload to backend API
-- **AI Chat**: Ollama integration
+---
 
-## Installation
-```bash
-pip install PyQt6 requests websocket-client opencv-contrib-python ultralytics matplotlib
+## Files
+
+### HARU-PRD-DESIGN-PROPOSAL.md
+
+**Purpose:** Phase 1 design proposal submitted for mentor Duke's review.
+
+**Contents:**
+- System architecture diagram
+- UI wireframes (Main View + Diagnostics View)
+- Keyboard state machines (Drive + Gimbal)
+- Thread architecture diagram
+- Communication protocol (WebSocket commands, telemetry)
+- Feature requirements
+- Safety features (HW-008, auto-brake)
+- OTA firmware update design
+- Implementation plan (12 phases)
+- Technical reference (workers, config, Ollama AI, charts, cloud API)
+
+**Audience:** Duke (Mentor)
+
+**Status:** Awaiting review
+
+---
+
+### wireframe.md
+
+**Purpose:** Detailed UI specification with wireframes, component descriptions, and architecture diagrams.
+
+**Contents:**
+- Main View wireframe (header, video, sidebar, bottom controls, log)
+- Diagnostics View wireframe (analytics deck, charts, Ollama chat)
+- Video overlay status bar
+- Screen zones summary (Main + Diagnostics)
+- Component descriptions (all zones)
+- Floating button behavior
+- Color scheme (Tailwind config)
+- Chart customization (/chart commands)
+- Keyboard state machines
+- Thread architecture
+- Resolution change state machine
+
+**Audience:** Developer (Haru)
+
+**Use:** Visual reference during implementation
+
+---
+
+### README.md (this file)
+
+**Purpose:** Documentation index and file reference.
+
+**Contents:**
+- File listing with one-line descriptions
+- Quick reference for each document's purpose and audience
+
+---
+
+## Document Relationships
+
+```
+HARU-PRD-DESIGN-PROPOSAL.md
+        │
+        ├── Wireframes ──────────► wireframe.md
+        │
+        ├── Technical Spec ──────► README.md (root)
+        │
+        └── Implementation ──────► main.py, app.py, ...
 ```
 
-## Usage
-```bash
-python main.py
-```
-
-## File Structure
-- `main.py` - Entry point
-- `app.py` - Main application class
-- `config.py` - Configuration management
-- `styles.py` - UI styling
-- `esp32_api.py` - ESP32 REST API client
-- `cloud_api.py` - Cloud backend API client
-- `rover_ws.py` - WebSocket client
-- `mjpeg_receiver.py` - Video stream receiver
-- `hog_detector.py` - HOG person detection
-- `yolo_detector.py` - YOLOv8 object detection
-- `super_resolution.py` - Image super resolution
-- `views/` - UI panels
-- `widgets/` - Custom widgets
+- `HARU-PRD-DESIGN-PROPOSAL.md` → Submitted to Duke for approval
+- `wireframe.md` → Used during coding as visual reference
+- `README.md` (root) → Project overview and file descriptions

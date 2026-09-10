@@ -15,6 +15,7 @@ class RemoteControlServer(QThread):
     """WebSocket server that relays commands from a web browser to the rover."""
 
     command_received = pyqtSignal(str)
+    snapshot_requested = pyqtSignal()
     status_changed = pyqtSignal(bool, bool)
 
     def __init__(self, host, port):
@@ -59,15 +60,26 @@ class RemoteControlServer(QThread):
             data = json.loads(raw)
         except json.JSONDecodeError:
             return
-        if data.get("type") != "command":
-            return
-        command = data.get("command", "")
-        if not command:
-            return
-        if not self._allowed:
-            await self._broadcast({"type": "rejected", "reason": "not_allowed"})
-            return
-        self.command_received.emit(command)
+        msg_type = data.get("type", "")
+        if msg_type == "command":
+            command = data.get("command", "")
+            if not command:
+                return
+            if not self._allowed:
+                await self._send_rejected("not_allowed")
+                return
+            self.command_received.emit(command)
+        elif msg_type == "action":
+            action = data.get("action", "")
+            if action == "snapshot":
+                if not self._allowed:
+                    await self._send_rejected("not_allowed")
+                    return
+                self.snapshot_requested.emit()
+        # Unknown types and actions are silently ignored (per spec §6)
+
+    async def _send_rejected(self, reason):
+        await self._broadcast({"type": "rejected", "reason": reason})
 
     async def _send_status(self, websocket):
         msg = {

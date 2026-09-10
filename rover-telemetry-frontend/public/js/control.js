@@ -4,6 +4,10 @@ window.ControlView = (function () {
   let el;
   let address = '';
   let ws = null;
+  let reconnectTimer = null;
+  let allowState = 'disconnected';
+  let roverConnected = false;
+  const RECONNECT_DELAY_MS = 2000;
 
   const TEMPLATE = `
     <div class="panel">
@@ -55,6 +59,89 @@ window.ControlView = (function () {
     }
   }
 
+  function renderRoverWarning() {
+    let warning = document.getElementById('control-rover-warning');
+    if (allowState !== 'allowed' || roverConnected) {
+      if (warning) warning.remove();
+      return;
+    }
+    if (!warning) {
+      warning = document.createElement('div');
+      warning.id = 'control-rover-warning';
+      warning.className = 'stale-banner';
+      document.getElementById('control-status-banner').insertAdjacentElement('afterend', warning);
+    }
+    warning.textContent = 'デスクトップアプリには接続していますが、ローバーとの接続が切れています。';
+  }
+
+  function handleMessage(evt) {
+    let data;
+    try {
+      data = JSON.parse(evt.data);
+    } catch (e) {
+      return;
+    }
+    if (data.type === 'status') {
+      allowState = data.allowed ? 'allowed' : 'not-allowed';
+      roverConnected = !!data.rover_connected;
+      renderStatusBanner(allowState);
+      renderRoverWarning();
+    } else if (data.type === 'rejected') {
+      renderStatusBanner('not-allowed');
+    }
+  }
+
+  function clearReconnectTimer() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  }
+
+  function scheduleReconnect() {
+    clearReconnectTimer();
+    reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+  }
+
+  function connect() {
+    if (!address) return;
+    if (ws) return;
+    let socket;
+    try {
+      socket = new WebSocket(`ws://${address}/`);
+    } catch (e) {
+      scheduleReconnect();
+      return;
+    }
+    ws = socket;
+    ws.onmessage = handleMessage;
+    ws.onclose = () => {
+      ws = null;
+      allowState = 'disconnected';
+      roverConnected = false;
+      renderStatusBanner('disconnected');
+      renderRoverWarning();
+      scheduleReconnect();
+    };
+    ws.onerror = () => {
+      // onclose fires right after onerror for a failed connection; let onclose drive reconnect.
+    };
+  }
+
+  function disconnect() {
+    clearReconnectTimer();
+    allowState = 'disconnected';
+    roverConnected = false;
+    if (ws) {
+      const socket = ws;
+      ws = null;
+      socket.onclose = null;
+      socket.close();
+    }
+    renderStatusBanner('disconnected');
+    renderRoverWarning();
+  }
+
   function mount(rootEl) {
     el = rootEl;
     el.innerHTML = TEMPLATE;
@@ -66,17 +153,24 @@ window.ControlView = (function () {
     document.getElementById('control-connect').addEventListener('click', () => {
       const value = document.getElementById('control-address').value.trim();
       if (!value) return;
+      disconnect();
       address = value;
       saveAddress(address);
+      connect();
     });
 
     document.getElementById('control-disconnect').addEventListener('click', () => {
-      renderStatusBanner('disconnected');
+      disconnect();
     });
   }
 
-  function start() {}
-  function stop() {}
+  function start() {
+    if (address) connect();
+  }
+
+  function stop() {
+    disconnect();
+  }
 
   return { mount, start, stop };
 })();

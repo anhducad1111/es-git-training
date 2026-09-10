@@ -519,6 +519,24 @@ def create_sidebar(app):
     dist_kp_row.addWidget(app._follow_dist_kp_label)
     follow_layout.addLayout(dist_kp_row)
 
+    # Camera yaw offset
+    cam_offset_row = QHBoxLayout()
+    cam_offset_label = QLabel("CAM OFFSET")
+    cam_offset_label.setStyleSheet("color: #94a3b8; font-size: 10px; font-weight: 600; letter-spacing: 1px;")
+    cam_offset_label.setFixedWidth(75)
+    cam_offset_row.addWidget(cam_offset_label)
+    app._follow_cam_offset_slider = QSlider(Qt.Orientation.Horizontal)
+    app._follow_cam_offset_slider.setRange(-45, 45)  # -45 to +45 degrees
+    app._follow_cam_offset_slider.setValue(0)
+    app._follow_cam_offset_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
+    cam_offset_row.addWidget(app._follow_cam_offset_slider, 1)
+    app._follow_cam_offset_label = QLabel("0.0")
+    app._follow_cam_offset_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._follow_cam_offset_label.setFixedWidth(30)
+    app._follow_cam_offset_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    cam_offset_row.addWidget(app._follow_cam_offset_label)
+    follow_layout.addLayout(cam_offset_row)
+
     follow_group.setLayout(follow_layout)
     settings_layout.addWidget(follow_group)
 
@@ -715,12 +733,14 @@ def _on_follow_param_change(app):
     ki = app._follow_ki_slider.value() / 10.0
     kd = app._follow_kd_slider.value() / 10.0
     dist_kp = app._follow_dist_kp_slider.value() / 10.0
+    cam_offset = app._follow_cam_offset_slider.value()
     
     app._follow_k_label.setText(f"{k:.1f}")
     app._follow_kp_label.setText(f"{kp:.1f}")
     app._follow_ki_label.setText(f"{ki:.1f}")
     app._follow_kd_label.setText(f"{kd:.1f}")
     app._follow_dist_kp_label.setText(f"{dist_kp:.1f}")
+    app._follow_cam_offset_label.setText(f"{cam_offset:.0f}")
     
     if hasattr(app, '_detection_mgr') and app._detection_mgr._follow_controller:
         app._detection_mgr._follow_controller.config.k = k
@@ -728,6 +748,7 @@ def _on_follow_param_change(app):
         app._detection_mgr._follow_controller.config.ki = ki
         app._detection_mgr._follow_controller.config.kd = kd
         app._detection_mgr._follow_controller.config.dist_kp = dist_kp
+        app._detection_mgr._follow_controller.config.camera_yaw_offset = cam_offset
 
 
 def _toggle_led_flash(app):

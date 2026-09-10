@@ -115,7 +115,7 @@ class RcCarPoseDetector(Detector):
 
     def __init__(self, model_dir: Path = RCCAR_POSE_MODEL_DIR, confidence: float = 0.35) -> None:
         model_dir = Path(model_dir)
-        weights = model_dir / "weights" / "best.pt"
+        weights = Path(r"C:\Users\haru0\club\class\es-git-training\robot-desktop-app\follow-mode\weight\best_rccar_pose_0910_0736.pt")
         if not weights.is_file():
             raise FileNotFoundError(f"trained rccar_pose model not found: {weights}")
 

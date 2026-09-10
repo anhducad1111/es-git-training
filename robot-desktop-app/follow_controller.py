@@ -31,41 +31,9 @@ class FollowConfig:
     stop_dist: float = 0.4
     turn_complete_yaw: float = 30.0
     follow_max_yaw: float = 60.0
-
-
-class PIDController:
-    def __init__(self, kp: float = 1.0, ki: float = 0.0, kd: float = 0.1) -> None:
-        self.kp = kp
-        self.ki = ki
-        self.kd = kd
-        self._prev_error = 0.0
-        self._integral = 0.0
-
-    def compute(self, error: float, dt: float = 0.1) -> float:
-        self._integral += error * dt
-        derivative = (error - self._prev_error) / dt if dt > 0 else 0.0
-        self._prev_error = error
-        return self.kp * error + self.ki * self._integral + self.kd * derivative
-
-    def reset(self) -> None:
-        self._prev_error = 0.0
-        self._integral = 0.0
-
-
-class StanleyController:
-    def __init__(self, k: float = 0.5, max_steer: float = 30.0) -> None:
-        self.k = k
-        self.max_steer = max_steer
-
-    def control(self, yaw_deg: float, dist_m: float, speed: float) -> float:
-        psi = math.radians(yaw_deg)
-        e = dist_m * math.sin(psi)
-        if speed > 0.1:
-            delta = psi + math.atan2(self.k * e, speed)
-        else:
-            delta = psi
-        delta_deg = max(-self.max_steer, min(self.max_steer, math.degrees(delta)))
-        return delta_deg
+    # Camera mounting offset relative to car chassis (degrees)
+    # Positive = camera rotated right, Negative = camera rotated left
+    camera_yaw_offset: float = 0.0
 
 
 class DetectionThread(threading.Thread):
@@ -124,7 +92,13 @@ class DetectionThread(threading.Thread):
 
 
 class GimbalThread(threading.Thread):
-    """High-speed gimbal tracking thread (~20 Hz, independent of motor control)."""
+    """High-speed gimbal tracking thread (~20 Hz, independent of motor control).
+    
+    Based on ai_tracker_reference.py 2-Tier Visual Servoing:
+    - Tapered gain controller (anti-oscillation)
+    - Headroom safety margin (keep head at 15% from top)
+    - Hip centering (hips at 55% of frame height)
+    """
     def __init__(self, set_gimbal: Callable[[int, int], None], log_callback=None):
         super().__init__(daemon=True)
         self._set_gimbal = set_gimbal
@@ -137,14 +111,22 @@ class GimbalThread(threading.Thread):
         # Gimbal state
         self._current_pan = 90.0
         self._current_tilt = 90.0
-        self._pan_gain = 3.0
-        self._tilt_gain = 2.5
+        # Gimbal center position (degrees)
+        self._gimbal_center_pan = 90.0
+        # Reference parameters (from ai_tracker_reference.py)
+        self._pan_gain = 7.0
+        self._tilt_gain = 5.5
         self._smooth_pan_step = 0.0
         self._smooth_tilt_step = 0.0
-        self._max_step = 2.0
+        self._max_step = 3.0
+        # Tapered gain parameters (reference: TAPER_START=0.30, GAIN_FLOOR=0.35)
+        self._taper_start = 0.30
+        self._gain_floor = 0.35
+        # Headroom safety: keep head at 15% from top
+        self._headroom_target = 0.15
         # Search state
-        self._search_state = "tracking"  # tracking / search_direction / search_spin
-        self._last_seen_side = "center"  # left / right / center
+        self._search_state = "tracking"
+        self._last_seen_side = "center"
         self._search_start_pan = 90.0
         self._search_timer = 0.0
         self._search_timeout = 3.0
@@ -153,7 +135,7 @@ class GimbalThread(threading.Thread):
         # Camera connection state
         self._camera_connected = False
         self._camera_stable_since = 0.0
-        self._camera_stable_delay = 2.0  # seconds to wait after reconnection
+        self._camera_stable_delay = 2.0
 
     def update_detection(self, bbox, frame_w: int, frame_h: int):
         """Update detection data (thread-safe, called from main thread)."""
@@ -178,13 +160,22 @@ class GimbalThread(threading.Thread):
         if self._log:
             self._log("FOLLOW", "[Gimbal] カメラ切断 - 停止")
 
+    def get_camera_yaw_offset(self) -> float:
+        """Get camera yaw offset based on current gimbal pan angle.
+        
+        Returns offset in degrees:
+        - Positive: camera rotated right from center
+        - Negative: camera rotated left from center
+        - 0: camera facing forward (gimbal at center)
+        """
+        return self._current_pan - self._gimbal_center_pan
+
     def run(self):
         self._running = True
         if self._log:
             self._log("FOLLOW", "GimbalThread開始 (~20Hz)")
         while self._running:
             try:
-                # Wait for camera to be stable after reconnection
                 if not self._camera_connected:
                     time.sleep(0.1)
                     continue
@@ -211,10 +202,15 @@ class GimbalThread(threading.Thread):
                 time.sleep(0.05)
 
     def _track_target(self, bbox, frame_w: int, frame_h: int):
-        """Compute and send gimbal command to center target."""
+        """Compute and send gimbal command to center target.
+        
+        Uses reference architecture:
+        - Tapered gain: full gain for large errors, gentle near setpoint
+        - Headroom safety: keeps head at 15% from top
+        - Hip centering: centers on lower body at 55%
+        """
         bx, by, bw, bh = bbox
         cx = bx + bw / 2.0
-        cy = by + bh / 2.0
         
         # Reset search state when target is found
         if self._search_state != "tracking":
@@ -230,18 +226,37 @@ class GimbalThread(threading.Thread):
         else:
             self._last_seen_side = "center"
         
-        # Normalized error (-1 to 1)
-        error_x = (cx - frame_w / 2.0) / (frame_w / 2.0)
-        error_y = (cy - frame_h / 2.0) / (frame_h / 2.0)
+        # Reference: Dynamic Framing with Headroom Safety Margin
+        # Head at 15% from top, hips at 55% of frame height
+        head_y = by  # Top of head
+        hip_y = by + bh * 0.55  # Hip level (lower body center)
         
-        # Only move if target is significantly off-center
-        if abs(error_x) > 0.15 or abs(error_y) > 0.15:
-            target_pan_step = error_x * self._pan_gain
-            target_tilt_step = error_y * self._tilt_gain
+        # Headroom error: head should be at 15% from top
+        desired_head_y = frame_h * self._headroom_target
+        head_error = (head_y - desired_head_y) / (frame_h / 2.0)
+        
+        # Hip error: hips should be at 55% of frame height
+        hip_error = (hip_y - (frame_h * 0.55)) / (frame_h / 2.0)
+        
+        # Combined vertical error (weighted blend)
+        error_y = 0.55 * head_error + 0.45 * hip_error
+        
+        # Horizontal error
+        error_x = (cx - frame_w / 2.0) / (frame_w / 2.0)
+        
+        # Reference: Tapered Gain Controller (anti-oscillation)
+        # Large offset → full gain for fast snap
+        # Small offset → reduced gain for gentle settling
+        if abs(error_x) > 0.05 or abs(error_y) > 0.05:
+            pan_scale = self._gain_floor + (1.0 - self._gain_floor) * min(1.0, abs(error_x) / self._taper_start)
+            tilt_scale = self._gain_floor + (1.0 - self._gain_floor) * min(1.0, abs(error_y) / self._taper_start)
             
-            # Heavy EMA damping
-            smooth_p = 0.40 * target_pan_step + 0.60 * self._smooth_pan_step
-            smooth_t = 0.40 * target_tilt_step + 0.60 * self._smooth_tilt_step
+            target_pan_step = error_x * self._pan_gain * pan_scale
+            target_tilt_step = error_y * self._tilt_gain * tilt_scale
+            
+            # Reference: EMA damping (0.55 new + 0.45 old)
+            smooth_p = 0.55 * target_pan_step + 0.45 * self._smooth_pan_step
+            smooth_t = 0.55 * target_tilt_step + 0.45 * self._smooth_tilt_step
             self._smooth_pan_step = smooth_p
             self._smooth_tilt_step = smooth_t
             
@@ -249,13 +264,14 @@ class GimbalThread(threading.Thread):
             smooth_p = max(-self._max_step, min(self._max_step, smooth_p))
             smooth_t = max(-self._max_step, min(self._max_step, smooth_t))
             
-            # Update pan/tilt
+            # Update pan/tilt (servo range 0-180, center=90)
             self._current_pan = max(0, min(180, self._current_pan - smooth_p))
             self._current_tilt = max(0, min(180, self._current_tilt + smooth_t))
             
             if self._set_gimbal:
                 self._set_gimbal(int(self._current_pan), int(self._current_tilt))
         else:
+            # Inside deadband: stop and hold position
             self._smooth_pan_step = 0.0
             self._smooth_tilt_step = 0.0
 
@@ -324,6 +340,20 @@ class GimbalThread(threading.Thread):
 
 
 class ControlThread(threading.Thread):
+    """ControlThread implementing reference architecture algorithm.
+    
+    Based on ai_tracker_reference.py 2-Tier Visual Servoing:
+    - Tier 1: Gimbal visual servoing (handled by GimbalThread)
+    - Tier 2: Linear PID distance + Combined heading error steering
+    
+    Key differences from standard approach:
+    - Linear PID for distance (KP=70, KI=0.4, KD=10)
+    - Combined heading: 0.15 * error_x + 0.85 * pan_error
+    - Rate limiting (MAX_V_STEP = 60)
+    - Occlusion guard (DIST_JUMP_LIMIT_M = 0.6)
+    - Distance golden band (±0.15m → stop & hold)
+    - Turn-only heading error gate (0.35)
+    """
     def __init__(self, input_queue: Queue, output_queue: Queue, config: FollowConfig, log_callback=None):
         super().__init__(daemon=True)
         self.input_queue = input_queue
@@ -333,18 +363,34 @@ class ControlThread(threading.Thread):
         self._log = log_callback
         self._count = 0
         self.state = FollowState.SEARCHING
-        self.pid_distance = PIDController(kp=1.0, ki=0.0, kd=0.1)
-        self.stanley = StanleyController(k=0.5, max_steer=30.0)
         self.target_distance = config.follow_distance
         self._filtered_yaw = 0.0
         self._yaw_filter_alpha = 0.3
         # Chassis follow flag (set by FollowController)
         self.chassis_follow_enabled = False
+        # Reference to GimbalThread for automatic camera offset
+        self._gimbal_thread = None
+        
+        # Reference algorithm parameters
+        self._kp_lin = 70.0    # Linear PID proportional
+        self._ki_lin = 0.4     # Linear PID integral
+        self._kd_lin = 10.0    # Linear PID derivative
+        self._err_lin_i = 0.0  # Integral accumulator
+        self._prev_err_lin = 0.0
+        self._prev_dist_m = None
+        self._last_cmd_t = 0.0
+        
+        # Rate limiting
+        self._max_v_step = 60
+        self._prev_v_cmd = 0
+        
+        # Occlusion guard
+        self._dist_jump_limit = 0.6
 
     def run(self):
         self._running = True
         if self._log:
-            self._log("FOLLOW", "ControlThread開始")
+            self._log("FOLLOW", "ControlThread開始 (参照アーキテクチャ)")
         while self._running:
             try:
                 detection = self.input_queue.get(timeout=0.1)
@@ -364,12 +410,20 @@ class ControlThread(threading.Thread):
                 continue
 
     def _compute_command(self, detection: dict) -> dict:
+        """Compute motor command using reference architecture algorithm."""
         yaw_deg = detection.get("yaw_deg")
         dist_m = detection.get("dist_m")
         confidence = detection.get("confidence", 0.0)
         
         if yaw_deg is None or dist_m is None:
             return self._stop_command("データなし")
+        
+        # Automatically get camera yaw offset from GimbalThread
+        if self._gimbal_thread:
+            camera_offset = self._gimbal_thread.get_camera_yaw_offset()
+        else:
+            camera_offset = self.config.camera_yaw_offset
+        yaw_deg = yaw_deg + camera_offset
         
         if confidence < self.config.min_confidence:
             return self._stop_command(f"信頼度不足({confidence:.2f})")
@@ -380,120 +434,90 @@ class ControlThread(threading.Thread):
         if dist_m < self.config.stop_dist:
             return self._stop_command(f"近すぎ({dist_m:.2f}m)")
         
-        self._check_transitions(yaw_deg, dist_m)
+        # Rate limit control ticks (12.5 Hz max)
+        now = time.time()
+        dt = max(0.02, now - self._last_cmd_t)
+        if dt < 0.080:
+            return None
+        self._last_cmd_t = now
         
-        # Always compute following command for logging
-        following_result = self._following_command(yaw_deg, dist_m)
-        
-        if self.state == FollowState.FOLLOWING:
-            result = following_result
-        elif self.state == FollowState.TURNING:
-            result = self._turning_command(yaw_deg)
-        elif self.state == FollowState.WAITING:
-            result = self._waiting_command()
+        # Occlusion guard: hold last distance if jump is too large
+        if self._prev_dist_m is not None and abs(dist_m - self._prev_dist_m) > self._dist_jump_limit:
+            dist_m = self._prev_dist_m
         else:
-            result = self._searching_command()
+            self._prev_dist_m = dist_m
         
-        result["chassis_enabled"] = self.chassis_follow_enabled
-        return result
-    
-    def _check_transitions(self, yaw_deg: float, dist_m: float) -> None:
-        old_state = self.state
-        if self.state == FollowState.FOLLOWING:
-            if dist_m < self.config.stop_dist:
-                self.state = FollowState.WAITING
-        elif self.state == FollowState.TURNING:
-            if abs(yaw_deg) < self.config.turn_complete_yaw:
-                self.state = FollowState.FOLLOWING
-            elif dist_m < self.config.stop_dist:
-                self.state = FollowState.WAITING
-        elif self.state == FollowState.WAITING:
-            if abs(yaw_deg) < self.config.turn_complete_yaw:
-                self.state = FollowState.FOLLOWING
-        elif self.state == FollowState.SEARCHING:
-            if abs(yaw_deg) < self.config.follow_max_yaw:
-                self.state = FollowState.FOLLOWING
-            elif yaw_deg != 0:
-                self.state = FollowState.TURNING
+        # A. Linear PID for distance control
+        err_lin = dist_m - self.target_distance
+        self._err_lin_i += err_lin * dt
+        self._err_lin_i = max(-3.0, min(3.0, self._err_lin_i))  # anti-windup
+        d_err_lin = (err_lin - self._prev_err_lin) / dt
+        self._prev_err_lin = err_lin
         
-        if old_state != self.state:
-            return {
-                "type": "transition",
-                "from": old_state.value,
-                "to": self.state.value,
-                "yaw": yaw_deg,
-                "dist": dist_m
-            }
-        return None
-
-    def _following_command(self, yaw_deg: float, dist_m: float) -> dict:
-        # Apply low-pass filter to smooth yaw
-        self._filtered_yaw = self._yaw_filter_alpha * yaw_deg + (1 - self._yaw_filter_alpha) * self._filtered_yaw
+        lin_v = (self._kp_lin * err_lin
+                 + self._ki_lin * self._err_lin_i
+                 + self._kd_lin * d_err_lin)
         
-        # Apply deadband
-        if abs(self._filtered_yaw) < self.config.yaw_deadband:
-            steering = 0.0
-            steer_method = "deadband"
+        # B. Combined heading error (reference: 0.15 * error_x + 0.85 * pan_error)
+        # error_x: normalized horizontal error in frame
+        error_x = yaw_deg / 45.0  # normalize yaw to -1..1 range
+        # pan_error: gimbal offset from center (0.0 = centered)
+        if self._gimbal_thread:
+            pan_angle = self._gimbal_thread._current_pan
         else:
-            # For large yaw angles, use a simpler proportional control
-            if abs(self._filtered_yaw) > 90:
-                # Car is behind or to the side - turn towards it
-                steering = self.config.max_steer if self._filtered_yaw > 0 else -self.config.max_steer
-                steer_method = "max"
+            pan_angle = 90.0
+        pan_error = (90.0 - pan_angle) / 90.0  # positive = camera rotated left
+        
+        combined_heading_error = 0.15 * error_x + 0.85 * pan_error
+        
+        # C. Distance golden band: ±0.15m → stop & hold
+        TURN_ONLY_HEADING_ERROR = 0.35
+        if abs(err_lin) <= 0.15 and abs(combined_heading_error) <= 0.05:
+            v_cmd = 0
+            self._prev_v_cmd = 0
+            self._err_lin_i = 0.0
+            self._prev_err_lin = 0.0
+            return self._stop_command("ホールド")
+        
+        # D. Steering decision
+        if abs(combined_heading_error) > TURN_ONLY_HEADING_ERROR:
+            # Too much heading error → turn in place
+            if combined_heading_error > 0:
+                command = "left"
             else:
-                steering = self.stanley.control(self._filtered_yaw, dist_m, self.config.base_speed / 100.0)
-                steer_method = "Stanley"
-        
-        dist_error = dist_m - self.target_distance
-        throttle = self.pid_distance.compute(dist_error)
-        
-        # When yaw is small (deadband) and far from target, move forward aggressively
-        if abs(self._filtered_yaw) < self.config.yaw_deadband and dist_error > 0.05:
-            throttle = max(0.3, min(1.0, throttle))
-        else:
-            throttle = max(0.0, min(1.0, throttle))
-        
-        if abs(steering) < 5:
+                command = "right"
+            v_cmd = 0
+            speed = self.config.turn_speed
+        elif err_lin > 0.15:
+            # Person is far → move forward
+            v_cmd = int(max(110, min(245, 140 + lin_v)))
             command = "forward"
-        elif steering > 0:
-            command = "right"
+            speed = max(150, min(255, v_cmd))
+        elif err_lin < -0.20:
+            # Person is close → reverse
+            v_cmd = int(max(-220, min(-100, -130 + lin_v)))
+            command = "backward"
+            speed = max(150, min(255, abs(v_cmd)))
         else:
-            command = "left"
-            
-        speed = int(throttle * self.config.base_speed)
-        if command != "stop":
-            speed = max(150, speed)
+            # In golden band but heading needs correction
+            v_cmd = 0
+            if abs(combined_heading_error) > 0.05:
+                command = "left" if combined_heading_error > 0 else "right"
+                speed = self.config.turn_speed
+            else:
+                command = "stop"
+                speed = 0
+        
+        # E. Rate limit v_cmd
+        v_cmd = int(max(self._prev_v_cmd - self._max_v_step,
+                        min(self._prev_v_cmd + self._max_v_step, v_cmd)))
+        self._prev_v_cmd = v_cmd
         
         return {
             "type": "control",
             "command": command,
             "speed": speed,
-            "log": f"旋回:{steer_method}({steering:+.1f}°) 速度:PID({speed}) {command}"
-        }
-
-    def _turning_command(self, yaw_deg: float) -> dict:
-        command = "right" if yaw_deg > 0 else "left"
-        return {
-            "type": "control",
-            "command": command,
-            "speed": 80,
-            "log": f"旋回:直接 yaw:{yaw_deg:+.1f}° 速度:固定(80)"
-        }
-
-    def _waiting_command(self) -> dict:
-        return {
-            "type": "control",
-            "command": "stop",
-            "speed": 0,
-            "log": "停止:待機中"
-        }
-
-    def _searching_command(self) -> dict:
-        return {
-            "type": "control",
-            "command": "forward",
-            "speed": 50,
-            "log": "探索:前進 速度:固定(50)"
+            "log": f"heading:{combined_heading_error:+.2f} dist:{err_lin:+.2f}m {command}"
         }
 
     def _stop_command(self, reason: str) -> dict:
@@ -506,7 +530,9 @@ class ControlThread(threading.Thread):
 
     def stop(self):
         self._running = False
-        self.pid_distance.reset()
+        self._err_lin_i = 0.0
+        self._prev_err_lin = 0.0
+        self._prev_v_cmd = 0
 
 
 class CommandThread(threading.Thread):
@@ -609,6 +635,8 @@ class FollowController:
         self._control_thread = ControlThread(
             self._control_queue, self._command_queue, self.config, self._log_callback
         )
+        # Set gimbal thread reference for automatic camera offset
+        self._control_thread._gimbal_thread = self._gimbal_thread
         self._command_thread = CommandThread(
             self._command_queue, self._send_command, self._set_speed, self._log_callback
         )

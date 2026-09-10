@@ -23,7 +23,7 @@ class TelemetryPoller(QThread):
                 self.msleep(100)
                 continue
             try:
-                resp = requests.get(f"http://{self.car_ip}/api/telemetry", timeout=2)
+                resp = requests.get(f"http://{self.car_ip}/api/telemetry", timeout=5)
                 if resp.status_code == 200:
                     data = resp.json()
                     self.data_received.emit(data)

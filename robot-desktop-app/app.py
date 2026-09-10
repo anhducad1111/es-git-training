@@ -22,6 +22,7 @@ from styles import DARK_STYLE
 from views.header import create_header, _on_ip_changed
 from views.main_view import create_main_view
 from views.diagnostics_view import create_diagnostics_view
+from views.snapshots_view import create_snapshots_view
 from views.sidebar import create_sidebar
 from views.bottom_controls import create_bottom_controls
 from views.log_panel import create_log_panel
@@ -50,6 +51,9 @@ class RoverTeleopApp(QWidget):
         self._mjpeg_receiver = None
         self._telemetry_poller = None
         self._cloud_workers = []
+        self._recording = False
+        self._rec_path = None
+        self._processed_image = None
 
         self._speed_timer = QTimer()
         self._speed_timer.timeout.connect(self._tick_speed)
@@ -77,6 +81,7 @@ class RoverTeleopApp(QWidget):
         self._center_stack = QStackedWidget()
         self._center_stack.addWidget(create_main_view(self))
         self._center_stack.addWidget(create_diagnostics_view(self))
+        self._center_stack.addWidget(create_snapshots_view(self))
         content.addWidget(self._center_stack, 1)
 
         self._sidebar = create_sidebar(self)
@@ -193,10 +198,47 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_video_receiver') and self._video_receiver:
             frame = self._video_receiver.take_frame()
             if frame:
+                if self._recording and isinstance(frame, QImage):
+                    self._save_rec_frame(frame)
                 if isinstance(frame, QImage):
-                    pass
-                else:
+                    self._video_canvas.update_frame_jpeg(frame)
+                elif isinstance(frame, bytes):
                     self._video_worker.push_frame(frame)
+
+    def _save_rec_frame(self, image):
+        try:
+            import cv2
+            import numpy as np
+            import os
+            from PyQt6.QtCore import QBuffer, QIODevice
+
+            rec_dir = os.path.dirname(self._rec_path)
+            if rec_dir and not os.path.exists(rec_dir):
+                os.makedirs(rec_dir, exist_ok=True)
+
+            buffer = QBuffer()
+            buffer.open(QIODevice.OpenModeFlag.ReadWrite)
+            image.save(buffer, "JPEG")
+            jpeg_data = buffer.data().data()
+            buffer.close()
+
+            nparr = np.frombuffer(jpeg_data, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is not None:
+                if not hasattr(self, '_rec_writer') or self._rec_writer is None:
+                    h, w = img.shape[:2]
+                    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                    self._rec_writer = cv2.VideoWriter(
+                        self._rec_path, fourcc, 10.0, (w, h)
+                    )
+                    self._add_log("REC", f"VideoWriter: {w}x{h}")
+                self._rec_writer.write(img)
+            else:
+                self._add_log("REC", "Frame decode failed")
+        except ImportError as e:
+            self._add_log("REC", f"Import error: {e}")
+        except Exception as e:
+            self._add_log("REC", f"Save frame error: {e}")
 
     def _on_video_frame_ready(self, pixmap, bgr):
         self._video_canvas.update_frame_jpeg(pixmap)
@@ -262,19 +304,22 @@ class RoverTeleopApp(QWidget):
         self._distance_card.update_value(f"{distance} cm", distance / 200 * 100)
 
         if hasattr(self, '_brake_toggle') and self._brake_toggle.isChecked():
-            if self._driving_forward and distance < 100:
+            if self._driving_forward and distance < 89:
                 if distance <= 15:
                     self._forward_speed = 0
                 else:
-                    ratio = (distance - 15) / 85.0
-                    self._forward_speed = int(255 * ratio)
+                    ratio = (distance - 15) / 74.0
+                    self._forward_speed = int(self._global_speed * ratio)
                 self._forward_speed = max(0, min(255, self._forward_speed))
                 self._send_command(f"speed:{self._forward_speed}")
+                if hasattr(self, '_speed_meter'):
+                    self._speed_meter.set_speed(self._forward_speed)
                 if self._forward_speed == 0:
                     self._send_command("stop")
             else:
-                self._forward_speed = self._global_speed
                 self._send_command(f"speed:{self._global_speed}")
+                if hasattr(self, '_speed_meter'):
+                    self._speed_meter.set_speed(self._global_speed)
 
     def _send_to_cloud(self, data):
         if not self._cloud_api:
@@ -466,12 +511,82 @@ class RoverTeleopApp(QWidget):
         if self._view_mode == "main":
             self._center_stack.setCurrentIndex(1)
             self._view_mode = "diagnostics"
+            if hasattr(self, '_cloud_api') and self._cloud_api:
+                self._load_history()
         else:
             self._center_stack.setCurrentIndex(0)
             self._view_mode = "main"
 
+    def _load_history(self):
+        from views.diagnostics_view import _load_history as _do_load
+        _do_load(self)
+
+    def _toggle_snapshots_view(self):
+        if self._view_mode == "snapshots":
+            self._center_stack.setCurrentIndex(0)
+            self._view_mode = "main"
+        else:
+            self._center_stack.setCurrentIndex(2)
+            self._view_mode = "snapshots"
+            from views.snapshots_view import _load_snapshots
+            _load_snapshots(self)
+
     def _toggle_follow_mode(self):
         self._add_log("FOLLOW", "Follow mode toggled (stub)")
+
+    def _start_recording(self):
+        import os
+        from datetime import datetime
+        os.makedirs("recordings", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._rec_path = f"recordings/rec_{timestamp}.avi"
+        self._recording = True
+        self._add_log("REC", f"Recording started: {self._rec_path}")
+
+    def _stop_recording(self):
+        if self._recording:
+            self._recording = False
+            if hasattr(self, '_rec_writer') and self._rec_writer is not None:
+                self._rec_writer.release()
+                self._rec_writer = None
+            
+            import os
+            if os.path.exists(self._rec_path):
+                size = os.path.getsize(self._rec_path)
+                self._add_log("REC", f"Recording saved: {self._rec_path} ({size} bytes)")
+                self._upload_recording(self._rec_path)
+            else:
+                self._add_log("REC", f"Recording file not found: {self._rec_path}")
+
+    def _upload_recording(self, filepath):
+        if not self._cloud_api:
+            self._add_log("REC", "Cloud API not available")
+            return
+        
+        import os
+        if not os.path.exists(filepath):
+            self._add_log("REC", f"File not found: {filepath}")
+            return
+        
+        self._add_log("REC", "Uploading to cloud...")
+        
+        from cloud_worker import CloudWorker
+        
+        url = self._cloud_api._url(f"/rovers/{self._cloud_api._device_uid}/media")
+        filename = os.path.basename(filepath)
+        
+        try:
+            with open(filepath, 'rb') as f:
+                files = {'file': (filename, f, 'video/avi')}
+                import requests
+                response = requests.post(url, files=files, timeout=60)
+            
+            if response.status_code == 201:
+                self._add_log("REC", f"Uploaded to cloud: {filename}")
+            else:
+                self._add_log("REC", f"Upload failed: {response.status_code}")
+        except Exception as e:
+            self._add_log("REC", f"Upload error: {str(e)[:60]}")
 
     def _emergency_stop(self):
         self._send_command("stop")
@@ -493,6 +608,7 @@ class RoverTeleopApp(QWidget):
             "SAFETY": "#f59e0b",
             "STOP": "#ef4444",
             "SNAPSHOT": "#06b6d4",
+            "REC": "#ef4444",
             "FOLLOW": "#8b5cf6",
             "ERROR": "#ef4444",
         }
@@ -562,6 +678,8 @@ class RoverTeleopApp(QWidget):
         key = event.key()
         if key in (Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D):
             self._send_command("stop")
+            if hasattr(self, '_speed_meter'):
+                self._speed_meter.set_speed(0)
             if self._telemetry_poller:
                 self._telemetry_poller.set_driving(False)
         elif key in (Qt.Key.Key_Shift, Qt.Key.Key_Control):

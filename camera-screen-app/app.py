@@ -1,4 +1,5 @@
 from datetime import datetime
+import queue
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QFont, QPainter, QPen, QColor
 from PyQt6.QtWidgets import (
@@ -8,11 +9,29 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QComboBox,
+    QSlider,
     QSizePolicy,
     QTextEdit,
 )
 from config import load_config, save_config
 from camera_thread import CameraThread
+from detector import DetectionThread
+
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+
+
+RESOLUTIONS = [
+    ("320x240 (QVGA)", "320x240"),
+    ("640x480 (VGA)", "640x480"),
+    ("800x600 (SVGA)", "800x600"),
+    ("1024x768 (XGA)", "1024x768"),
+    ("1600x1200 (UXGA)", "1600x1200"),
+]
 
 
 class CameraCanvas(QLabel):
@@ -24,6 +43,7 @@ class CameraCanvas(QLabel):
         self.setText("NO SIGNAL")
         self.setFont(QFont("Consolas", 14))
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.detections = []
 
     def update_frame(self, image):
         if isinstance(image, QImage):
@@ -35,7 +55,7 @@ class CameraCanvas(QLabel):
             scaled = pixmap.scaled(
                 self.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+                Qt.TransformationMode.FastTransformation,
             )
             self.setPixmap(scaled)
 
@@ -45,29 +65,42 @@ class CameraCanvas(QLabel):
             return
 
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        cx, cy = w / 2, h / 2
 
-        cx = self.width() / 2
-        cy = self.height() / 2
-        color = QColor(255, 255, 255, 200)
-
-        # Crosshair
-        painter.setPen(QPen(color, 2))
+        painter.setPen(QPen(QColor(255, 255, 255, 200), 2))
         painter.drawLine(int(cx), int(cy - 20), int(cx), int(cy - 5))
         painter.drawLine(int(cx), int(cy + 5), int(cx), int(cy + 20))
         painter.drawLine(int(cx - 20), int(cy), int(cx - 5), int(cy))
         painter.drawLine(int(cx + 5), int(cy), int(cx + 20), int(cy))
 
-        # Center dot
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(color)
+        painter.setBrush(QColor(255, 255, 255, 200))
         painter.drawEllipse(int(cx), int(cy), 2, 2)
 
-        # Timestamp overlay
         painter.setPen(QPen(QColor(16, 185, 129), 1))
         painter.setFont(QFont("Consolas", 10))
-        now = datetime.now().strftime("%H:%M:%S")
-        painter.drawText(10, 20, now)
+        painter.drawText(10, 20, datetime.now().strftime("%H:%M:%S"))
+
+        if self.detections:
+            box_pen = QPen(QColor(0, 255, 0, 200), 2)
+            box_brush = Qt.BrushStyle.NoBrush
+            text_color = QColor(0, 255, 0, 230)
+            bg_color = QColor(0, 0, 0, 160)
+            font = QFont("Consolas", 9)
+            painter.setFont(font)
+            fm = painter.fontMetrics()
+            for det in self.detections:
+                x1, y1, x2, y2 = det["box"]
+                painter.setPen(box_pen)
+                painter.setBrush(box_brush)
+                painter.drawRect(x1, y1, x2 - x1, y2 - y1)
+                text = f"{det['label']} {det['confidence']:.0%}"
+                tr = fm.boundingRect(text)
+                tr.moveTopLeft((x1, y1 - tr.height() - 2))
+                painter.fillRect(tr, bg_color)
+                painter.setPen(text_color)
+                painter.drawText(tr, Qt.AlignmentFlag.AlignCenter, text)
 
         painter.end()
 
@@ -77,11 +110,16 @@ class CameraApp(QWidget):
         super().__init__()
         self._config = load_config()
         self._camera_thread = None
+        self._detection_thread = None
+        self._base_url = f"http://{self._config['cam_ip']}"
+        self._detection_enabled = self._config.get("detection_enabled", False)
+        self._detection_interval = self._config.get("detection_interval", 3)
+        self._detection_confidence = self._config.get("detection_confidence", 0.5)
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Camera Screen Demo")
-        self.setMinimumSize(800, 600)
+        self.setWindowTitle("ESP32-Cam FPV Client")
+        self.setMinimumSize(900, 650)
         self.setStyleSheet("""
             QWidget { background-color: #0f172a; color: #e2e8f0; }
             QLabel { font-family: Consolas; }
@@ -97,12 +135,33 @@ class CameraApp(QWidget):
                 background-color: #2563eb;
                 color: white;
                 border: none;
-                padding: 6px 16px;
+                padding: 6px 12px;
                 font-family: Consolas;
                 font-weight: bold;
+                font-size: 11px;
             }
             QPushButton:hover { background-color: #3b82f6; }
             QPushButton:pressed { background-color: #1d4ed8; }
+            QComboBox {
+                background-color: #1e293b;
+                border: 1px solid #334155;
+                color: #e2e8f0;
+                padding: 4px 8px;
+                font-family: Consolas;
+                font-size: 11px;
+            }
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #1e293b;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #3b82f6;
+                width: 14px;
+                height: 14px;
+                margin: -4px 0;
+                border-radius: 7px;
+            }
             QTextEdit {
                 background-color: #0a0e1a;
                 border: 1px solid #1e293b;
@@ -124,7 +183,8 @@ class CameraApp(QWidget):
         url_bar.addWidget(url_label)
 
         self._url_input = QLineEdit()
-        self._url_input.setText(f"http://{self._config['cam_ip']}:{self._config['cam_port']}{self._config['stream_path']}")
+        stream_url = f"{self._base_url}/{self._config['stream_path'].lstrip('/')}"
+        self._url_input.setText(stream_url)
         url_bar.addWidget(self._url_input, 1)
 
         self._connect_btn = QPushButton("Connect")
@@ -132,6 +192,72 @@ class CameraApp(QWidget):
         url_bar.addWidget(self._connect_btn)
 
         layout.addLayout(url_bar)
+
+        # Controls row
+        controls = QHBoxLayout()
+        controls.setSpacing(12)
+
+        # Resolution selector
+        res_label = QLabel("Resolution:")
+        controls.addWidget(res_label)
+
+        self._res_combo = QComboBox()
+        for label, _ in RESOLUTIONS:
+            self._res_combo.addItem(label)
+        self._res_combo.setCurrentIndex(1)
+        self._res_combo.currentIndexChanged.connect(self._on_resolution_changed)
+        controls.addWidget(self._res_combo)
+
+        controls.addSpacing(20)
+
+        # LED brightness
+        led_label = QLabel("LED:")
+        controls.addWidget(led_label)
+
+        self._led_slider = QSlider(Qt.Orientation.Horizontal)
+        self._led_slider.setRange(0, 255)
+        self._led_slider.setValue(0)
+        self._led_slider.setFixedWidth(100)
+        self._led_slider.valueChanged.connect(self._on_led_changed)
+        self._led_timer = QTimer()
+        self._led_timer.setSingleShot(True)
+        self._led_timer.setInterval(100)
+        self._led_timer.timeout.connect(self._send_led)
+        self._led_pending = 0
+        controls.addWidget(self._led_slider)
+
+        self._led_value = QLabel("0")
+        self._led_value.setFixedWidth(30)
+        controls.addWidget(self._led_value)
+
+        controls.addSpacing(20)
+
+        # JPEG quality
+        qual_label = QLabel("Quality:")
+        controls.addWidget(qual_label)
+
+        self._quality_slider = QSlider(Qt.Orientation.Horizontal)
+        self._quality_slider.setRange(0, 63)
+        self._quality_slider.setValue(14)
+        self._quality_slider.setFixedWidth(100)
+        self._quality_slider.valueChanged.connect(self._on_quality_changed)
+        controls.addWidget(self._quality_slider)
+
+        self._quality_value = QLabel("14")
+        self._quality_value.setFixedWidth(30)
+        controls.addWidget(self._quality_value)
+
+        controls.addSpacing(20)
+
+        self._detect_btn = QPushButton("Detect: ON" if self._detection_enabled else "Detect: OFF")
+        self._detect_btn.setCheckable(True)
+        self._detect_btn.setChecked(self._detection_enabled)
+        self._detect_btn.clicked.connect(self._toggle_detection)
+        controls.addWidget(self._detect_btn)
+
+        controls.addStretch()
+
+        layout.addLayout(controls)
 
         # Camera canvas
         self._canvas = CameraCanvas()
@@ -151,7 +277,6 @@ class CameraApp(QWidget):
 
         status_bar.addStretch()
 
-        # Timestamp
         self._time_label = QLabel("")
         self._time_label.setStyleSheet("color: #64748b; font-size: 11px;")
         status_bar.addWidget(self._time_label)
@@ -164,13 +289,12 @@ class CameraApp(QWidget):
         self._log.setMaximumHeight(80)
         layout.addWidget(self._log)
 
-        # Update timer for FPS
+        # Timers
         self._fps_timer = QTimer()
         self._fps_timer.timeout.connect(self._update_fps)
         self._fps_timer.start(1000)
         self._frame_count = 0
 
-        # Time update
         self._time_timer = QTimer()
         self._time_timer.timeout.connect(self._update_time)
         self._time_timer.start(1000)
@@ -188,25 +312,23 @@ class CameraApp(QWidget):
             self._add_log("ERROR", "No URL provided")
             return
 
-        # Save IP to config
-        if "://" in url:
-            host = url.split("://")[1].split("/")[0]
-            if ":" in host:
-                ip, port = host.split(":")
-                self._config["cam_ip"] = ip
-                self._config["cam_port"] = int(port)
-            else:
-                self._config["cam_ip"] = host
-            path = "/" + "/".join(url.split("://")[1].split("/")[1:])
-            self._config["stream_path"] = path
-
         self._camera_thread = CameraThread(url)
-        self._camera_thread.connected.connect(self._on_connected)
-        self._camera_thread.disconnected.connect(self._on_disconnected)
-        self._camera_thread.error.connect(self._on_error)
-        self._camera_thread.frame_received.connect(self._on_frame)
         self._camera_thread.start()
 
+        self._detection_thread = DetectionThread()
+        self._detection_thread.enabled = self._detection_enabled
+        self._detection_thread.confidence = self._detection_confidence
+        self._detection_thread.start()
+
+        self._frame_timer = QTimer()
+        self._frame_timer.timeout.connect(self._poll_frame)
+        self._frame_timer.start(33)
+
+        self._status_timer = QTimer()
+        self._status_timer.timeout.connect(self._poll_status)
+        self._status_timer.start(500)
+
+        self._prev_connected = False
         self._connect_btn.setText("Disconnect")
         self._add_log("CAMERA", f"Connecting to {url}")
 
@@ -214,8 +336,110 @@ class CameraApp(QWidget):
         if self._camera_thread:
             self._camera_thread.stop()
             self._camera_thread = None
+        if self._detection_thread:
+            self._detection_thread.stop()
+            self._detection_thread = None
+        if hasattr(self, '_frame_timer'):
+            self._frame_timer.stop()
+        if hasattr(self, '_status_timer'):
+            self._status_timer.stop()
         self._connect_btn.setText("Connect")
         self._add_log("CAMERA", "Disconnected")
+
+    def _poll_frame(self):
+        if not self._camera_thread:
+            return
+        image = None
+        while not self._camera_thread.frame_queue.empty():
+            try:
+                image = self._camera_thread.frame_queue.get_nowait()
+            except queue.Empty:
+                break
+        if image is None:
+            return
+
+        self._on_frame(image)
+
+        if self._detection_enabled and self._detection_thread:
+            if self._detection_thread.input_queue.full():
+                try:
+                    self._detection_thread.input_queue.get_nowait()
+                except queue.Empty:
+                    pass
+            try:
+                self._detection_thread.input_queue.put_nowait(image)
+            except queue.Full:
+                pass
+
+            if not self._detection_thread.result_queue.empty():
+                try:
+                    self._canvas.detections = self._detection_thread.result_queue.get_nowait()
+                except queue.Empty:
+                    pass
+        else:
+            self._canvas.detections = []
+
+    def _poll_status(self):
+        if not self._camera_thread:
+            return
+        connected = self._camera_thread.connected
+        if connected and not self._prev_connected:
+            self._on_connected()
+        elif not connected and self._prev_connected:
+            self._on_disconnected()
+        self._prev_connected = connected
+
+        if self._camera_thread.error_msg:
+            self._add_log("ERROR", self._camera_thread.error_msg)
+            self._camera_thread.error_msg = None
+
+    def _on_resolution_changed(self, index):
+        _, res = RESOLUTIONS[index]
+        url = f"{self._base_url}/{res}.mjpeg"
+        self._url_input.setText(url)
+        self._config["stream_path"] = f"/{res}.mjpeg"
+        if self._camera_thread and self._camera_thread.isRunning():
+            self._disconnect()
+            self._connect()
+
+    def _on_led_changed(self, value):
+        self._led_value.setText(str(value))
+        self._led_pending = value
+        self._led_timer.start()
+
+    def _send_led(self):
+        self._send_api(f"/api/led?val={self._led_pending}")
+
+    def _on_quality_changed(self, value):
+        self._quality_value.setText(str(value))
+        self._quality_pending = value
+        if not hasattr(self, '_quality_timer'):
+            self._quality_timer = QTimer()
+            self._quality_timer.setSingleShot(True)
+            self._quality_timer.setInterval(100)
+            self._quality_timer.timeout.connect(self._send_quality)
+        self._quality_timer.start()
+
+    def _toggle_detection(self):
+        self._detection_enabled = self._detect_btn.isChecked()
+        self._detect_btn.setText("Detect: ON" if self._detection_enabled else "Detect: OFF")
+        self._config["detection_enabled"] = self._detection_enabled
+        if self._detection_thread:
+            self._detection_thread.enabled = self._detection_enabled
+        if not self._detection_enabled:
+            self._canvas.detections = []
+
+    def _send_quality(self):
+        self._send_api(f"/api/quality?val={self._quality_pending}")
+
+    def _send_api(self, path):
+        if not HAS_REQUESTS:
+            return
+        try:
+            url = f"{self._base_url}{path}"
+            requests.get(url, timeout=2)
+        except Exception:
+            pass
 
     def _on_connected(self):
         self._status_label.setText("Connected")
@@ -254,5 +478,7 @@ class CameraApp(QWidget):
     def closeEvent(self, event):
         if self._camera_thread:
             self._camera_thread.stop()
+        if self._detection_thread:
+            self._detection_thread.stop()
         save_config(self._config)
         event.accept()

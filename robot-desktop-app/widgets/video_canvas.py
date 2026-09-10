@@ -116,7 +116,7 @@ class VideoCanvas(QLabel):
             scaled = pixmap.scaled(
                 self.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+                Qt.TransformationMode.FastTransformation,
             )
             self.setPixmap(scaled)
 
@@ -133,11 +133,13 @@ class VideoCanvas(QLabel):
             scaled = pixmap.scaled(
                 self.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+                Qt.TransformationMode.FastTransformation,
             )
             self.setPixmap(scaled)
     
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, '_app') and hasattr(self._app, '_gimbal_hud'):
-            self._app._gimbal_hud.move(10, self.height() - 190)
+            self._app._gimbal_hud.move(10, self.height() - 260)
+        if hasattr(self, '_app') and hasattr(self._app, '_speed_meter'):
+            self._app._speed_meter.move(10, self.height() - 330)

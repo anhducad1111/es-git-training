@@ -101,6 +101,7 @@ class RoverTeleopApp(QWidget):
         port = self._config.get("remote_control_port", 8765)
         self._remote_server = RemoteControlServer("0.0.0.0", port)
         self._remote_server.command_received.connect(self._relay_command)
+        self._remote_server.snapshot_requested.connect(self._on_remote_snapshot)
         self._remote_server.set_rover_connected(
             self._conn_mgr.rover_ws is not None
             and self._conn_mgr.rover_ws.is_connected
@@ -303,6 +304,10 @@ class RoverTeleopApp(QWidget):
     def _relay_command(self, command):
         self._add_log("REMOTE", f"Relay: {command}")
         self._conn_mgr.send_command(command)
+
+    def _on_remote_snapshot(self):
+        self._add_log("REMOTE", "Snapshot requested by web client")
+        self._take_snapshot()
 
     def _send_command(self, command):
         if self._allow_remote_control:

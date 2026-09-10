@@ -227,11 +227,21 @@ tr.rejected td { color: #9096a2; }
 
 .control-side-stats { display: flex; flex-direction: column; gap: 14px; }
 
-.control-card-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .control-card { display: flex; flex-direction: column; gap: 8px; }
 .control-card .card-value { font-size: 18px; }
 .control-card-slider { width: 100%; }
 .control-card-sub-row { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); }
+.control-card button:disabled, .control-card select:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.control-side-btn {
+  display: block; width: 100%; padding: 8px 10px; border: 1px solid var(--border); background: var(--panel);
+  border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;
+}
+.control-flip-btn {
+  flex: 1; padding: 6px 10px; border: 1px solid var(--border); background: var(--bg);
+  border-radius: 4px; cursor: pointer; font-size: 12px;
+}
+.control-flip-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* Gimbal position instrument, overlaid bottom-left on the video like robot-desktop-app's
    GimbalHUD (widgets/gimbal_hud.py) — read-only dual dial, not a control surface. */
@@ -277,14 +287,10 @@ tr.rejected td { color: #9096a2; }
 
 @media (max-width: 900px) {
   .control-video-row { grid-template-columns: 1fr; }
-  .control-side-stats { flex-direction: row; }
-  .control-side-stats .control-card { flex: 1; }
 }
 
 @media (max-width: 700px) {
   .control-layout { grid-template-columns: 1fr; }
-  .control-card-row { grid-template-columns: 1fr; }
-  .control-side-stats { flex-direction: column; }
   .control-video-body { max-height: none; }
   .control-gimbal-hud { width: 108px; }
 }

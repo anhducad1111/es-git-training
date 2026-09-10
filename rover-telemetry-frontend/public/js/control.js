@@ -63,15 +63,7 @@ window.ControlView = (function () {
 
         <div class="control-sidebar-section">
           <div class="control-sidebar-title">CAMERA</div>
-          <div class="control-disabled-row">
-            <button class="control-disabled-btn" disabled title="Not supported by this relay protocol yet">RESOLUTION · 640x480</button>
-          </div>
-          <div class="control-disabled-row">
-            <button class="control-disabled-btn" disabled title="Not supported by this relay protocol yet">FLIP H</button>
-            <button class="control-disabled-btn" disabled title="Not supported by this relay protocol yet">FLIP V</button>
-          </div>
-          <button class="control-disabled-btn control-disabled-block" disabled title="Not supported by this relay protocol yet">SNAPSHOT · SAVE JPEG</button>
-          <button class="control-disabled-btn control-disabled-block" disabled title="Not supported by this relay protocol yet">OTA UPDATE</button>
+          <button class="control-disabled-btn control-disabled-block" disabled title="Not implemented in this iteration">OTA UPDATE</button>
         </div>
       </aside>
 
@@ -113,35 +105,47 @@ window.ControlView = (function () {
               <div class="limit-track"><div class="limit-fill" id="control-autobrake-fill" style="width:0%"></div></div>
               <div class="control-card-sub-row"><span id="control-autobrake-dist">dist –</span></div>
             </div>
+            <div class="card control-card">
+              <div class="card-label">CAMERA</div>
+              <button id="control-snapshot" class="control-input control-side-btn">SNAPSHOT · SAVE JPEG</button>
+              <label class="control-field-label">Resolution</label>
+              <select id="control-resolution" class="control-input control-field-input">
+                <option value="640,480">640x480 (30 FPS)</option>
+                <option value="1280,720">1280x720 (15 FPS)</option>
+                <option value="320,240">320x240 (60 FPS)</option>
+                <option value="160,120">160x120 (90 FPS)</option>
+              </select>
+              <div class="control-address-row">
+                <button id="control-flip-h" class="control-flip-btn">FLIP H</button>
+                <button id="control-flip-v" class="control-flip-btn">FLIP V</button>
+              </div>
+            </div>
+            <div class="card control-card">
+              <div class="card-label">GIMBAL</div>
+              <div class="control-gimbal-grid">
+                <button class="control-drive-btn control-input" id="control-gimbal-up" data-pan-delta="0" data-tilt-delta="5">↑</button>
+                <button class="control-drive-btn control-input" id="control-gimbal-left" data-pan-delta="-5" data-tilt-delta="0">←</button>
+                <button class="control-drive-btn control-input" id="control-gimbal-center">C</button>
+                <button class="control-drive-btn control-input" id="control-gimbal-right" data-pan-delta="5" data-tilt-delta="0">→</button>
+                <button class="control-drive-btn control-input" id="control-gimbal-down" data-pan-delta="0" data-tilt-delta="-5">↓</button>
+              </div>
+            </div>
+            <div class="card control-card">
+              <div class="card-label">DRIVE</div>
+              <div class="control-drive-pad">
+                <button class="control-drive-btn control-drive-forward" data-command="forward" data-stop-on-release="true">↑</button>
+                <div class="control-drive-row">
+                  <button class="control-drive-btn control-drive-left" data-command="left" data-stop-on-release="true">←</button>
+                  <button class="control-drive-btn control-drive-stop" data-command="stop">STOP</button>
+                  <button class="control-drive-btn control-drive-right" data-command="right" data-stop-on-release="true">→</button>
+                </div>
+                <button class="control-drive-btn control-drive-backward" data-command="backward" data-stop-on-release="true">↓</button>
+              </div>
+            </div>
           </div>
         </div>
 
         <div id="control-rover-warning-slot"></div>
-
-        <div class="control-card-row">
-          <div class="card control-card">
-            <div class="card-label">GIMBAL</div>
-            <div class="control-gimbal-grid">
-              <button class="control-drive-btn control-input" id="control-gimbal-up" data-pan-delta="0" data-tilt-delta="5">↑</button>
-              <button class="control-drive-btn control-input" id="control-gimbal-left" data-pan-delta="-5" data-tilt-delta="0">←</button>
-              <button class="control-drive-btn control-input" id="control-gimbal-center">C</button>
-              <button class="control-drive-btn control-input" id="control-gimbal-right" data-pan-delta="5" data-tilt-delta="0">→</button>
-              <button class="control-drive-btn control-input" id="control-gimbal-down" data-pan-delta="0" data-tilt-delta="-5">↓</button>
-            </div>
-          </div>
-          <div class="card control-card">
-            <div class="card-label">DRIVE</div>
-            <div class="control-drive-pad">
-              <button class="control-drive-btn control-drive-forward" data-command="forward" data-stop-on-release="true">↑</button>
-              <div class="control-drive-row">
-                <button class="control-drive-btn control-drive-left" data-command="left" data-stop-on-release="true">←</button>
-                <button class="control-drive-btn control-drive-stop" data-command="stop">STOP</button>
-                <button class="control-drive-btn control-drive-right" data-command="right" data-stop-on-release="true">→</button>
-              </div>
-              <button class="control-drive-btn control-drive-backward" data-command="backward" data-stop-on-release="true">↓</button>
-            </div>
-          </div>
-        </div>
 
         <div class="control-keys-bar">
           <span class="control-keys-label">KEYS</span>
@@ -308,6 +312,25 @@ window.ControlView = (function () {
     if (allowState !== 'allowed') return;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'command', command }));
+  }
+
+  // Distinct from sendCommand(): "action" messages (currently only "snapshot") tell the
+  // desktop app to run a local action of its own, not to forward a string to the rover.
+  // See design spec §3.5 — the desktop-app side of this is not built yet.
+  function sendAction(action) {
+    if (allowState !== 'allowed') return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'action', action }));
+  }
+
+  // Flip H/V never touch the relay (spec §3.7/§4.7) — purely how this browser renders the
+  // camera <img> it already has open, so these are not gated by allowState.
+  let flipH = false;
+  let flipV = false;
+
+  function updateFlipTransform() {
+    const img = document.getElementById('control-camera-feed');
+    if (img) img.style.transform = `scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`;
   }
 
   // Needle at rest (0deg) is drawn pointing straight up; rotating by (value-90) degrees
@@ -524,6 +547,26 @@ window.ControlView = (function () {
 
     document.getElementById('control-gimbal-center').addEventListener('click', () => {
       centerGimbal();
+    });
+
+    document.getElementById('control-snapshot').addEventListener('click', () => {
+      sendAction('snapshot');
+    });
+
+    document.getElementById('control-resolution').addEventListener('change', (evt) => {
+      sendCommand(`resolution:${evt.target.value}`);
+    });
+
+    document.getElementById('control-flip-h').addEventListener('click', () => {
+      flipH = !flipH;
+      document.getElementById('control-flip-h').classList.toggle('active', flipH);
+      updateFlipTransform();
+    });
+
+    document.getElementById('control-flip-v').addEventListener('click', () => {
+      flipV = !flipV;
+      document.getElementById('control-flip-v').classList.toggle('active', flipV);
+      updateFlipTransform();
     });
 
     RoverSelection.subscribe((newUid) => {

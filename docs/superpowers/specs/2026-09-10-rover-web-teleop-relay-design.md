@@ -56,21 +56,74 @@ The web Control tab (§4.6) connects to the camera unit's MJPEG stream directly 
 - When the toggle is switched back **off** (manually, or via the existing §3.2 auto-revert-on-local-input rule), the desktop app restarts its own `MJPEGReceiver` immediately, exactly like `start_connections()` initializes it.
 - This handoff is best-effort: nothing on the desktop app tells the web client to disconnect its own MJPEG `<img>`, and nothing confirms the camera unit actually freed the resource before the desktop app reconnects. If the camera unit does support multiple concurrent clients, this handoff is unnecessary but harmless (stopping and restarting the desktop's own receiver is a no-op cost). This limitation is accepted for this iteration; do not build a coordination protocol for it.
 
+### 3.5 Snapshot action (new requirement — desktop-app work not yet started)
+
+The web Cockpit tab (§4.1) exposes a SNAPSHOT button. Unlike drive/speed/gimbal, "take a
+snapshot" is not a rover command at all — `_take_snapshot()` (`app.py:408`) captures the
+desktop app's *own* `_video_canvas` pixmap, overlays telemetry text, saves a PNG to the
+local `snapshot/` directory, and uploads it via `_upload_snapshot_to_server()` to
+`rover-telemetry-backend`'s media API (the same store `rover-telemetry-frontend`'s
+Gallery tab already reads from). None of this goes through `RoverWebSocket`/`_send_command()`,
+so it cannot reuse the existing `{"type":"command",...}` message unchanged — the desktop
+app needs to distinguish "forward this string to the rover" from "run this local action."
+
+- **New message type**, browser → desktop app:
+  ```json
+  {"type": "action", "action": "snapshot"}
+  ```
+  `action` has exactly one legal value for now: `"snapshot"`. Unknown `action` values are
+  ignored (same posture as unknown `type` values already specified in §6).
+- **Gating:** identical to `command` messages — only honored while the "Allow web control"
+  toggle (§3.2) is on; otherwise reply `{"type":"rejected","reason":"not_allowed"}`, and the
+  same local-input-reclaims-control rule applies (a local snapshot keypress, if one exists,
+  should revert the toggle exactly like a local drive key would).
+- **Implementation:** `remote_control_server.py` routes `action:"snapshot"` through a
+  dedicated `pyqtSignal` (e.g. `snapshot_requested`, mirroring the existing
+  `command_received` signal from §3.3 — do not let the WS server thread call `_take_snapshot()`
+  directly, same cross-thread rule as §3.3) connected to a handler that calls
+  `self._take_snapshot()`. No new local UI is required on the desktop side; this only adds
+  a new inbound message the relay server understands.
+- **Not yet implemented:** this subsection is a requirement for whoever builds
+  `remote_control_server.py` (§3.1, itself still unbuilt) — the frontend (§4.1's SNAPSHOT
+  button) is coded to this exact message shape already, but sending it against a desktop
+  app without this handling wired up will currently do nothing (message ignored, same as
+  any other unrecognized `type`).
+
+### 3.6 Resolution change — no new desktop-app work needed
+
+`_on_resolution_change()` (`views/main_view.py:61`) already calls
+`app._send_command(f"resolution:{w},{h}")` — the exact same channel `forward`/`speed:<N>`/etc.
+already use. This means a resolution change requested from the web Cockpit tab needs **no
+protocol or desktop-app change beyond what §3.1 already specifies**: `resolution:<w>,<h>`
+is simply one more string in the existing `{"type":"command","command":"<string>"}` vocabulary
+(§5). Whoever builds `remote_control_server.py` does not need to special-case it.
+
+### 3.7 Flip H/V — frontend-only, no desktop-app involvement
+
+The desktop app has no flip feature today (`grep -rn flip` inside `robot-desktop-app` turns
+up nothing outside this doc). The web Cockpit's video feed is a direct browser→camera-unit
+MJPEG connection (§4.6) that never passes through the desktop app's own video pipeline, so
+flipping what the *web operator* sees is a purely local rendering preference — implemented
+entirely in `rover-telemetry-frontend` as a CSS transform on the `<img>` element (§4.7). It
+has no interaction with `remote_control_server.py`, `_send_command()`, or the rover/camera
+hardware at all, and does not need `allowState === 'allowed'` to use, since it never sends
+anything over the relay.
+
 ## 4. Frontend changes (`rover-telemetry-frontend`)
 
-### 4.1 New tab: "操作" (Control)
-- Added to the existing tab shell in `index.html` alongside Live/History/System/Gallery, with its own `js/control.js` module — same per-tab-file convention as `live.js`/`history.js`/`gallery.js`.
+### 4.1 New tab: "COCKPIT"
+- Added to the existing tab shell in `index.html` alongside Live/History/System/Gallery, with its own `js/control.js` module — same per-tab-file convention as `live.js`/`history.js`/`gallery.js`. Labeled "COCKPIT" (not "操作") to match this site's other tab labels (LIVE/HISTORY/GALLERY/SYSTEM, all English) and the UI Sketch reference this tab's layout is modeled on. UI copy throughout the tab is English, matching the rest of the site.
 
 ### 4.2 Desktop app address
 - On first use, a small form asks for `desktop_ip:port`; saved to `localStorage` and reused on subsequent visits (editable later from the same tab). No auto-discovery.
 
 ### 4.3 Connection/status states
 Rendered from the WS connection state plus the last `status` message:
-- **未接続** (Not connected) — WS not open (desktop app not running, wrong address, or network issue).
-- **接続済み・操作不可** (Connected, control not allowed) — WS open, `allowed: false`.
-- **接続済み・操作可** (Connected, control allowed) — WS open, `allowed: true`.
+- **"Not connected"** — WS not open (desktop app not running, wrong address, or network issue).
+- **"Connected · control not allowed"** — WS open, `allowed: false`.
+- **"Connected · control allowed"** — WS open, `allowed: true`.
 
-Controls (drive buttons, speed slider, gimbal pad) are rendered but disabled/grayed out unless the state is 操作可, per the approved "connect but show not-allowed" behavior.
+Controls (drive buttons, speed slider, gimbal pad, snapshot) are rendered but disabled/grayed out unless the state is "control allowed", per the approved "connect but show not-allowed" behavior. Flip H/V are the one exception (§4.7) — never gated, since they never touch the relay.
 
 ### 4.4 Controls (full set, matching desktop app parity)
 - Forward / backward / left / right, on-screen buttons plus arrow-key bindings.
@@ -89,7 +142,13 @@ Controls (drive buttons, speed slider, gimbal pad) are rendered but disabled/gra
 - The manual 接続/切断 buttons let the operator override this at will (e.g. watch video without requesting drive control) — a manual disconnect is not re-asserted by the automatic gate immediately, since the gate only re-evaluates when a new `status`/`rejected` message or a connection-state change occurs, not on every render.
 - No coordination signal exists between this `<img>` and the desktop app's own camera handoff (§3.4); if the camera unit only serves one client, the web `<img>` may simply fail to load (broken-image icon) until the desktop app's `MJPEGReceiver` actually releases the stream after the toggle flips on. This is accepted per §3.4.
 
-## 5. Command vocabulary (unchanged, reused as-is)
+### 4.7 Snapshot, resolution, and flip controls
+
+- **SNAPSHOT** — sends `{"type":"action","action":"snapshot"}` (§3.5), gated by `allowState === 'allowed'` exactly like a drive command. A successful capture is not confirmed back to the web client (no ack message in this protocol version) — the operator's confirmation is seeing the new photo appear in the Gallery tab shortly after (same upload path §3.5 already routes through).
+- **RESOLUTION** — a `<select>` offering the same four options as the desktop app's own combo box (`views/main_view.py:40`): `640x480`, `1280x720`, `320x240`, `160x120`. On change, sends `resolution:<w>,<h>` (§3.6) via the existing `sendCommand()` path — no new message type.
+- **FLIP H / FLIP V** — two independent toggle buttons applying a CSS transform (`scaleX(-1)` / `scaleY(-1)`, combinable) directly to `#control-camera-feed`. Not gated by `allowState` and never sent over the WebSocket relay (§3.7) — purely how this browser renders its own already-open video stream. State is not persisted across page reloads (resets to unflipped).
+
+## 5. Command vocabulary
 
 | Command | Meaning |
 |---|---|
@@ -98,8 +157,9 @@ Controls (drive buttons, speed slider, gimbal pad) are rendered but disabled/gra
 | `stop` | Emergency/normal stop |
 | `speed:<N>` | Set motor speed |
 | `servo:<pan>,<tilt>` | Set camera gimbal angles |
+| `resolution:<w>,<h>` | Set camera resolution (§3.6 — already reachable via the existing command channel, no relay change needed) |
 
-No new commands are introduced; the relay is transport-only.
+Plus one non-`command` message type, §3.5: `{"type":"action","action":"snapshot"}`.
 
 ## 6. Error handling
 

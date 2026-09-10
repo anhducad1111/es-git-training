@@ -63,7 +63,18 @@ window.ControlView = (function () {
 
         <div class="control-sidebar-section">
           <div class="control-sidebar-title">CAMERA</div>
-          <button class="control-disabled-btn control-disabled-block" disabled title="Not implemented in this iteration">OTA UPDATE</button>
+          <button id="control-snapshot" class="control-input control-side-btn">SNAPSHOT · SAVE JPEG</button>
+          <label class="control-field-label">Resolution</label>
+          <select id="control-resolution" class="control-input control-field-input">
+            <option value="640,480">640x480 (30 FPS)</option>
+            <option value="1280,720">1280x720 (15 FPS)</option>
+            <option value="320,240">320x240 (60 FPS)</option>
+            <option value="160,120">160x120 (90 FPS)</option>
+          </select>
+          <div class="control-address-row">
+            <button id="control-flip-h" class="control-flip-btn">FLIP H</button>
+            <button id="control-flip-v" class="control-flip-btn">FLIP V</button>
+          </div>
         </div>
       </aside>
 
@@ -104,21 +115,6 @@ window.ControlView = (function () {
               <div class="card-value" id="control-autobrake-state">–</div>
               <div class="limit-track"><div class="limit-fill" id="control-autobrake-fill" style="width:0%"></div></div>
               <div class="control-card-sub-row"><span id="control-autobrake-dist">dist –</span></div>
-            </div>
-            <div class="card control-card">
-              <div class="card-label">CAMERA</div>
-              <button id="control-snapshot" class="control-input control-side-btn">SNAPSHOT · SAVE JPEG</button>
-              <label class="control-field-label">Resolution</label>
-              <select id="control-resolution" class="control-input control-field-input">
-                <option value="640,480">640x480 (30 FPS)</option>
-                <option value="1280,720">1280x720 (15 FPS)</option>
-                <option value="320,240">320x240 (60 FPS)</option>
-                <option value="160,120">160x120 (90 FPS)</option>
-              </select>
-              <div class="control-address-row">
-                <button id="control-flip-h" class="control-flip-btn">FLIP H</button>
-                <button id="control-flip-v" class="control-flip-btn">FLIP V</button>
-              </div>
             </div>
             <div class="card control-card">
               <div class="card-label">GIMBAL</div>

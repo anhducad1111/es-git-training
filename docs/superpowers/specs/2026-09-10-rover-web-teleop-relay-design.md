@@ -49,6 +49,13 @@ The existing telemetry path (`robot-desktop-app` → `cloud_api.py` → `rover-t
 - Instantiate `RemoteControlServer` alongside the other workers in `start_connections()`, stop it in `_stop_real_connections()`, following the existing lifecycle pattern for `RoverWebSocket`/`MJPEGReceiver`/`TelemetryPoller`.
 - New signal from the server (`command_received`) is connected to a handler that checks the toggle and calls `_send_command()` — do not let the WS server thread call into Qt widgets directly; go through a `pyqtSignal` like the existing `message_received` pattern in `rover_ws.py`.
 
+### 3.4 Camera handoff on "allow web control"
+The web Control tab (§4.6) connects to the camera unit's MJPEG stream directly (`http://cam_ip/640x480.mjpeg`), bypassing the desktop app entirely — there is no relay for video, only for drive/speed/gimbal commands. This is a separate concern from §3.2's command-arbitration toggle, but the two interact: the camera unit (ESP32-CAM class hardware) is assumed to serve a limited number of concurrent MJPEG clients (commonly one), so the desktop app's own `MJPEGReceiver` and the web client's direct connection can starve each other of frames or fail to connect at all if both hold a stream open.
+
+- When the "Web操作を許可" toggle (§3.2) is switched **on**, the desktop app stops its own `MJPEGReceiver` (same call path as `_stop_real_connections()`'s existing `self._video_receiver.stop()`), freeing the camera unit for the web client's connection. The desktop video panel goes blank/shows a "web operator has the camera" placeholder while the toggle is on.
+- When the toggle is switched back **off** (manually, or via the existing §3.2 auto-revert-on-local-input rule), the desktop app restarts its own `MJPEGReceiver` immediately, exactly like `start_connections()` initializes it.
+- This handoff is best-effort: nothing on the desktop app tells the web client to disconnect its own MJPEG `<img>`, and nothing confirms the camera unit actually freed the resource before the desktop app reconnects. If the camera unit does support multiple concurrent clients, this handoff is unnecessary but harmless (stopping and restarting the desktop's own receiver is a no-op cost). This limitation is accepted for this iteration; do not build a coordination protocol for it.
+
 ## 4. Frontend changes (`rover-telemetry-frontend`)
 
 ### 4.1 New tab: "操作" (Control)
@@ -74,6 +81,12 @@ Controls (drive buttons, speed slider, gimbal pad) are rendered but disabled/gra
 
 ### 4.5 Reconnection
 - On WS close/error, retry with backoff (e.g. 2s fixed, matching the simplicity of `RoverWebSocket`'s own 2s retry), updating the status banner to 未接続 while retrying.
+
+### 4.6 Camera video panel
+- A separate "Camera address" field (e.g. `192.168.1.117`), independently entered and persisted to `localStorage` from the desktop-app address field — `car_ip` (rover/relay) and `cam_ip` (camera unit) are different physical devices on the LAN in `robot-desktop-app/config.json`, so they need independent inputs.
+- The video panel is a plain `<img src="http://<camera_address>/640x480.mjpeg">`, refreshed only by reassigning `src` when the address field changes (the browser handles the MJPEG multipart stream natively — no polling, no canvas, no JS frame handling).
+- This connection is direct browser-to-camera-unit and entirely independent of the WebSocket relay in §4.2–§4.5: it works (or fails) regardless of the desktop app's connection/allow state. It is not gated by `allowState` — an operator can watch video without control permission.
+- No coordination signal exists between this `<img>` and the desktop app's own camera handoff (§3.4); if the camera unit only serves one client, the web `<img>` may simply fail to load (broken-image icon) until the desktop app's `MJPEGReceiver` actually releases the stream after the toggle flips on. This is accepted per §3.4.
 
 ## 5. Command vocabulary (unchanged, reused as-is)
 

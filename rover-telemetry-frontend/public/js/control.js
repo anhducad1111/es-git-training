@@ -1,8 +1,10 @@
 window.ControlView = (function () {
   const ADDRESS_STORAGE_KEY = 'roverControlAddress';
+  const CAMERA_ADDRESS_STORAGE_KEY = 'roverControlCameraAddress';
 
   let el;
   let address = '';
+  let cameraAddress = '';
   let ws = null;
   let reconnectTimer = null;
   let allowState = 'disconnected';
@@ -22,6 +24,18 @@ window.ControlView = (function () {
         <button id="control-disconnect">切断</button>
       </div>
       <div id="control-status-banner" class="control-status-banner control-status-disconnected">未接続</div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Camera</div>
+      <div class="control-address-row">
+        <label>Camera address
+          <input type="text" id="control-camera-address" placeholder="192.168.1.117">
+        </label>
+        <button id="control-camera-connect">接続</button>
+      </div>
+      <div class="control-camera-feed-wrap">
+        <img id="control-camera-feed" class="control-camera-feed" alt="camera feed" hidden>
+      </div>
     </div>
     <div class="panel">
       <div class="panel-title">Drive</div>
@@ -53,19 +67,31 @@ window.ControlView = (function () {
     </div>
   `;
 
-  function loadSavedAddress() {
+  function loadSaved(key) {
     try {
-      return window.localStorage.getItem(ADDRESS_STORAGE_KEY) || '';
+      return window.localStorage.getItem(key) || '';
     } catch (e) {
       return '';
     }
   }
 
-  function saveAddress(value) {
+  function saveValue(key, value) {
     try {
-      window.localStorage.setItem(ADDRESS_STORAGE_KEY, value);
+      window.localStorage.setItem(key, value);
     } catch (e) {
       // localStorage unavailable (private mode, etc.) — connection still works this session.
+    }
+  }
+
+  function updateCameraSrc() {
+    const img = document.getElementById('control-camera-feed');
+    if (!img) return;
+    if (cameraAddress) {
+      img.src = `http://${cameraAddress}/640x480.mjpeg`;
+      img.hidden = false;
+    } else {
+      img.removeAttribute('src');
+      img.hidden = true;
     }
   }
 
@@ -191,7 +217,7 @@ window.ControlView = (function () {
     el = rootEl;
     el.innerHTML = TEMPLATE;
 
-    address = loadSavedAddress();
+    address = loadSaved(ADDRESS_STORAGE_KEY);
     document.getElementById('control-address').value = address;
     renderConnectionState('disconnected');
 
@@ -200,12 +226,23 @@ window.ControlView = (function () {
       if (!value) return;
       disconnect();
       address = value;
-      saveAddress(address);
+      saveValue(ADDRESS_STORAGE_KEY, address);
       connect();
     });
 
     document.getElementById('control-disconnect').addEventListener('click', () => {
       disconnect();
+    });
+
+    cameraAddress = loadSaved(CAMERA_ADDRESS_STORAGE_KEY);
+    document.getElementById('control-camera-address').value = cameraAddress;
+
+    document.getElementById('control-camera-connect').addEventListener('click', () => {
+      const value = document.getElementById('control-camera-address').value.trim();
+      if (!value) return;
+      cameraAddress = value;
+      saveValue(CAMERA_ADDRESS_STORAGE_KEY, cameraAddress);
+      updateCameraSrc();
     });
 
     document.querySelectorAll('.control-drive-btn[data-command]').forEach((btn) => {
@@ -279,10 +316,16 @@ window.ControlView = (function () {
 
   function start() {
     if (address) connect();
+    updateCameraSrc();
   }
 
   function stop() {
     disconnect();
+    const img = document.getElementById('control-camera-feed');
+    if (img) {
+      img.removeAttribute('src');
+      img.hidden = true;
+    }
   }
 
   return { mount, start, stop };

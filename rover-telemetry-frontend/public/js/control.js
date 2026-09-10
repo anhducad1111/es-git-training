@@ -7,6 +7,8 @@ window.ControlView = (function () {
   let reconnectTimer = null;
   let allowState = 'disconnected';
   let roverConnected = false;
+  let gimbalPan = 90;
+  let gimbalTilt = 90;
   const RECONNECT_DELAY_MS = 2000;
 
   const TEMPLATE = `
@@ -33,6 +35,21 @@ window.ControlView = (function () {
         <button class="control-drive-btn control-drive-backward" data-command="backward" data-stop-on-release="true">↓</button>
       </div>
       <p class="control-hint">矢印キーで走行、Spaceで緊急停止（このタブにフォーカスがある間）</p>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Speed</div>
+      <input type="range" id="control-speed" class="control-input" min="180" max="255" value="220">
+      <span id="control-speed-value">220</span>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Camera Gimbal</div>
+      <div class="control-gimbal-grid">
+        <button class="control-drive-btn control-input" id="control-gimbal-up" data-pan-delta="0" data-tilt-delta="5">↑</button>
+        <button class="control-drive-btn control-input" id="control-gimbal-left" data-pan-delta="-5" data-tilt-delta="0">←</button>
+        <button class="control-drive-btn control-input" id="control-gimbal-center">C</button>
+        <button class="control-drive-btn control-input" id="control-gimbal-right" data-pan-delta="5" data-tilt-delta="0">→</button>
+        <button class="control-drive-btn control-input" id="control-gimbal-down" data-pan-delta="0" data-tilt-delta="-5">↓</button>
+      </div>
     </div>
   `;
 
@@ -160,6 +177,10 @@ window.ControlView = (function () {
     ws.send(JSON.stringify({ type: 'command', command }));
   }
 
+  function updateGimbal() {
+    sendCommand(`servo:${gimbalPan},${gimbalTilt}`);
+  }
+
   function mount(rootEl) {
     el = rootEl;
     el.innerHTML = TEMPLATE;
@@ -215,6 +236,28 @@ window.ControlView = (function () {
         activeDriveKey = null;
         sendCommand('stop');
       }
+    });
+
+    document.getElementById('control-speed').addEventListener('input', (evt) => {
+      document.getElementById('control-speed-value').textContent = evt.target.value;
+    });
+    document.getElementById('control-speed').addEventListener('change', (evt) => {
+      sendCommand(`speed:${evt.target.value}`);
+    });
+
+    ['control-gimbal-up', 'control-gimbal-left', 'control-gimbal-right', 'control-gimbal-down'].forEach((id) => {
+      document.getElementById(id).addEventListener('click', () => {
+        const btn = document.getElementById(id);
+        gimbalPan = Math.max(0, Math.min(180, gimbalPan + Number(btn.dataset.panDelta)));
+        gimbalTilt = Math.max(0, Math.min(180, gimbalTilt + Number(btn.dataset.tiltDelta)));
+        updateGimbal();
+      });
+    });
+
+    document.getElementById('control-gimbal-center').addEventListener('click', () => {
+      gimbalPan = 90;
+      gimbalTilt = 90;
+      updateGimbal();
     });
   }
 

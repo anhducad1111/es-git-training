@@ -202,7 +202,7 @@ window.ControlView = (function () {
       disconnect();
     });
 
-    document.querySelectorAll('.control-drive-btn').forEach((btn) => {
+    document.querySelectorAll('.control-drive-btn[data-command]').forEach((btn) => {
       const command = btn.dataset.command;
       const stopOnRelease = btn.dataset.stopOnRelease === 'true';
       btn.addEventListener('mousedown', () => sendCommand(command));

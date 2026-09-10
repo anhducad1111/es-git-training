@@ -17,12 +17,31 @@ window.ControlView = (function () {
   let telemetryUid = null;
   let telemetryTimer = null;
 
+  // A single semicircular dial reused for both the pan (N/S/W/E) and tilt (UP/DN/LVL)
+  // gimbal-position gauges, mirroring robot-desktop-app's GimbalHUD widget (widgets/gimbal_hud.py).
+  // The needle is a plain SVG <line>, rotated with a native SVG `rotate(angle cx cy)` transform
+  // set from JS — value 90 (centered) points straight up, 0 points left, 180 points right.
+  function gimbalDialSvg(idPrefix, topLabel, bottomLabel, leftLabel, rightLabel) {
+    return `
+      <svg class="control-gimbal-dial" viewBox="0 0 100 60" aria-hidden="true">
+        <path d="M 10 52 A 40 40 0 0 1 90 52" fill="none" stroke="#ff2a85" stroke-opacity="0.35" stroke-width="1.5"></path>
+        <line x1="50" y1="52" x2="50" y2="14" stroke="#3b82f6" stroke-opacity="0.3" stroke-dasharray="2,2"></line>
+        <line id="${idPrefix}-needle" x1="50" y1="52" x2="50" y2="16" stroke="#ff2a85" stroke-width="2.4"></line>
+        <circle cx="50" cy="52" r="2.4" fill="#ff2a85"></circle>
+        <text x="50" y="9" text-anchor="middle" class="control-gimbal-dial-label">${topLabel}</text>
+        <text x="50" y="59" text-anchor="middle" class="control-gimbal-dial-label control-gimbal-dial-label-dim">${bottomLabel}</text>
+        <text x="4" y="55" text-anchor="start" class="control-gimbal-dial-label control-gimbal-dial-label-dim">${leftLabel}</text>
+        <text x="96" y="55" text-anchor="end" class="control-gimbal-dial-label control-gimbal-dial-label-dim">${rightLabel}</text>
+      </svg>
+    `;
+  }
+
   const TEMPLATE = `
     <div class="control-layout">
       <aside class="control-sidebar">
         <div class="control-sidebar-section">
           <div class="control-sidebar-title">TELEOPERATION</div>
-          <div class="control-sidebar-sub">デスクトップアプリ経由でローバーを操作<br>キー操作は映像パネルにフォーカスがある間有効</div>
+          <div class="control-sidebar-sub">Drive the rover through the desktop app relay.<br>Keyboard control is active while this tab has focus.</div>
         </div>
 
         <div class="control-sidebar-section">
@@ -30,46 +49,70 @@ window.ControlView = (function () {
           <label class="control-field-label">Desktop app address</label>
           <input type="text" id="control-address" class="control-field-input" placeholder="192.168.1.50:8765">
           <div class="control-address-row">
-            <button id="control-connect">接続</button>
-            <button id="control-disconnect">切断</button>
+            <button id="control-connect">Connect</button>
+            <button id="control-disconnect">Disconnect</button>
           </div>
-          <div id="control-status-banner" class="control-status-banner control-status-disconnected">未接続</div>
+          <div id="control-status-banner" class="control-status-banner control-status-disconnected">Not connected</div>
           <label class="control-field-label">Camera address</label>
           <input type="text" id="control-camera-address" class="control-field-input" placeholder="192.168.1.117">
           <div class="control-address-row">
-            <button id="control-camera-connect">接続</button>
-            <button id="control-camera-disconnect">切断</button>
+            <button id="control-camera-connect">Connect</button>
+            <button id="control-camera-disconnect">Disconnect</button>
           </div>
         </div>
 
         <div class="control-sidebar-section">
           <div class="control-sidebar-title">CAMERA</div>
           <div class="control-disabled-row">
-            <button class="control-disabled-btn" disabled title="このリレープロトコルは未対応">RESOLUTION · 640x480</button>
+            <button class="control-disabled-btn" disabled title="Not supported by this relay protocol yet">RESOLUTION · 640x480</button>
           </div>
           <div class="control-disabled-row">
-            <button class="control-disabled-btn" disabled title="このリレープロトコルは未対応">FLIP H</button>
-            <button class="control-disabled-btn" disabled title="このリレープロトコルは未対応">FLIP V</button>
+            <button class="control-disabled-btn" disabled title="Not supported by this relay protocol yet">FLIP H</button>
+            <button class="control-disabled-btn" disabled title="Not supported by this relay protocol yet">FLIP V</button>
           </div>
-          <button class="control-disabled-btn control-disabled-block" disabled title="このリレープロトコルは未対応">SNAPSHOT · SAVE JPEG</button>
-          <button class="control-disabled-btn control-disabled-block" disabled title="このリレープロトコルは未対応">OTA UPDATE</button>
+          <button class="control-disabled-btn control-disabled-block" disabled title="Not supported by this relay protocol yet">SNAPSHOT · SAVE JPEG</button>
+          <button class="control-disabled-btn control-disabled-block" disabled title="Not supported by this relay protocol yet">OTA UPDATE</button>
         </div>
       </aside>
 
       <div class="control-main">
-        <div class="control-video-panel">
-          <div class="control-video-overlay-bar">
-            <span id="control-tele-dist" class="control-tele-chip">DIST –</span>
-            <span id="control-tele-temp" class="control-tele-chip">TEMP –</span>
-            <span id="control-tele-hum" class="control-tele-chip">HUM –</span>
-            <span id="control-tele-gas" class="control-tele-chip">GAS –</span>
-            <span class="control-video-label">MJPEG</span>
+        <div class="control-video-row">
+          <div class="control-video-panel">
+            <div class="control-video-overlay-bar">
+              <span id="control-tele-dist" class="control-tele-chip">DIST –</span>
+              <span id="control-tele-temp" class="control-tele-chip">TEMP –</span>
+              <span id="control-tele-hum" class="control-tele-chip">HUM –</span>
+              <span id="control-tele-gas" class="control-tele-chip">GAS –</span>
+              <span class="control-video-label">MJPEG</span>
+            </div>
+            <div class="control-video-body">
+              <img id="control-camera-feed" class="control-camera-feed" alt="camera feed" hidden>
+              <div id="control-video-placeholder" class="control-video-placeholder">No video</div>
+              <div class="control-crosshair-h"></div>
+              <div class="control-crosshair-v"></div>
+              <div class="control-gimbal-hud">
+                <div class="control-gimbal-hud-title">CAM <span>GIMBAL</span></div>
+                ${gimbalDialSvg('control-tilt-dial', 'UP', 'DN', '', 'LVL')}
+                <div class="control-gimbal-hud-value" id="control-tilt-offset">+0°</div>
+                ${gimbalDialSvg('control-pan-dial', 'N', 'S', 'W', 'E')}
+                <div class="control-gimbal-hud-value" id="control-pan-offset">+0°</div>
+              </div>
+            </div>
           </div>
-          <div class="control-video-body">
-            <img id="control-camera-feed" class="control-camera-feed" alt="camera feed" hidden>
-            <div id="control-video-placeholder" class="control-video-placeholder">映像未接続</div>
-            <div class="control-crosshair-h"></div>
-            <div class="control-crosshair-v"></div>
+
+          <div class="control-side-stats">
+            <div class="card control-card">
+              <div class="card-label">SPEED · PWM</div>
+              <div class="card-value" id="control-speed-value">220</div>
+              <input type="range" id="control-speed" class="control-input control-card-slider" min="180" max="255" value="220">
+              <div class="control-card-sub-row"><span>180</span><span>255</span></div>
+            </div>
+            <div class="card control-card">
+              <div class="card-label">AUTO-BRAKE</div>
+              <div class="card-value" id="control-autobrake-state">–</div>
+              <div class="limit-track"><div class="limit-fill" id="control-autobrake-fill" style="width:0%"></div></div>
+              <div class="control-card-sub-row"><span id="control-autobrake-dist">dist –</span></div>
+            </div>
           </div>
         </div>
 
@@ -77,20 +120,7 @@ window.ControlView = (function () {
 
         <div class="control-card-row">
           <div class="card control-card">
-            <div class="card-label">SPEED · PWM</div>
-            <div class="card-value" id="control-speed-value">220</div>
-            <input type="range" id="control-speed" class="control-input control-card-slider" min="180" max="255" value="220">
-            <div class="control-card-sub-row"><span>180</span><span>255</span></div>
-          </div>
-          <div class="card control-card">
-            <div class="card-label">AUTO-BRAKE</div>
-            <div class="card-value" id="control-autobrake-state">–</div>
-            <div class="limit-track"><div class="limit-fill" id="control-autobrake-fill" style="width:0%"></div></div>
-            <div class="control-card-sub-row"><span id="control-autobrake-dist">dist –</span></div>
-          </div>
-          <div class="card control-card">
             <div class="card-label">GIMBAL</div>
-            <div class="card-value" id="control-gimbal-value">PAN 90° · TILT 90°</div>
             <div class="control-gimbal-grid">
               <button class="control-drive-btn control-input" id="control-gimbal-up" data-pan-delta="0" data-tilt-delta="5">↑</button>
               <button class="control-drive-btn control-input" id="control-gimbal-left" data-pan-delta="-5" data-tilt-delta="0">←</button>
@@ -173,13 +203,13 @@ window.ControlView = (function () {
     banner.classList.remove('control-status-disconnected', 'control-status-not-allowed', 'control-status-allowed');
     if (state === 'allowed') {
       banner.classList.add('control-status-allowed');
-      banner.textContent = '接続済み・操作可';
+      banner.textContent = 'Connected · control allowed';
     } else if (state === 'not-allowed') {
       banner.classList.add('control-status-not-allowed');
-      banner.textContent = '接続済み・操作不可（デスクトップ側で未許可）';
+      banner.textContent = "Connected · control not allowed (desktop app hasn't granted access)";
     } else {
       banner.classList.add('control-status-disconnected');
-      banner.textContent = '未接続';
+      banner.textContent = 'Not connected';
     }
     el.querySelectorAll('.control-drive-btn, .control-input').forEach((elm) => {
       elm.disabled = state !== 'allowed';
@@ -193,7 +223,7 @@ window.ControlView = (function () {
       slot.innerHTML = '';
       return;
     }
-    slot.innerHTML = '<div class="stale-banner">デスクトップアプリには接続していますが、ローバーとの接続が切れています。</div>';
+    slot.innerHTML = '<div class="stale-banner">Connected to the desktop app, but the rover link is down.</div>';
   }
 
   function handleMessage(evt) {
@@ -280,8 +310,25 @@ window.ControlView = (function () {
     ws.send(JSON.stringify({ type: 'command', command }));
   }
 
+  // Needle at rest (0deg) is drawn pointing straight up; rotating by (value-90) degrees
+  // clockwise about the dial's pivot (50,52 in the dial's own viewBox) sweeps it from
+  // fully left (value=0) through straight up (value=90) to fully right (value=180).
+  function setDialNeedle(idPrefix, value) {
+    const needle = document.getElementById(`${idPrefix}-needle`);
+    if (!needle) return;
+    needle.setAttribute('transform', `rotate(${value - 90} 50 52)`);
+  }
+
+  function fmtOffset(value) {
+    const offset = value - 90;
+    return `${offset >= 0 ? '+' : ''}${offset}°`;
+  }
+
   function updateGimbal() {
-    document.getElementById('control-gimbal-value').textContent = `PAN ${gimbalPan}° · TILT ${gimbalTilt}°`;
+    document.getElementById('control-tilt-offset').textContent = fmtOffset(gimbalTilt);
+    document.getElementById('control-pan-offset').textContent = fmtOffset(gimbalPan);
+    setDialNeedle('control-tilt-dial', gimbalTilt);
+    setDialNeedle('control-pan-dial', gimbalPan);
     sendCommand(`servo:${gimbalPan},${gimbalTilt}`);
   }
 
@@ -360,6 +407,12 @@ window.ControlView = (function () {
     address = loadSaved(ADDRESS_STORAGE_KEY);
     document.getElementById('control-address').value = address;
     renderConnectionState('disconnected');
+    // Paint the dials at their 90/90 default without going through updateGimbal(), which
+    // would also (harmlessly, but needlessly) attempt to sendCommand() before any connection exists.
+    setDialNeedle('control-tilt-dial', gimbalTilt);
+    setDialNeedle('control-pan-dial', gimbalPan);
+    document.getElementById('control-tilt-offset').textContent = fmtOffset(gimbalTilt);
+    document.getElementById('control-pan-offset').textContent = fmtOffset(gimbalPan);
 
     document.getElementById('control-connect').addEventListener('click', () => {
       const value = document.getElementById('control-address').value.trim();

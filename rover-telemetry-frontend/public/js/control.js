@@ -23,7 +23,16 @@ window.ControlView = (function () {
     </div>
     <div class="panel">
       <div class="panel-title">Drive</div>
-      <div id="control-drive-pad" class="control-drive-pad"></div>
+      <div class="control-drive-pad">
+        <button class="control-drive-btn control-drive-forward" data-command="forward" data-stop-on-release="true">↑</button>
+        <div class="control-drive-row">
+          <button class="control-drive-btn control-drive-left" data-command="left" data-stop-on-release="true">←</button>
+          <button class="control-drive-btn control-drive-stop" data-command="stop">STOP</button>
+          <button class="control-drive-btn control-drive-right" data-command="right" data-stop-on-release="true">→</button>
+        </div>
+        <button class="control-drive-btn control-drive-backward" data-command="backward" data-stop-on-release="true">↓</button>
+      </div>
+      <p class="control-hint">矢印キーで走行、Spaceで緊急停止（このタブにフォーカスがある間）</p>
     </div>
   `;
 
@@ -57,6 +66,9 @@ window.ControlView = (function () {
       banner.classList.add('control-status-disconnected');
       banner.textContent = '未接続';
     }
+    document.querySelectorAll('.control-drive-btn, .control-input').forEach((elm) => {
+      elm.disabled = state !== 'allowed';
+    });
   }
 
   function renderRoverWarning() {
@@ -142,6 +154,12 @@ window.ControlView = (function () {
     renderRoverWarning();
   }
 
+  function sendCommand(command) {
+    if (allowState !== 'allowed') return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'command', command }));
+  }
+
   function mount(rootEl) {
     el = rootEl;
     el.innerHTML = TEMPLATE;
@@ -161,6 +179,40 @@ window.ControlView = (function () {
 
     document.getElementById('control-disconnect').addEventListener('click', () => {
       disconnect();
+    });
+
+    document.querySelectorAll('.control-drive-btn').forEach((btn) => {
+      const command = btn.dataset.command;
+      const stopOnRelease = btn.dataset.stopOnRelease === 'true';
+      btn.addEventListener('mousedown', () => sendCommand(command));
+      btn.addEventListener('touchstart', (e) => { e.preventDefault(); sendCommand(command); });
+      if (stopOnRelease) {
+        btn.addEventListener('mouseup', () => sendCommand('stop'));
+        btn.addEventListener('mouseleave', () => sendCommand('stop'));
+        btn.addEventListener('touchend', () => sendCommand('stop'));
+      }
+    });
+
+    let activeDriveKey = null;
+
+    document.addEventListener('keydown', (evt) => {
+      if (evt.repeat) return;
+      if (!el.closest('.view.active') || !el.classList.contains('active')) return;
+      const keyToCommand = { ArrowUp: 'forward', ArrowDown: 'backward', ArrowLeft: 'left', ArrowRight: 'right' };
+      if (keyToCommand[evt.key]) {
+        activeDriveKey = evt.key;
+        sendCommand(keyToCommand[evt.key]);
+      } else if (evt.key === ' ') {
+        sendCommand('stop');
+      }
+    });
+
+    document.addEventListener('keyup', (evt) => {
+      const keyToCommand = { ArrowUp: 'forward', ArrowDown: 'backward', ArrowLeft: 'left', ArrowRight: 'right' };
+      if (keyToCommand[evt.key] && evt.key === activeDriveKey) {
+        activeDriveKey = null;
+        sendCommand('stop');
+      }
     });
   }
 

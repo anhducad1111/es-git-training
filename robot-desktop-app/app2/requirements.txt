@@ -1,0 +1,13 @@
+PyQt6>=6.6
+opencv-contrib-python>=4.8
+numpy>=1.24
+PyTurboJPEG>=1.7
+# PyTurboJPEG needs libjpeg-turbo's turbojpeg.dll (Windows) / libturbojpeg.so
+# installed and discoverable at runtime. If it's missing, decode_jpeg() in
+# workers.py falls back to cv2.imdecode automatically.
+# Optional YOLO / rccar detector:
+# ultralytics>=8.3
+# The "rccar" detector is self-contained: its trained model and calibration
+# live under esp32_mjpeg_detector/rccar_pose_model/. To refresh after
+# retraining, copy config.json and runs/rccar_pose/weights/best.pt from the
+# captures/rccar_pose training project over the files in that directory.

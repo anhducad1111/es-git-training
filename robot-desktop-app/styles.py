@@ -9,18 +9,18 @@ QGroupBox {
     font-weight: 600;
     border: 1px solid #1e293b;
     border-radius: 8px;
-    margin-top: 10px;
-    padding: 12px 10px 10px 10px;
+    margin-top: 14px;
+    padding: 14px 10px 10px 10px;
     background-color: #0f172a;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
     left: 12px;
     padding: 0 6px;
-    color: #64748b;
+    color: #94a3b8;
     font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
 }
 QPushButton {
     background-color: #1e293b;
@@ -40,17 +40,17 @@ QPushButton:pressed {
 }
 QSlider::groove:horizontal {
     border: 1px solid #1e293b;
-    height: 4px;
+    height: 5px;
     background: #1e293b;
     border-radius: 2px;
 }
 QSlider::handle:horizontal {
     background: #06b6d4;
     border: none;
-    width: 12px;
-    height: 12px;
-    margin: -4px 0;
-    border-radius: 6px;
+    width: 14px;
+    height: 14px;
+    margin: -5px 0;
+    border-radius: 7px;
 }
 QSlider::sub-page:horizontal {
     background: #06b6d4;

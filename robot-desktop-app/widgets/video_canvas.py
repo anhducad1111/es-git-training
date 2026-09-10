@@ -29,10 +29,16 @@ class VideoCanvas(QLabel):
         self._tilt = 90.0
         self._sensitivity = 0.3
         self._mouse_gimbal_enabled = True
+        self._follow_detections = []
 
     def set_gimbal(self, pan, tilt):
         self._pan = pan
         self._tilt = tilt
+
+    def set_follow_detections(self, detections):
+        """Set follow mode detections for overlay display."""
+        self._follow_detections = detections
+        self.update()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._mouse_gimbal_enabled:
@@ -106,6 +112,65 @@ class VideoCanvas(QLabel):
                 painter.drawRect(x, y, w, h)
                 painter.setFont(QFont("JetBrains Mono", 8))
                 painter.drawText(x, y - 5, f"{label} {conf:.1f}")
+
+        # Follow mode detections
+        if self._follow_detections:
+            for det in self._follow_detections:
+                bbox = det.get("bbox")
+                if bbox is None:
+                    continue
+                    
+                # bbox format from RcCarPoseDetector: (x, y, w, h)
+                bx, by, bw, bh = bbox
+                x1, y1 = bx, by
+                x2, y2 = bx + bw, by + bh
+                
+                # Calculate scale to map original coords to display coords
+                pixmap = self.pixmap()
+                if pixmap and not pixmap.isNull():
+                    orig_w, orig_h = 640, 480
+                    pw, ph = pixmap.width(), pixmap.height()
+                    scale_x = pw / orig_w
+                    scale_y = ph / orig_h
+                    offset_x = (self.width() - pw) / 2
+                    offset_y = (self.height() - ph) / 2
+                    
+                    dx1 = int(x1 * scale_x + offset_x)
+                    dy1 = int(y1 * scale_y + offset_y)
+                    dx2 = int(x2 * scale_x + offset_x)
+                    dy2 = int(y2 * scale_y + offset_y)
+                    w = dx2 - dx1
+                    h = dy2 - dy1
+                    
+                    if not hasattr(self, '_follow_log_count'):
+                        self._follow_log_count = 0
+                    self._follow_log_count += 1
+                    if self._follow_log_count % 30 == 0:
+                        print(f"[DEBUG] bbox=({x1},{y1},{x2},{y2}) pixmap=({pw},{ph}) widget=({self.width()},{self.height()}) scale=({scale_x:.2f},{scale_y:.2f}) offset=({offset_x:.0f},{offset_y:.0f}) -> ({dx1},{dy1},{dx2},{dy2})")
+                else:
+                    dx1, dy1, w, h = x1, y1, x2 - x1, y2 - y1
+                
+                # Draw bounding box
+                painter.setPen(QPen(QColor(255, 165, 0), 2))  # Orange
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(dx1, dy1, w, h)
+                
+                # Draw label
+                yaw = det.get("yaw_deg")
+                dist = det.get("dist_m")
+                conf = det.get("confidence", 0.0)
+                
+                label_parts = ["TARGET"]
+                if yaw is not None:
+                    label_parts.append(f"yaw{yaw:+.0f}°")
+                if dist is not None:
+                    label_parts.append(f"{dist:.2f}m")
+                label_parts.append(f"{conf:.0%}")
+                
+                label = " ".join(label_parts)
+                painter.setFont(QFont("JetBrains Mono", 8))
+                painter.setPen(QPen(QColor(255, 165, 0), 1))
+                painter.drawText(dx1, dy1 - 5, label)
 
         painter.end()
 

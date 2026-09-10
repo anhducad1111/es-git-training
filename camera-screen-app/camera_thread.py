@@ -1,4 +1,6 @@
 import queue
+import cv2
+import numpy as np
 from PyQt6.QtCore import QThread
 from PyQt6.QtGui import QImage
 import urllib.request
@@ -7,7 +9,7 @@ MAX_QUEUE_SIZE = 1
 
 
 class CameraThread(QThread):
-    def __init__(self, url):
+    def __init__(self, url, target_size=None):
         super().__init__()
         self.url = url
         self._running = False
@@ -15,6 +17,7 @@ class CameraThread(QThread):
         self.frame_queue = queue.Queue(maxsize=MAX_QUEUE_SIZE)
         self.connected = False
         self.error_msg = None
+        self.target_size = target_size
 
     def run(self):
         self._running = True
@@ -46,15 +49,25 @@ class CameraThread(QThread):
                         jpeg_data = bytes(buf[start : end + 2])
                         buf = buf[end + 2 :]
 
-                        image = QImage()
-                        image.loadFromData(jpeg_data, "JPEG")
-                        if not image.isNull():
-                            if self.frame_queue.full():
-                                try:
-                                    self.frame_queue.get_nowait()
-                                except queue.Empty:
-                                    pass
-                            self.frame_queue.put_nowait(image)
+                        nparr = np.frombuffer(jpeg_data, np.uint8)
+                        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                        if frame is None:
+                            continue
+
+                        if self.target_size:
+                            frame = cv2.resize(frame, self.target_size, interpolation=cv2.INTER_LINEAR)
+
+                        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        h, w, ch = frame.shape
+                        bytes_per_line = ch * w
+                        image = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888).copy()
+
+                        if self.frame_queue.full():
+                            try:
+                                self.frame_queue.get_nowait()
+                            except queue.Empty:
+                                pass
+                        self.frame_queue.put_nowait(image)
 
             except Exception as e:
                 if self._running:

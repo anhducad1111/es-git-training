@@ -52,12 +52,7 @@ class CameraCanvas(QLabel):
             pixmap = image
 
         if not pixmap.isNull():
-            scaled = pixmap.scaled(
-                self.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.FastTransformation,
-            )
-            self.setPixmap(scaled)
+            self.setPixmap(pixmap)
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -83,24 +78,53 @@ class CameraCanvas(QLabel):
         painter.drawText(10, 20, datetime.now().strftime("%H:%M:%S"))
 
         if self.detections:
-            box_pen = QPen(QColor(0, 255, 0, 200), 2)
-            box_brush = Qt.BrushStyle.NoBrush
-            text_color = QColor(0, 255, 0, 230)
             bg_color = QColor(0, 0, 0, 160)
             font = QFont("Consolas", 9)
             painter.setFont(font)
             fm = painter.fontMetrics()
             for det in self.detections:
-                x1, y1, x2, y2 = det["box"]
-                painter.setPen(box_pen)
-                painter.setBrush(box_brush)
-                painter.drawRect(x1, y1, x2 - x1, y2 - y1)
-                text = f"{det['label']} {det['confidence']:.0%}"
-                tr = fm.boundingRect(text)
-                tr.moveTopLeft((x1, y1 - tr.height() - 2))
-                painter.fillRect(tr, bg_color)
-                painter.setPen(text_color)
-                painter.drawText(tr, Qt.AlignmentFlag.AlignCenter, text)
+                if "front" in det and "rear" in det:
+                    fx, fy = det["front"]
+                    rx, ry = det["rear"]
+                    angle = det.get("angle", 0.0)
+                    conf = det.get("confidence", 0.0)
+
+                    painter.setPen(QPen(QColor(255, 50, 50), 2))
+                    painter.setBrush(QColor(255, 50, 50, 180))
+                    painter.drawEllipse(int(fx) - 5, int(fy) - 5, 10, 10)
+
+                    painter.setPen(QPen(QColor(50, 50, 255), 2))
+                    painter.setBrush(QColor(50, 50, 255, 180))
+                    painter.drawEllipse(int(rx) - 5, int(ry) - 5, 10, 10)
+
+                    painter.setPen(QPen(QColor(255, 255, 0), 1))
+                    painter.drawLine(int(fx), int(fy), int(rx), int(ry))
+
+                    painter.setPen(QPen(QColor(0, 255, 0), 1))
+                    painter.setFont(QFont("Consolas", 12))
+                    angle_text = f"{angle:+.1f} deg"
+                    painter.drawText(10, 40, angle_text)
+                    painter.setFont(font)
+
+                    label = f"F conf={conf:.0%}"
+                    tr = fm.boundingRect(label)
+                    tr.moveTopLeft((int(fx) + 8, int(fy) - 10))
+                    painter.fillRect(tr, bg_color)
+                    painter.setPen(QColor(255, 50, 50))
+                    painter.drawText(tr, Qt.AlignmentFlag.AlignCenter, label)
+
+                    label_r = f"R"
+                    tr_r = fm.boundingRect(label_r)
+                    tr_r.moveTopLeft((int(rx) + 8, int(ry) - 10))
+                    painter.fillRect(tr_r, bg_color)
+                    painter.setPen(QColor(50, 50, 255))
+                    painter.drawText(tr_r, Qt.AlignmentFlag.AlignCenter, label_r)
+
+                elif "box" in det:
+                    x1, y1, x2, y2 = det["box"]
+                    painter.setPen(QPen(QColor(0, 255, 0, 200), 2))
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawRect(x1, y1, x2 - x1, y2 - y1)
 
         painter.end()
 
@@ -115,6 +139,7 @@ class CameraApp(QWidget):
         self._detection_enabled = self._config.get("detection_enabled", False)
         self._detection_interval = self._config.get("detection_interval", 3)
         self._detection_confidence = self._config.get("detection_confidence", 0.5)
+        self._frame_skip = self._config.get("frame_skip", 1)
         self.init_ui()
 
     def init_ui(self):
@@ -255,6 +280,22 @@ class CameraApp(QWidget):
         self._detect_btn.clicked.connect(self._toggle_detection)
         controls.addWidget(self._detect_btn)
 
+        controls.addSpacing(20)
+
+        skip_label = QLabel("Skip:")
+        controls.addWidget(skip_label)
+
+        self._skip_combo = QComboBox()
+        self._skip_combo.addItem("1x (none)")
+        self._skip_combo.addItem("2x")
+        self._skip_combo.addItem("3x")
+        self._skip_combo.addItem("5x")
+        self._frame_skip = self._config.get("frame_skip", 1)
+        skip_map = {1: 0, 2: 1, 3: 2, 5: 3}
+        self._skip_combo.setCurrentIndex(skip_map.get(self._frame_skip, 0))
+        self._skip_combo.currentIndexChanged.connect(self._on_skip_changed)
+        controls.addWidget(self._skip_combo)
+
         controls.addStretch()
 
         layout.addLayout(controls)
@@ -312,7 +353,8 @@ class CameraApp(QWidget):
             self._add_log("ERROR", "No URL provided")
             return
 
-        self._camera_thread = CameraThread(url)
+        size = self._canvas.size()
+        self._camera_thread = CameraThread(url, target_size=(size.width(), size.height()))
         self._camera_thread.start()
 
         self._detection_thread = DetectionThread()
@@ -358,6 +400,12 @@ class CameraApp(QWidget):
         if image is None:
             return
 
+        if not hasattr(self, '_skip_counter'):
+            self._skip_counter = 0
+        self._skip_counter += 1
+        if self._skip_counter % self._frame_skip != 0:
+            return
+
         self._on_frame(image)
 
         if self._detection_enabled and self._detection_thread:
@@ -374,10 +422,17 @@ class CameraApp(QWidget):
             if not self._detection_thread.result_queue.empty():
                 try:
                     self._canvas.detections = self._detection_thread.result_queue.get_nowait()
+                    self._canvas.update()
                 except queue.Empty:
                     pass
+
+            if self._detection_thread.status_bar_msg:
+                self._add_log("DETECT", self._detection_thread.status_bar_msg)
+                self._detection_thread.status_bar_msg = None
         else:
-            self._canvas.detections = []
+            if self._canvas.detections:
+                self._canvas.detections = []
+                self._canvas.update()
 
     def _poll_status(self):
         if not self._camera_thread:
@@ -429,6 +484,12 @@ class CameraApp(QWidget):
         if not self._detection_enabled:
             self._canvas.detections = []
 
+    def _on_skip_changed(self, index):
+        skip_values = [1, 2, 3, 5]
+        self._frame_skip = skip_values[index]
+        self._config["frame_skip"] = self._frame_skip
+        self._skip_counter = 0
+
     def _send_quality(self):
         self._send_api(f"/api/quality?val={self._quality_pending}")
 
@@ -470,6 +531,7 @@ class CameraApp(QWidget):
         colors = {
             "CAMERA": "#10b981",
             "ERROR": "#ef4444",
+            "DETECT": "#f59e0b",
         }
         color = colors.get(category, "#94a3b8")
         html = f'<span style="color: #64748b;">[{timestamp}]</span> <span style="color: {color};">[{category}]</span> <span style="color: #94a3b8;">{message}</span>'

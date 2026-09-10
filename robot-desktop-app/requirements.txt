@@ -1,5 +1,6 @@
 PyQt6==6.11.0
 websocket-client==1.9.2
+websockets==15.0.1
 requests==2.32.4
 opencv-python==4.10.0.84
 numpy==2.1.1

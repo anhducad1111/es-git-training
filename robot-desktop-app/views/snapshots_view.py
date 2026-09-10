@@ -1,11 +1,39 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtWidgets import (
     QHBoxLayout, QLabel, QPushButton, QTextEdit,
     QVBoxLayout, QWidget, QScrollArea, QFrame, QGridLayout
 )
 
 PAGE_SIZE = 6
+
+
+def _extract_video_frame(video_data):
+    """Extract first frame from video data for thumbnail."""
+    import cv2
+    import numpy as np
+    import os
+    from tempfile import gettempdir
+
+    tmp_path = os.path.join(gettempdir(), "thumb_temp.avi")
+    try:
+        with open(tmp_path, "wb") as f:
+            f.write(video_data)
+
+        cap = cv2.VideoCapture(tmp_path)
+        ret, frame = cap.read()
+        cap.release()
+        os.remove(tmp_path)
+
+        if ret and frame is not None:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb.shape
+            bytes_per_line = ch * w
+            qimg = QImage(rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+            return QPixmap.fromImage(qimg)
+    except Exception:
+        pass
+    return None
 
 
 def create_snapshots_view(app):
@@ -565,6 +593,21 @@ def _show_current_page(app):
         thumb_label.setText("Loading...")
         card_layout.addWidget(thumb_label)
 
+        media_type = snap.get("media_type", "photo")
+        if media_type == "video":
+            type_badge = QLabel("VIDEO")
+            type_badge.setFixedSize(40, 16)
+            type_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            type_badge.setStyleSheet("""
+                background-color: #8b5cf6;
+                color: white;
+                font-size: 7px;
+                font-weight: bold;
+                border-radius: 3px;
+            """)
+            type_badge.setParent(thumb_label)
+            type_badge.move(4, 4)
+
         time_str = str(snap.get("captured_at", ""))[:16].replace("T", " ")
         time_label = QLabel(time_str)
         time_label.setStyleSheet("color: #94a3b8; font-size: 8px; padding: 2px 4px;")
@@ -574,11 +617,15 @@ def _show_current_page(app):
 
         snap_id = snap.get("id")
         if snap_id:
-            image_data = app._cloud_api.get_media_item(snap_id)
-            if image_data:
-                pixmap = QPixmap()
-                pixmap.loadFromData(image_data)
-                if not pixmap.isNull():
+            media_data = app._cloud_api.get_media_item(snap_id)
+            if media_data:
+                if media_type == "video":
+                    pixmap = _extract_video_frame(media_data)
+                else:
+                    pixmap = QPixmap()
+                    pixmap.loadFromData(media_data)
+                
+                if pixmap and not pixmap.isNull():
                     scaled = pixmap.scaled(
                         208, 140,
                         Qt.AspectRatioMode.KeepAspectRatio,
@@ -628,22 +675,72 @@ def _select_snapshot(app, index):
     app._snapshot_info.setText(info)
 
     snap_id = snap.get("id")
-    if snap_id:
-        image_data = app._cloud_api.get_media_item(snap_id)
-        if image_data:
-            pixmap = QPixmap()
-            pixmap.loadFromData(image_data)
-            if not pixmap.isNull():
-                scaled = pixmap.scaled(
-                    app._snapshot_preview.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                app._snapshot_preview.setPixmap(scaled)
-            else:
-                app._snapshot_preview.setText("Invalid image data")
+    if not snap_id:
+        return
+
+    media_type = snap.get("media_type", "photo")
+    media_data = app._cloud_api.get_media_item(snap_id)
+    
+    if not media_data:
+        app._snapshot_preview.setText("Failed to load preview")
+        return
+
+    if media_type == "video":
+        _show_video_preview(app, media_data, snap_id)
+    else:
+        _show_image_preview(app, media_data)
+
+
+def _show_image_preview(app, image_data):
+    pixmap = QPixmap()
+    pixmap.loadFromData(image_data)
+    if not pixmap.isNull():
+        scaled = pixmap.scaled(
+            app._snapshot_preview.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        app._snapshot_preview.setPixmap(scaled)
+    else:
+        app._snapshot_preview.setText("Invalid image data")
+
+
+def _show_video_preview(app, video_data, snap_id):
+    import cv2
+    import numpy as np
+    import os
+    from tempfile import gettempdir
+
+    tmp_path = os.path.join(gettempdir(), f"preview_{snap_id}.avi")
+    try:
+        with open(tmp_path, "wb") as f:
+            f.write(video_data)
+
+        cap = cv2.VideoCapture(tmp_path)
+        ret, frame = cap.read()
+        cap.release()
+
+        if ret and frame is not None:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb.shape
+            bytes_per_line = ch * w
+            from PyQt6.QtGui import QImage
+            qimg = QImage(rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+            pixmap = QPixmap.fromImage(qimg)
+            scaled = pixmap.scaled(
+                app._snapshot_preview.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            app._snapshot_preview.setPixmap(scaled)
+            app._add_log("VIDEO", f"Preview loaded: frame {cap.get(cv2.CAP_PROP_FRAME_COUNT)} frames")
         else:
-            app._snapshot_preview.setText("Failed to load preview")
+            app._snapshot_preview.setText("Cannot read video")
+
+        os.remove(tmp_path)
+    except Exception as e:
+        app._snapshot_preview.setText(f"Video preview error")
+        app._add_log("VIDEO", f"Preview error: {str(e)[:50]}")
 
 
 def _download_snapshot(app):

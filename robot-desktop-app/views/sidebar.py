@@ -100,31 +100,44 @@ def create_sidebar(app):
 
     settings_page = QWidget()
     settings_layout = QVBoxLayout()
-    settings_layout.setContentsMargins(0, 0, 0, 0)
-    settings_layout.setSpacing(10)
+    settings_layout.setContentsMargins(0, 4, 0, 4)
+    settings_layout.setSpacing(14)
 
     pid_group = QGroupBox("PID STRAIGHT")
     pid_group.setStyleSheet("""
-        background-color: #0f172a;
-        border: 1px solid #1e293b;
-        border-radius: 6px;
-        padding: 8px;
+        QGroupBox {
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 14px 10px 10px 10px;
+            margin-top: 14px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 12px;
+            padding: 0 6px;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+        }
     """)
     pid_layout = QVBoxLayout()
-    pid_layout.setContentsMargins(8, 4, 8, 4)
-    pid_layout.setSpacing(4)
+    pid_layout.setContentsMargins(8, 6, 8, 6)
+    pid_layout.setSpacing(6)
 
     app._pid_toggle = QPushButton("OFF")
     app._pid_toggle.setCheckable(True)
-    app._pid_toggle.setFixedHeight(22)
+    app._pid_toggle.setFixedHeight(26)
     app._pid_toggle.setStyleSheet("""
         QPushButton {
             background-color: #475569;
             color: white;
             font-weight: 600;
-            font-size: 9px;
+            font-size: 10px;
             border: none;
-            border-radius: 10px;
+            border-radius: 13px;
+            padding: 0 14px;
         }
         QPushButton:checked {
             background-color: #10b981;
@@ -134,47 +147,56 @@ def create_sidebar(app):
     pid_layout.addWidget(app._pid_toggle)
 
     kp_row = QHBoxLayout()
+    kp_row.setSpacing(8)
     kp_label = QLabel("Kp")
-    kp_label.setStyleSheet("color: #94a3b8; font-size: 9px;")
+    kp_label.setFixedWidth(24)
+    kp_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
     kp_row.addWidget(kp_label)
     app._kp_slider = QSlider(Qt.Orientation.Horizontal)
     app._kp_slider.setRange(0, 100)
     app._kp_slider.setValue(20)
     app._kp_slider.valueChanged.connect(lambda v: _on_pid_change(app))
-    kp_row.addWidget(app._kp_slider)
+    kp_row.addWidget(app._kp_slider, 1)
     app._kp_label = QLabel("20")
-    app._kp_label.setStyleSheet("color: #06b6d4; font-size: 9px; font-family: 'JetBrains Mono', monospace;")
-    app._kp_label.setFixedWidth(25)
+    app._kp_label.setStyleSheet("color: #06b6d4; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._kp_label.setFixedWidth(28)
+    app._kp_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     kp_row.addWidget(app._kp_label)
     pid_layout.addLayout(kp_row)
 
     ki_row = QHBoxLayout()
+    ki_row.setSpacing(8)
     ki_label = QLabel("Ki")
-    ki_label.setStyleSheet("color: #94a3b8; font-size: 9px;")
+    ki_label.setFixedWidth(24)
+    ki_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
     ki_row.addWidget(ki_label)
     app._ki_slider = QSlider(Qt.Orientation.Horizontal)
     app._ki_slider.setRange(0, 100)
     app._ki_slider.setValue(5)
     app._ki_slider.valueChanged.connect(lambda v: _on_pid_change(app))
-    ki_row.addWidget(app._ki_slider)
+    ki_row.addWidget(app._ki_slider, 1)
     app._ki_label = QLabel("5")
-    app._ki_label.setStyleSheet("color: #06b6d4; font-size: 9px; font-family: 'JetBrains Mono', monospace;")
-    app._ki_label.setFixedWidth(25)
+    app._ki_label.setStyleSheet("color: #06b6d4; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._ki_label.setFixedWidth(28)
+    app._ki_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     ki_row.addWidget(app._ki_label)
     pid_layout.addLayout(ki_row)
 
     kd_row = QHBoxLayout()
+    kd_row.setSpacing(8)
     kd_label = QLabel("Kd")
-    kd_label.setStyleSheet("color: #94a3b8; font-size: 9px;")
+    kd_label.setFixedWidth(24)
+    kd_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
     kd_row.addWidget(kd_label)
     app._kd_slider = QSlider(Qt.Orientation.Horizontal)
     app._kd_slider.setRange(0, 100)
     app._kd_slider.setValue(10)
     app._kd_slider.valueChanged.connect(lambda v: _on_pid_change(app))
-    kd_row.addWidget(app._kd_slider)
+    kd_row.addWidget(app._kd_slider, 1)
     app._kd_label = QLabel("10")
-    app._kd_label.setStyleSheet("color: #06b6d4; font-size: 9px; font-family: 'JetBrains Mono', monospace;")
-    app._kd_label.setFixedWidth(25)
+    app._kd_label.setStyleSheet("color: #06b6d4; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._kd_label.setFixedWidth(28)
+    app._kd_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     kd_row.addWidget(app._kd_label)
     pid_layout.addLayout(kd_row)
 
@@ -183,44 +205,59 @@ def create_sidebar(app):
 
     cam_group = QGroupBox("CAMERA")
     cam_group.setStyleSheet("""
-        background-color: #0f172a;
-        border: 1px solid #1e293b;
-        border-radius: 6px;
-        padding: 8px;
+        QGroupBox {
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 14px 10px 10px 10px;
+            margin-top: 14px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 12px;
+            padding: 0 6px;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+        }
     """)
     cam_layout = QVBoxLayout()
-    cam_layout.setContentsMargins(8, 4, 8, 4)
-    cam_layout.setSpacing(6)
+    cam_layout.setContentsMargins(8, 6, 8, 6)
+    cam_layout.setSpacing(8)
 
     led_row = QHBoxLayout()
+    led_row.setSpacing(8)
     led_label = QLabel("LED")
-    led_label.setStyleSheet("color: #64748b; font-size: 9px; letter-spacing: 1px;")
+    led_label.setFixedWidth(24)
+    led_label.setStyleSheet("color: #64748b; font-size: 11px; letter-spacing: 1px;")
     led_row.addWidget(led_label)
 
     app._led_slider = QSlider(Qt.Orientation.Horizontal)
     app._led_slider.setRange(0, 255)
     app._led_slider.setValue(0)
-    app._led_slider.setFixedWidth(100)
+    app._led_slider.setFixedWidth(120)
     app._led_slider.valueChanged.connect(lambda v: _on_led_change(app, v))
     led_row.addWidget(app._led_slider)
 
     app._led_label = QLabel("0")
-    app._led_label.setStyleSheet("color: #e2e8f0; font-size: 9px; font-family: 'JetBrains Mono', monospace;")
-    app._led_label.setFixedWidth(25)
+    app._led_label.setStyleSheet("color: #e2e8f0; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._led_label.setFixedWidth(28)
+    app._led_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     led_row.addWidget(app._led_label)
 
     app._led_flash_btn = QPushButton("FLASH")
     app._led_flash_btn.setCheckable(True)
-    app._led_flash_btn.setFixedWidth(45)
-    app._led_flash_btn.setFixedHeight(18)
+    app._led_flash_btn.setFixedWidth(50)
+    app._led_flash_btn.setFixedHeight(22)
     app._led_flash_btn.setStyleSheet("""
         QPushButton {
             background-color: #475569;
             color: white;
             font-weight: 600;
-            font-size: 8px;
+            font-size: 9px;
             border: none;
-            border-radius: 9px;
+            border-radius: 11px;
         }
         QPushButton:checked {
             background-color: #f59e0b;
@@ -232,22 +269,26 @@ def create_sidebar(app):
     cam_layout.addLayout(led_row)
 
     quality_row = QHBoxLayout()
+    quality_row.setSpacing(8)
     quality_label = QLabel("Q")
-    quality_label.setStyleSheet("color: #64748b; font-size: 9px; letter-spacing: 1px;")
+    quality_label.setFixedWidth(24)
+    quality_label.setStyleSheet("color: #64748b; font-size: 11px; letter-spacing: 1px;")
     quality_row.addWidget(quality_label)
 
     app._quality_slider = QSlider(Qt.Orientation.Horizontal)
     app._quality_slider.setRange(0, 63)
     app._quality_slider.setValue(14)
-    app._quality_slider.setFixedWidth(100)
+    app._quality_slider.setFixedWidth(120)
     app._quality_slider.valueChanged.connect(lambda v: _on_quality_change(app, v))
     quality_row.addWidget(app._quality_slider)
 
     app._quality_label = QLabel("14")
-    app._quality_label.setStyleSheet("color: #e2e8f0; font-size: 9px; font-family: 'JetBrains Mono', monospace;")
-    app._quality_label.setFixedWidth(25)
+    app._quality_label.setStyleSheet("color: #e2e8f0; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._quality_label.setFixedWidth(28)
+    app._quality_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     quality_row.addWidget(app._quality_label)
 
+    quality_row.addStretch()
     cam_layout.addLayout(quality_row)
 
     cam_group.setLayout(cam_layout)
@@ -255,13 +296,25 @@ def create_sidebar(app):
 
     hf_group = QGroupBox("HF TOKEN")
     hf_group.setStyleSheet("""
-        background-color: #0f172a;
-        border: 1px solid #1e293b;
-        border-radius: 6px;
-        padding: 8px;
+        QGroupBox {
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 14px 10px 10px 10px;
+            margin-top: 14px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 12px;
+            padding: 0 6px;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+        }
     """)
     hf_layout = QVBoxLayout()
-    hf_layout.setContentsMargins(8, 4, 8, 4)
+    hf_layout.setContentsMargins(8, 6, 8, 6)
     hf_layout.setSpacing(4)
 
     from PyQt6.QtWidgets import QLineEdit
@@ -273,8 +326,8 @@ def create_sidebar(app):
         background-color: #1e293b;
         border: 1px solid #334155;
         color: #e2e8f0;
-        font-size: 9px;
-        padding: 4px 8px;
+        font-size: 11px;
+        padding: 6px 10px;
         border-radius: 4px;
     """)
     app._hf_token_input.returnPressed.connect(lambda: _save_hf_token(app))
@@ -285,28 +338,40 @@ def create_sidebar(app):
 
     cloud_group = QGroupBox("CLOUD")
     cloud_group.setStyleSheet("""
-        background-color: #0f172a;
-        border: 1px solid #1e293b;
-        border-radius: 6px;
-        padding: 8px;
+        QGroupBox {
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 14px 10px 10px 10px;
+            margin-top: 14px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 12px;
+            padding: 0 6px;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+        }
     """)
     cloud_layout = QVBoxLayout()
-    cloud_layout.setContentsMargins(8, 4, 8, 4)
+    cloud_layout.setContentsMargins(8, 6, 8, 6)
     cloud_layout.setSpacing(6)
 
     cloud_btn_row = QHBoxLayout()
-    cloud_btn_row.setSpacing(6)
+    cloud_btn_row.setSpacing(8)
 
     app._cloud_send_btn = QPushButton("SEND")
-    app._cloud_send_btn.setFixedHeight(26)
+    app._cloud_send_btn.setFixedHeight(30)
     app._cloud_send_btn.setStyleSheet("""
         QPushButton {
             background-color: #7c3aed;
             color: white;
             font-weight: 600;
-            font-size: 10px;
+            font-size: 11px;
             border: none;
-            padding: 4px 12px;
+            padding: 4px 16px;
             letter-spacing: 1px;
         }
         QPushButton:hover {
@@ -314,10 +379,10 @@ def create_sidebar(app):
         }
     """)
     app._cloud_send_btn.clicked.connect(app._manual_send_to_cloud)
-    cloud_btn_row.addWidget(app._cloud_send_btn)
+    cloud_btn_row.addWidget(app._cloud_send_btn, 1)
 
     app._toggle_view_btn = QPushButton("DATA")
-    app._toggle_view_btn.setFixedHeight(26)
+    app._toggle_view_btn.setFixedHeight(30)
     app._toggle_view_btn.setCheckable(True)
     app._toggle_view_btn.setStyleSheet("""
         QPushButton {
@@ -325,8 +390,8 @@ def create_sidebar(app):
             border: 1px solid #334155;
             color: #06b6d4;
             font-weight: 600;
-            font-size: 10px;
-            padding: 4px 12px;
+            font-size: 11px;
+            padding: 4px 16px;
             letter-spacing: 1px;
         }
         QPushButton:checked {
@@ -335,11 +400,127 @@ def create_sidebar(app):
         }
     """)
     app._toggle_view_btn.clicked.connect(app._toggle_view)
-    cloud_btn_row.addWidget(app._toggle_view_btn)
+    cloud_btn_row.addWidget(app._toggle_view_btn, 1)
 
     cloud_layout.addLayout(cloud_btn_row)
     cloud_group.setLayout(cloud_layout)
     settings_layout.addWidget(cloud_group)
+
+    follow_group = QGroupBox("FOLLOW MODE")
+    follow_group.setStyleSheet("""
+        QGroupBox {
+            background-color: #0f172a;
+            border: 1px solid rgba(124, 58, 237, 0.4);
+            border-radius: 8px;
+            padding: 14px 10px 10px 10px;
+            margin-top: 14px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 12px;
+            padding: 0 6px;
+            color: #7c3aed;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+        }
+    """)
+    follow_layout = QVBoxLayout()
+    follow_layout.setContentsMargins(8, 6, 8, 6)
+    follow_layout.setSpacing(5)
+
+    k_row = QHBoxLayout()
+    k_row.setSpacing(8)
+    k_label = QLabel("k")
+    k_label.setFixedWidth(24)
+    k_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
+    k_row.addWidget(k_label)
+    app._follow_k_slider = QSlider(Qt.Orientation.Horizontal)
+    app._follow_k_slider.setRange(1, 20)
+    app._follow_k_slider.setValue(5)
+    app._follow_k_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
+    k_row.addWidget(app._follow_k_slider, 1)
+    app._follow_k_label = QLabel("0.5")
+    app._follow_k_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._follow_k_label.setFixedWidth(30)
+    app._follow_k_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    k_row.addWidget(app._follow_k_label)
+    follow_layout.addLayout(k_row)
+
+    kp_row = QHBoxLayout()
+    kp_row.setSpacing(8)
+    kp_label = QLabel("kp")
+    kp_label.setFixedWidth(24)
+    kp_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
+    kp_row.addWidget(kp_label)
+    app._follow_kp_slider = QSlider(Qt.Orientation.Horizontal)
+    app._follow_kp_slider.setRange(1, 50)
+    app._follow_kp_slider.setValue(20)
+    app._follow_kp_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
+    kp_row.addWidget(app._follow_kp_slider, 1)
+    app._follow_kp_label = QLabel("2.0")
+    app._follow_kp_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._follow_kp_label.setFixedWidth(30)
+    app._follow_kp_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    kp_row.addWidget(app._follow_kp_label)
+    follow_layout.addLayout(kp_row)
+
+    ki_row = QHBoxLayout()
+    ki_row.setSpacing(8)
+    ki_label = QLabel("ki")
+    ki_label.setFixedWidth(24)
+    ki_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
+    ki_row.addWidget(ki_label)
+    app._follow_ki_slider = QSlider(Qt.Orientation.Horizontal)
+    app._follow_ki_slider.setRange(0, 50)
+    app._follow_ki_slider.setValue(1)
+    app._follow_ki_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
+    ki_row.addWidget(app._follow_ki_slider, 1)
+    app._follow_ki_label = QLabel("0.1")
+    app._follow_ki_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._follow_ki_label.setFixedWidth(30)
+    app._follow_ki_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    ki_row.addWidget(app._follow_ki_label)
+    follow_layout.addLayout(ki_row)
+
+    kd_row = QHBoxLayout()
+    kd_row.setSpacing(8)
+    kd_label = QLabel("kd")
+    kd_label.setFixedWidth(24)
+    kd_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
+    kd_row.addWidget(kd_label)
+    app._follow_kd_slider = QSlider(Qt.Orientation.Horizontal)
+    app._follow_kd_slider.setRange(1, 30)
+    app._follow_kd_slider.setValue(5)
+    app._follow_kd_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
+    kd_row.addWidget(app._follow_kd_slider, 1)
+    app._follow_kd_label = QLabel("0.5")
+    app._follow_kd_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._follow_kd_label.setFixedWidth(30)
+    app._follow_kd_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    kd_row.addWidget(app._follow_kd_label)
+    follow_layout.addLayout(kd_row)
+
+    dist_kp_row = QHBoxLayout()
+    dist_kp_row.setSpacing(8)
+    dist_kp_label = QLabel("dist")
+    dist_kp_label.setFixedWidth(24)
+    dist_kp_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
+    dist_kp_row.addWidget(dist_kp_label)
+    app._follow_dist_kp_slider = QSlider(Qt.Orientation.Horizontal)
+    app._follow_dist_kp_slider.setRange(1, 30)
+    app._follow_dist_kp_slider.setValue(10)
+    app._follow_dist_kp_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
+    dist_kp_row.addWidget(app._follow_dist_kp_slider, 1)
+    app._follow_dist_kp_label = QLabel("1.0")
+    app._follow_dist_kp_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._follow_dist_kp_label.setFixedWidth(30)
+    app._follow_dist_kp_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    dist_kp_row.addWidget(app._follow_dist_kp_label)
+    follow_layout.addLayout(dist_kp_row)
+
+    follow_group.setLayout(follow_layout)
+    settings_layout.addWidget(follow_group)
 
     settings_layout.addStretch()
     settings_page.setLayout(settings_layout)
@@ -389,15 +570,23 @@ def create_sidebar(app):
     main_layout.addWidget(settings_btn)
 
     diag_btn = QPushButton("DIAGNOSTICS")
+    diag_btn.setCheckable(True)
     diag_btn.setStyleSheet("""
-        background-color: #1e293b;
-        border: 1px solid #334155;
-        color: #64748b;
-        font-weight: 600;
-        font-size: 10px;
-        letter-spacing: 1px;
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #64748b;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        QPushButton:checked {
+            background-color: #f59e0b;
+            color: #0a0e1a;
+        }
     """)
     diag_btn.clicked.connect(app._toggle_view)
+    app._diag_btn = diag_btn
     main_layout.addWidget(diag_btn)
 
     follow_btn = QPushButton("FOLLOW MODE")
@@ -410,19 +599,48 @@ def create_sidebar(app):
         letter-spacing: 1px;
     """)
     follow_btn.clicked.connect(app._toggle_follow_mode)
+    app._follow_btn = follow_btn
     main_layout.addWidget(follow_btn)
 
     snapshot_btn = QPushButton("SNAPSHOTS")
+    snapshot_btn.setCheckable(True)
     snapshot_btn.setStyleSheet("""
-        background-color: #1e293b;
-        border: 1px solid #334155;
-        color: #06b6d4;
-        font-weight: 600;
-        font-size: 10px;
-        letter-spacing: 1px;
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #06b6d4;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        QPushButton:checked {
+            background-color: #06b6d4;
+            color: #0a0e1a;
+        }
     """)
     snapshot_btn.clicked.connect(app._toggle_snapshots_view)
+    app._snapshot_btn = snapshot_btn
     main_layout.addWidget(snapshot_btn)
+
+    app._web_control_btn = QPushButton("WEB CONTROL: OFF")
+    app._web_control_btn.setCheckable(True)
+    app._web_control_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #64748b;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        QPushButton:checked {
+            background-color: #10b981;
+            color: #0a0e1a;
+            border-color: #10b981;
+        }
+    """)
+    app._web_control_btn.clicked.connect(app._toggle_web_control)
+    main_layout.addWidget(app._web_control_btn)
 
     sidebar.setLayout(main_layout)
     return sidebar
@@ -491,6 +709,27 @@ def _on_pid_change(app):
         app._esp32_api.set_pid(kp=kp / 100.0, ki=ki / 100.0, kd=kd / 100.0)
 
 
+def _on_follow_param_change(app):
+    k = app._follow_k_slider.value() / 10.0
+    kp = app._follow_kp_slider.value() / 10.0
+    ki = app._follow_ki_slider.value() / 10.0
+    kd = app._follow_kd_slider.value() / 10.0
+    dist_kp = app._follow_dist_kp_slider.value() / 10.0
+    
+    app._follow_k_label.setText(f"{k:.1f}")
+    app._follow_kp_label.setText(f"{kp:.1f}")
+    app._follow_ki_label.setText(f"{ki:.1f}")
+    app._follow_kd_label.setText(f"{kd:.1f}")
+    app._follow_dist_kp_label.setText(f"{dist_kp:.1f}")
+    
+    if hasattr(app, '_detection_mgr') and app._detection_mgr._follow_controller:
+        app._detection_mgr._follow_controller.config.k = k
+        app._detection_mgr._follow_controller.config.kp = kp
+        app._detection_mgr._follow_controller.config.ki = ki
+        app._detection_mgr._follow_controller.config.kd = kd
+        app._detection_mgr._follow_controller.config.dist_kp = dist_kp
+
+
 def _toggle_led_flash(app):
     checked = app._led_flash_btn.isChecked()
     if checked:
@@ -532,6 +771,35 @@ def _load_snapshots(app):
     worker.start()
 
 
+def _extract_video_frame(video_data):
+    """Extract first frame from video data for thumbnail."""
+    import cv2
+    import numpy as np
+    import os
+    from tempfile import gettempdir
+    from PyQt6.QtGui import QImage, QPixmap
+
+    tmp_path = os.path.join(gettempdir(), "thumb_temp.avi")
+    try:
+        with open(tmp_path, "wb") as f:
+            f.write(video_data)
+
+        cap = cv2.VideoCapture(tmp_path)
+        ret, frame = cap.read()
+        cap.release()
+        os.remove(tmp_path)
+
+        if ret and frame is not None:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb.shape
+            bytes_per_line = ch * w
+            qimg = QImage(rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+            return QPixmap.fromImage(qimg)
+    except Exception:
+        pass
+    return None
+
+
 def _on_snapshots_loaded(app, data):
     if isinstance(data, dict):
         data = data.get("media", [])
@@ -558,18 +826,36 @@ def _on_snapshots_loaded(app, data):
         thumb_label.setText("...")
 
         snap_id = snap.get("id")
+        media_type = snap.get("media_type", "photo")
+        
         if snap_id:
-            image_data = app._cloud_api.get_media_item(snap_id)
-            if image_data:
-                pixmap = QPixmap()
-                pixmap.loadFromData(image_data)
-                if not pixmap.isNull():
+            media_data = app._cloud_api.get_media_item(snap_id)
+            if media_data:
+                if media_type == "video":
+                    pixmap = _extract_video_frame(media_data)
+                else:
+                    pixmap = QPixmap()
+                    pixmap.loadFromData(media_data)
+                
+                if pixmap and not pixmap.isNull():
                     scaled = pixmap.scaled(52, 52, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     thumb_label.setPixmap(scaled)
                 else:
                     thumb_label.setText("N/A")
             else:
                 thumb_label.setText("N/A")
+
+        type_label = QLabel("V" if media_type == "video" else "P")
+        type_label.setFixedSize(14, 14)
+        type_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        type_label.setStyleSheet("""
+            background-color: %s;
+            color: white;
+            font-size: 7px;
+            font-weight: bold;
+            border-radius: 7px;
+        """ % ("#8b5cf6" if media_type == "video" else "#10b981"))
+        item_layout.addWidget(type_label)
 
         item_layout.addWidget(thumb_label)
 

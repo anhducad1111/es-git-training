@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rover Remote Control - Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'JetBrains Mono', monospace; background: #0a0e1a; color: #e2e8f0; padding: 20px; }
+        h1 { color: #06b6d4; font-size: 18px; margin-bottom: 20px; }
+        .status { padding: 10px 15px; border-radius: 6px; margin-bottom: 20px; font-weight: bold; }
+        .status.disconnected { background: #ef4444; color: white; }
+        .status.connected { background: #10b981; color: white; }
+        .status.allowed { background: #06b6d4; color: white; }
+        .status.rejected { background: #f59e0b; color: black; }
+        .panel { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+        .panel h2 { color: #06b6d4; font-size: 12px; margin-bottom: 10px; letter-spacing: 1px; }
+        .row { display: flex; gap: 10px; margin-bottom: 10px; }
+        button { background: #334155; color: #e2e8f0; border: 1px solid #475569; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-family: inherit; font-weight: bold; }
+        button:hover { background: #475569; }
+        button:active { background: #06b6d4; color: #0a0e1a; }
+        button.stop { background: #ef4444; color: white; border-color: #ef4444; }
+        button.stop:hover { background: #dc2626; }
+        input { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px; font-family: inherit; width: 200px; }
+        input:focus { outline: none; border-color: #06b6d4; }
+        .log { background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; padding: 10px; height: 200px; overflow-y: auto; font-size: 11px; }
+        .log-entry { margin-bottom: 4px; }
+        .log-time { color: #64748b; }
+        .log-send { color: #10b981; }
+        .log-recv { color: #06b6d4; }
+        .log-error { color: #ef4444; }
+        label { color: #94a3b8; font-size: 11px; margin-right: 5px; }
+    </style>
+</head>
+<body>
+    <h1>ROVER REMOTE CONTROL - TEST</h1>
+    
+    <div id="status" class="status disconnected">未接続</div>
+    
+    <div class="panel">
+        <h2>接続設定</h2>
+        <div class="row">
+            <label>アドレス:</label>
+            <input type="text" id="wsUrl" value="ws://192.168.1.108:8765" placeholder="ws://ip:port">
+            <button onclick="connect()">接続</button>
+            <button onclick="disconnect()">切断</button>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <h2>ドライブ制御</h2>
+        <div class="row">
+            <button onclick="send('forward')">↑ FORWARD</button>
+        </div>
+        <div class="row">
+            <button onclick="send('left')">← LEFT</button>
+            <button class="stop" onclick="send('stop')">■ STOP</button>
+            <button onclick="send('right')">RIGHT →</button>
+        </div>
+        <div class="row">
+            <button onclick="send('backward')">↓ BACKWARD</button>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <h2>スピード制御</h2>
+        <div class="row">
+            <label>Speed:</label>
+            <input type="range" id="speedSlider" min="180" max="255" value="220" oninput="updateSpeed(this.value)">
+            <span id="speedValue">220</span>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <h2>ジンバル制御</h2>
+        <div class="row">
+            <button onclick="send('servo:90,90')">センター</button>
+            <button onclick="send('servo:0,90')">左</button>
+            <button onclick="send('servo:180,90')">右</button>
+            <button onclick="send('servo:90,0')">上</button>
+            <button onclick="send('servo:90,180')">下</button>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <h2>カスタムコマンド</h2>
+        <div class="row">
+            <input type="text" id="customCmd" placeholder="コマンドを入力">
+            <button onclick="sendCustom()">送信</button>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <h2>ログ</h2>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let lastStatus = null;
+
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+            if (!url) return;
+            
+            log('接続中: ' + url, 'send');
+            
+            try {
+                ws = new WebSocket(url);
+                
+                ws.onopen = () => {
+                    log('接続成功', 'recv');
+                    updateStatus('connected', '接続済み');
+                };
+                
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    lastStatus = data;
+                    
+                    if (data.type === 'status') {
+                        if (data.allowed) {
+                            updateStatus('allowed', '接続済み・操作可');
+                        } else if (data.rover_connected) {
+                            updateStatus('connected', '接続済み・操作不可');
+                        } else {
+                            updateStatus('rejected', '接続済み・ローバーオフライン');
+                        }
+                        log('受信: ' + JSON.stringify(data), 'recv');
+                    } else if (data.type === 'rejected') {
+                        updateStatus('rejected', '拒否されました');
+                        log('拒否: ' + data.reason, 'error');
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    log('エラー: ' + error, 'error');
+                };
+                
+                ws.onclose = () => {
+                    log('接続切断', 'error');
+                    updateStatus('disconnected', '未接続');
+                };
+            } catch (e) {
+                log('接続エラー: ' + e.message, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function send(command) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('未接続です', 'error');
+                return;
+            }
+            
+            const msg = JSON.stringify({ type: 'command', command: command });
+            ws.send(msg);
+            log('送信: ' + command, 'send');
+        }
+
+        function sendCustom() {
+            const cmd = document.getElementById('customCmd').value;
+            if (cmd) {
+                send(cmd);
+                document.getElementById('customCmd').value = '';
+            }
+        }
+
+        function updateSpeed(value) {
+            document.getElementById('speedValue').textContent = value;
+            send('speed:' + value);
+        }
+
+        function updateStatus(state, text) {
+            const el = document.getElementById('status');
+            el.className = 'status ' + state;
+            el.textContent = text;
+        }
+
+        function log(message, type) {
+            const el = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = '<span class="log-time">[' + time + ']</span> <span class="log-' + type + '">' + message + '</span>';
+            el.appendChild(entry);
+            el.scrollTop = el.scrollHeight;
+        }
+
+        // キーボード操作
+        document.addEventListener('keydown', (e) => {
+            switch(e.key) {
+                case 'w': case 'W': send('forward'); break;
+                case 's': case 'S': send('backward'); break;
+                case 'a': case 'A': send('left'); break;
+                case 'd': case 'D': send('right'); break;
+                case ' ': send('stop'); break;
+            }
+        });
+    </script>
+</body>
+</html>

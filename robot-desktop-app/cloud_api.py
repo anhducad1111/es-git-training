@@ -171,7 +171,8 @@ class CloudAPI:
             filename = os.path.basename(filepath)
             
             if media_type == "video":
-                content_type = "video/avi"
+                ext = os.path.splitext(filename)[1].lower()
+                content_type = "video/mp4" if ext == ".mp4" else "video/avi"
             else:
                 ext = os.path.splitext(filename)[1].lower()
                 content_type = "image/png" if ext == ".png" else "image/jpeg"

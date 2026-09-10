@@ -69,7 +69,7 @@ window.ControlView = (function () {
     }
   }
 
-  function renderStatusBanner(state) {
+  function renderConnectionState(state) {
     const banner = document.getElementById('control-status-banner');
     if (!banner) return;
     banner.classList.remove('control-status-disconnected', 'control-status-not-allowed', 'control-status-allowed');
@@ -83,7 +83,7 @@ window.ControlView = (function () {
       banner.classList.add('control-status-disconnected');
       banner.textContent = '未接続';
     }
-    document.querySelectorAll('.control-drive-btn, .control-input').forEach((elm) => {
+    el.querySelectorAll('.control-drive-btn, .control-input').forEach((elm) => {
       elm.disabled = state !== 'allowed';
     });
   }
@@ -110,13 +110,16 @@ window.ControlView = (function () {
     } catch (e) {
       return;
     }
+    if (!data || typeof data !== 'object') return;
     if (data.type === 'status') {
       allowState = data.allowed ? 'allowed' : 'not-allowed';
       roverConnected = !!data.rover_connected;
-      renderStatusBanner(allowState);
+      renderConnectionState(allowState);
       renderRoverWarning();
     } else if (data.type === 'rejected') {
-      renderStatusBanner('not-allowed');
+      allowState = 'not-allowed';
+      renderConnectionState(allowState);
+      renderRoverWarning();
     }
   }
 
@@ -148,7 +151,7 @@ window.ControlView = (function () {
       ws = null;
       allowState = 'disconnected';
       roverConnected = false;
-      renderStatusBanner('disconnected');
+      renderConnectionState('disconnected');
       renderRoverWarning();
       scheduleReconnect();
     };
@@ -159,6 +162,9 @@ window.ControlView = (function () {
 
   function disconnect() {
     clearReconnectTimer();
+    if (ws && ws.readyState === WebSocket.OPEN && allowState === 'allowed') {
+      ws.send(JSON.stringify({ type: 'command', command: 'stop' }));
+    }
     allowState = 'disconnected';
     roverConnected = false;
     if (ws) {
@@ -167,7 +173,7 @@ window.ControlView = (function () {
       socket.onclose = null;
       socket.close();
     }
-    renderStatusBanner('disconnected');
+    renderConnectionState('disconnected');
     renderRoverWarning();
   }
 
@@ -187,7 +193,7 @@ window.ControlView = (function () {
 
     address = loadSavedAddress();
     document.getElementById('control-address').value = address;
-    renderStatusBanner('disconnected');
+    renderConnectionState('disconnected');
 
     document.getElementById('control-connect').addEventListener('click', () => {
       const value = document.getElementById('control-address').value.trim();
@@ -211,10 +217,18 @@ window.ControlView = (function () {
         btn.addEventListener('mouseup', () => sendCommand('stop'));
         btn.addEventListener('mouseleave', () => sendCommand('stop'));
         btn.addEventListener('touchend', () => sendCommand('stop'));
+        btn.addEventListener('touchcancel', () => sendCommand('stop'));
       }
     });
 
     let activeDriveKey = null;
+
+    window.addEventListener('blur', () => {
+      if (activeDriveKey) {
+        activeDriveKey = null;
+        sendCommand('stop');
+      }
+    });
 
     document.addEventListener('keydown', (evt) => {
       if (evt.repeat) return;
@@ -223,9 +237,11 @@ window.ControlView = (function () {
       if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
       const keyToCommand = { ArrowUp: 'forward', ArrowDown: 'backward', ArrowLeft: 'left', ArrowRight: 'right' };
       if (keyToCommand[evt.key]) {
+        evt.preventDefault();
         activeDriveKey = evt.key;
         sendCommand(keyToCommand[evt.key]);
       } else if (evt.key === ' ') {
+        evt.preventDefault();
         sendCommand('stop');
       }
     });

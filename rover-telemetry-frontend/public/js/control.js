@@ -197,7 +197,9 @@ window.ControlView = (function () {
 
     document.addEventListener('keydown', (evt) => {
       if (evt.repeat) return;
-      if (!el.closest('.view.active') || !el.classList.contains('active')) return;
+      if (!el.classList.contains('active')) return;
+      const activeTag = document.activeElement && document.activeElement.tagName;
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
       const keyToCommand = { ArrowUp: 'forward', ArrowDown: 'backward', ArrowLeft: 'left', ArrowRight: 'right' };
       if (keyToCommand[evt.key]) {
         activeDriveKey = evt.key;

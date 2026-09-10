@@ -12,6 +12,7 @@ window.ControlView = (function () {
   let gimbalPan = 90;
   let gimbalTilt = 90;
   const RECONNECT_DELAY_MS = 2000;
+  const DEFAULT_CAMERA_ADDRESS = '192.168.1.117';
 
   const TEMPLATE = `
     <div class="panel">
@@ -32,6 +33,7 @@ window.ControlView = (function () {
           <input type="text" id="control-camera-address" placeholder="192.168.1.117">
         </label>
         <button id="control-camera-connect">接続</button>
+        <button id="control-camera-disconnect">切断</button>
       </div>
       <div class="control-camera-feed-wrap">
         <img id="control-camera-feed" class="control-camera-feed" alt="camera feed" hidden>
@@ -83,15 +85,25 @@ window.ControlView = (function () {
     }
   }
 
-  function updateCameraSrc() {
+  function showCameraFeed() {
+    const img = document.getElementById('control-camera-feed');
+    if (!img || !cameraAddress) return;
+    img.src = `http://${cameraAddress}/640x480.mjpeg`;
+    img.hidden = false;
+  }
+
+  function hideCameraFeed() {
     const img = document.getElementById('control-camera-feed');
     if (!img) return;
-    if (cameraAddress) {
-      img.src = `http://${cameraAddress}/640x480.mjpeg`;
-      img.hidden = false;
+    img.removeAttribute('src');
+    img.hidden = true;
+  }
+
+  function syncCameraToAllowState() {
+    if (allowState === 'allowed') {
+      showCameraFeed();
     } else {
-      img.removeAttribute('src');
-      img.hidden = true;
+      hideCameraFeed();
     }
   }
 
@@ -142,10 +154,12 @@ window.ControlView = (function () {
       roverConnected = !!data.rover_connected;
       renderConnectionState(allowState);
       renderRoverWarning();
+      syncCameraToAllowState();
     } else if (data.type === 'rejected') {
       allowState = 'not-allowed';
       renderConnectionState(allowState);
       renderRoverWarning();
+      syncCameraToAllowState();
     }
   }
 
@@ -179,6 +193,7 @@ window.ControlView = (function () {
       roverConnected = false;
       renderConnectionState('disconnected');
       renderRoverWarning();
+      syncCameraToAllowState();
       scheduleReconnect();
     };
     ws.onerror = () => {
@@ -201,6 +216,7 @@ window.ControlView = (function () {
     }
     renderConnectionState('disconnected');
     renderRoverWarning();
+    syncCameraToAllowState();
   }
 
   function sendCommand(command) {
@@ -234,7 +250,7 @@ window.ControlView = (function () {
       disconnect();
     });
 
-    cameraAddress = loadSaved(CAMERA_ADDRESS_STORAGE_KEY);
+    cameraAddress = loadSaved(CAMERA_ADDRESS_STORAGE_KEY) || DEFAULT_CAMERA_ADDRESS;
     document.getElementById('control-camera-address').value = cameraAddress;
 
     document.getElementById('control-camera-connect').addEventListener('click', () => {
@@ -242,7 +258,11 @@ window.ControlView = (function () {
       if (!value) return;
       cameraAddress = value;
       saveValue(CAMERA_ADDRESS_STORAGE_KEY, cameraAddress);
-      updateCameraSrc();
+      showCameraFeed();
+    });
+
+    document.getElementById('control-camera-disconnect').addEventListener('click', () => {
+      hideCameraFeed();
     });
 
     document.querySelectorAll('.control-drive-btn[data-command]').forEach((btn) => {
@@ -316,16 +336,10 @@ window.ControlView = (function () {
 
   function start() {
     if (address) connect();
-    updateCameraSrc();
   }
 
   function stop() {
     disconnect();
-    const img = document.getElementById('control-camera-feed');
-    if (img) {
-      img.removeAttribute('src');
-      img.hidden = true;
-    }
   }
 
   return { mount, start, stop };

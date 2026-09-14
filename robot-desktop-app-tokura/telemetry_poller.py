@@ -11,10 +11,17 @@ class TelemetryPoller(QThread):
         self.car_ip = car_ip
         self.interval_ms = interval_ms
         self._running = False
+        self._driving = False
+
+    def set_driving(self, driving):
+        self._driving = driving
 
     def run(self):
         self._running = True
         while self._running:
+            if self._driving:
+                self.msleep(100)
+                continue
             try:
                 resp = requests.get(f"http://{self.car_ip}/api/telemetry", timeout=5)
                 if resp.status_code == 200:

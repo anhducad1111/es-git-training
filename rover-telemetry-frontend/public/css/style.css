@@ -180,3 +180,117 @@ tr.rejected td { color: #9096a2; }
   .gap-card-header { padding: 10px 12px; }
   .media-delete-btn, .media-download-btn { opacity: 1; } /* no hover on touch, so always visible */
 }
+
+.control-layout { display: grid; grid-template-columns: 252px 1fr; gap: 16px; align-items: start; }
+.control-sidebar { display: flex; flex-direction: column; gap: 14px; }
+.control-sidebar-section { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
+.control-sidebar-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+.control-sidebar-sub { font-size: 11px; color: var(--text-dim); line-height: 1.5; margin-bottom: 4px; }
+.control-field-label { display: block; font-size: 11px; color: var(--text-dim); margin-top: 10px; margin-bottom: 4px; }
+.control-field-input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; }
+
+.control-address-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.control-address-row button { flex: 1; padding: 6px 10px; border: 1px solid var(--border); background: var(--bg); border-radius: 4px; cursor: pointer; font-size: 12px; }
+
+.control-status-banner { margin-top: 10px; padding: 6px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.control-status-disconnected { background: #fdeceb; border: 1px solid var(--bad); color: var(--bad); }
+.control-status-not-allowed { background: #fff6e5; border: 1px solid var(--warn); color: var(--warn); }
+.control-status-allowed { background: #eaf6ec; border: 1px solid var(--ok); color: var(--ok); }
+
+.control-disabled-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.control-disabled-btn {
+  flex: 1; padding: 7px 8px; border: 1px solid var(--border); background: var(--bg); border-radius: 4px;
+  font-size: 11px; color: var(--text-dim); opacity: 0.55; cursor: not-allowed;
+}
+.control-disabled-block { display: block; width: 100%; margin-bottom: 8px; }
+
+.control-main { display: flex; flex-direction: column; gap: 14px; }
+
+.control-video-row { display: grid; grid-template-columns: 1fr 220px; gap: 14px; align-items: start; }
+
+.control-video-panel { background: #14161a; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.control-video-overlay-bar {
+  display: flex; align-items: center; gap: 14px; padding: 8px 12px;
+  background: rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.control-tele-chip { font: 500 11px/1 "JetBrains Mono", monospace; color: #c7ccd1; }
+.control-video-label { margin-left: auto; font: 400 10px/1 "JetBrains Mono", monospace; color: #9aa3aa; }
+/* No fixed max-height: the panel fills whatever width control-video-row's 1fr column
+   gives it, and aspect-ratio derives the height from that — this is what keeps the feed
+   large and centered instead of shrinking to the image's native pixel size. */
+.control-video-body { position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: 70vh; display: flex; align-items: center; justify-content: center; }
+.control-camera-feed { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.control-video-placeholder { color: #6c6f73; font-size: 13px; }
+.control-crosshair-h, .control-crosshair-v { position: absolute; top: 50%; left: 50%; background: rgba(255,255,255,0.5); pointer-events: none; }
+.control-crosshair-h { width: 28px; height: 1px; transform: translate(-50%, -50%); }
+.control-crosshair-v { width: 1px; height: 28px; transform: translate(-50%, -50%); }
+
+.control-side-stats { display: flex; flex-direction: column; gap: 14px; }
+
+.control-card { display: flex; flex-direction: column; gap: 8px; }
+.control-card .card-value { font-size: 18px; }
+.control-card-slider { width: 100%; }
+.control-card-sub-row { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); }
+.control-card button:disabled, .control-card select:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.control-side-btn {
+  display: block; width: 100%; padding: 8px 10px; border: 1px solid var(--border); background: var(--panel);
+  border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;
+}
+.control-flip-btn {
+  flex: 1; padding: 6px 10px; border: 1px solid var(--border); background: var(--bg);
+  border-radius: 4px; cursor: pointer; font-size: 12px;
+}
+.control-flip-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Gimbal position instrument, overlaid bottom-left on the video like robot-desktop-app's
+   GimbalHUD (widgets/gimbal_hud.py) — read-only dual dial, not a control surface. */
+.control-gimbal-hud {
+  position: absolute; left: 10px; bottom: 10px; width: 128px; padding: 8px;
+  background: rgba(10,11,13,0.72); border: 1px solid rgba(255,42,133,0.25); border-radius: 6px;
+  pointer-events: none;
+}
+.control-gimbal-hud-title {
+  font: 600 9px/1 "JetBrains Mono", monospace; letter-spacing: 0.08em; color: #ff2a85;
+  display: flex; justify-content: space-between; margin-bottom: 4px;
+}
+.control-gimbal-hud-title span { color: #9aa3aa; font-weight: 500; }
+.control-gimbal-dial { display: block; width: 100%; }
+.control-gimbal-dial-label { font: 600 6.5px "JetBrains Mono", monospace; fill: #ff2a85; }
+.control-gimbal-dial-label-dim { fill: #94a3b8; font-weight: 500; }
+.control-gimbal-hud-value { text-align: center; font: 600 9px/1 "JetBrains Mono", monospace; color: #ff2a85; margin: 2px 0 4px; }
+
+.control-keys-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px;
+}
+.control-keys-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-dim); }
+.control-key-chip { padding: 4px 8px; border-radius: 4px; background: var(--bg); font-size: 11px; color: var(--text); }
+.control-key-chip-danger { background: #fdeceb; color: var(--bad); font-weight: 700; }
+
+.control-drive-pad { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.control-drive-row { display: flex; gap: 6px; }
+.control-drive-btn {
+  width: 48px; height: 40px; border: 1px solid var(--border); background: var(--panel); border-radius: 6px;
+  font-size: 16px; cursor: pointer; user-select: none;
+}
+.control-drive-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.control-drive-stop { background: var(--bad); color: #fff; border-color: var(--bad); font-size: 11px; font-weight: 700; }
+.control-drive-stop:disabled { background: var(--bad); opacity: 0.4; }
+
+.control-gimbal-grid { display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 40px); gap: 6px; justify-content: start; }
+#control-gimbal-up { grid-column: 2; grid-row: 1; }
+#control-gimbal-left { grid-column: 1; grid-row: 2; }
+#control-gimbal-center { grid-column: 2; grid-row: 2; }
+#control-gimbal-right { grid-column: 3; grid-row: 2; }
+#control-gimbal-down { grid-column: 2; grid-row: 3; }
+
+@media (max-width: 900px) {
+  .control-video-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .control-layout { grid-template-columns: 1fr; }
+  .control-video-body { max-height: none; }
+  .control-gimbal-hud { width: 108px; }
+}

@@ -17,12 +17,6 @@ class RoverWebSocket(QThread):
     # burst of stale motion once the link recovers.
     STALE_COMMAND_S = 0.3
 
-    # How often the current motion state is re-sent even if nothing changed.
-    # This is a safety net: if a single command was lost to RF interference
-    # while driving, the rover self-corrects within this window instead of
-    # continuing on whatever it last received.
-    MOTION_HEARTBEAT_S = 0.5
-
     def __init__(self, ws_url):
         super().__init__()
         self.ws_url = ws_url
@@ -31,8 +25,6 @@ class RoverWebSocket(QThread):
         self._connected = False
         self._send_queue = queue.Queue(maxsize=100)
         self._send_thread = None
-        self._motion_lock = threading.Lock()
-        self._desired_motion = "stop"
 
     def run(self):
         self._running = True
@@ -52,46 +44,37 @@ class RoverWebSocket(QThread):
             finally:
                 self._connected = False
 
-            if self._running:
-                self.msleep(2000)
+            # 2000msを100ms刻みに分けてsleepすることで、再接続待機中にstop()が
+            # 呼ばれてもすぐ反応できるようにする(以前はmsleep(2000)全体が
+            # 中断不可能で、アプリ終了時に最大2秒ブロックしていた)。
+            for _ in range(20):
+                if not self._running:
+                    break
+                self.msleep(100)
 
     def _on_open(self, ws):
         self._connected = True
         self.connected.emit()
         self._send_thread = threading.Thread(target=self._sender_loop, daemon=True)
         self._send_thread.start()
-        # Reassert our current intent immediately. If the operator released
-        # a key (or hit E-STOP) while we were disconnected, self._desired_motion
-        # already reflects that - send it now instead of leaving the rover on
-        # whatever command it last received before the drop.
-        with self._motion_lock:
-            motion = self._desired_motion
-        self._send_now(motion)
-
-    def _send_now(self, command):
-        try:
-            if self.ws and self._connected:
-                self.ws.send(command)
-        except Exception as e:
-            if self._connected:
-                self.error.emit(str(e))
 
     def _sender_loop(self):
-        last_heartbeat = time.time()
         while self._connected:
             try:
                 queued_at, cmd = self._send_queue.get(timeout=0.1)
-                if time.time() - queued_at <= self.STALE_COMMAND_S:
-                    self._send_now(cmd)
             except queue.Empty:
-                pass
+                continue
 
-            now = time.time()
-            if now - last_heartbeat >= self.MOTION_HEARTBEAT_S:
-                with self._motion_lock:
-                    motion = self._desired_motion
-                self._send_now(motion)
-                last_heartbeat = now
+            if time.time() - queued_at > self.STALE_COMMAND_S:
+                continue
+
+            try:
+                if self.ws and self._connected:
+                    self.ws.send(cmd)
+            except Exception as e:
+                if self._connected:
+                    self.error.emit(str(e))
+                break
 
     def _on_message(self, ws, message):
         try:
@@ -116,20 +99,11 @@ class RoverWebSocket(QThread):
             except queue.Full:
                 pass
 
-    def set_motion(self, command):
-        """Use for directional/E-STOP commands ("forward", "stop", ...).
-        Tracks the operator's current intent so it survives a disconnect and
-        gets re-sent on reconnect and on a fixed heartbeat, instead of only
-        firing once and hoping the single packet arrives."""
-        with self._motion_lock:
-            self._desired_motion = command
-        self.send(command)
-
     def stop(self):
         self._running = False
         if self.ws:
             self.ws.close()
-        self.wait()
+        self.wait(3000)  # 最大3秒待って諦める(run_forever()が固まった場合の保険)
 
     @property
     def is_connected(self):

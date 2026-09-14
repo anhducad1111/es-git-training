@@ -111,3 +111,18 @@ temp/
 .cache/
 __pycache__/
 *.tmp
+
+# robot-desktop-app-tokura: model weights, media, generated output
+robot-desktop-app-tokura/*.pt
+robot-desktop-app-tokura/*.avi
+robot-desktop-app-tokura/recordings/
+robot-desktop-app-tokura/snapshot/
+robot-desktop-app-tokura/docs/superpowers.zip
+robot-desktop-app-tokura/docs/superpowers/
+
+# robot-desktop-app-tokura: nested venvs, model weights, misc tool dumps
+robot-desktop-app-tokura/**/venv/
+robot-desktop-app-tokura/**/*.pt
+robot-desktop-app-tokura/**/*.pth
+robot-desktop-app-tokura/**/superpowers/
+robot-desktop-app-tokura/**/superpowers.zip

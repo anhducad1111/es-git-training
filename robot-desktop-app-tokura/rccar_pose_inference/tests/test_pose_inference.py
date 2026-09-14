@@ -219,6 +219,7 @@ def _make_gimbal_test_inference():
     inference._tilt_max_deviation_deg = 10.0
     inference._gimbal_center_pan_deg = 90.0
     inference._max_plausible_speed_mps = 2.0
+    inference._prediction_time_sec = 0.5
     inference._confidence = 0.35
     inference._kalman = PoseKalmanFilter()
     inference._last_infer_time = None

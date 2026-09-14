@@ -79,6 +79,11 @@ class FollowConfig:
     # 見失うことが確認された(車体自体は正しい向きに回転できていたので、
     # ジンバル側の符号だけが逆だった)。-1に反転して中央へ寄せる方向にする
     feedforward_pan_sign: int = -1
+    # FOLLOWING時の距離PID(ControlThread._compute_command参照)のゲイン。
+    # UIのkp/ki/kdスライダー(views/sidebar.py)からここへ書き込まれる。
+    kp_lin: float = 70.0
+    ki_lin: float = 0.4
+    kd_lin: float = 10.0
 
 
 def wrap_angle(deg: float) -> float:
@@ -634,10 +639,10 @@ class ControlThread(threading.Thread):
         # Reference to GimbalThread for automatic camera offset
         self._gimbal_thread = None
 
-        # Reference algorithm parameters
-        self._kp_lin = 70.0    # Linear PID proportional
-        self._ki_lin = 0.4     # Linear PID integral
-        self._kd_lin = 10.0    # Linear PID derivative
+        # Reference algorithm parameters: config.kp_lin/ki_lin/kd_lin
+        # (UIのkp/ki/kdスライダーから設定可能。follow mode実行中の変更を
+        # 反映するため、_compute_command()内でその都度self.configから読む。
+        # 以前はここにハードコードされておりconfigの値を無視していた)
         self._err_lin_i = 0.0  # Integral accumulator
         self._prev_err_lin = 0.0
         self._prev_dist_m = None
@@ -689,6 +694,7 @@ class ControlThread(threading.Thread):
         """Compute motor command using the distance-band state machine."""
         yaw_deg = detection.get("yaw_deg")
         dist_m = detection.get("dist_m")
+        dist_m_predicted = detection.get("dist_m_predicted")
         bbox = detection.get("bbox")
         confidence = detection.get("confidence", 0.0)
 
@@ -752,18 +758,31 @@ class ControlThread(threading.Thread):
                 "log": f"ジンバル安定待ち(is_settled=False)のため減速: drive:{v},0",
             }
 
-        # FOLLOWING: 既存のStanley/PIDハイブリッド距離制御(変更なし)
+        # FOLLOWING: 距離PID + ヘディング項ブレンドによる連続速度制御。
+        # (Stanleyの数式は使っていない。真のStanleyControllerはapp2/にのみ存在)
         if self._prev_dist_m is not None and abs(dist_m - self._prev_dist_m) > self._dist_jump_limit:
             dist_m = self._prev_dist_m
+            # 生のdist_mが外れ値だった場合、そこから計算された予測距離も
+            # 信用しない(直前の正常値ベースの現在距離にフォールバック)
+            dist_m_predicted = None
         else:
             self._prev_dist_m = dist_m
 
-        err_lin = dist_m - self.target_distance
+        # Phase 6(未来位置予測): 距離PIDの入力には、速度ベースでprediction_time_sec
+        # 先まで投影した予測距離(あれば)を使い、急な接近/離脱への追従遅れを減らす。
+        # ただしSEARCHING等の状態遷移判定・安全停止判定(resolve_follow_state)は
+        # 引き続き実測のdist_mのみを使う(予測値を安全判定に使わない)
+        dist_m_for_pid = dist_m_predicted if dist_m_predicted is not None else dist_m
+        err_lin = dist_m_for_pid - self.target_distance
         self._err_lin_i += err_lin * dt
         self._err_lin_i = max(-3.0, min(3.0, self._err_lin_i))  # anti-windup
         d_err_lin = (err_lin - self._prev_err_lin) / dt
         self._prev_err_lin = err_lin
-        lin_v = self._kp_lin * err_lin + self._ki_lin * self._err_lin_i + self._kd_lin * d_err_lin
+        # config.kp_lin/ki_lin/kd_linはUIスライダーからfollow mode実行中でも
+        # 更新される(views/sidebar.py _on_follow_param_change)ため、self.config
+        # から都度読む(self._kp_lin等は__init__時点のスナップショットで固定)
+        lin_v = (self.config.kp_lin * err_lin + self.config.ki_lin * self._err_lin_i
+                 + self.config.kd_lin * d_err_lin)
 
         error_x = yaw_deg_offset / self.config.yaw_max
         if self._gimbal_thread:

@@ -117,5 +117,9 @@ class PoseKalmanFilter:
 
     @property
     def state(self) -> dict:
-        X, Z, _, _, yaw_deg, _ = self._x
-        return {"X": float(X), "Z": float(Z), "yaw_deg": float(yaw_deg), "dist_m": float(math.hypot(X, Z))}
+        X, Z, vX, vZ, yaw_deg, _ = self._x
+        return {
+            "X": float(X), "Z": float(Z), "yaw_deg": float(yaw_deg),
+            "dist_m": float(math.hypot(X, Z)),
+            "vx_mps": float(vX), "vz_mps": float(vZ),
+        }

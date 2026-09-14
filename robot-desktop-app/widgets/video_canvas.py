@@ -232,3 +232,5 @@ class VideoCanvas(QLabel):
             self._app._speed_meter.move(10, self.height() - 330)
         if hasattr(self, '_app') and hasattr(self._app, '_fps_display'):
             self._app._fps_display.move(10, self.height() - 400)
+        if hasattr(self, '_app') and hasattr(self._app, '_ping_display'):
+            self._app._ping_display.move(10, self.height() - 430)

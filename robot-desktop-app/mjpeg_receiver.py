@@ -106,7 +106,7 @@ class ReceiveThread(QThread):
 class DecodeThread(QThread):
     stats_updated = pyqtSignal(dict)
 
-    def __init__(self, raw_slot, display_slot):
+    def __init__(self, raw_slot, display_slot, stream_url=""):
         super().__init__()
         self.raw_slot = raw_slot
         self.display_slot = display_slot
@@ -115,6 +115,8 @@ class DecodeThread(QThread):
         self._drop_count = 0
         self._last_stats_time = time.time()
         self._frame_times = deque(maxlen=60)
+        self._stream_url = stream_url
+        self._last_ping_ms = 0.0
 
     def run(self):
         self._running = True
@@ -147,10 +149,19 @@ class DecodeThread(QThread):
             if elapsed > 0:
                 fps = (len(self._frame_times) - 1) / elapsed
 
+        if self._stream_url:
+            try:
+                ping_start = time.time()
+                requests.head(self._stream_url, timeout=2)
+                self._last_ping_ms = (time.time() - ping_start) * 1000
+            except Exception:
+                self._last_ping_ms = 0.0
+
         self.stats_updated.emit({
             "fps": round(fps, 1),
             "recv_count": self._recv_count,
             "drop_count": self._drop_count,
+            "ping_ms": round(self._last_ping_ms, 1),
         })
 
     def stop(self):
@@ -163,7 +174,7 @@ class MJPEGReceiver:
         self.raw_slot = LatestSlot()
         self.display_slot = LatestSlot()
         self.receive_thread = ReceiveThread(stream_url, self.raw_slot)
-        self.decode_thread = DecodeThread(self.raw_slot, self.display_slot)
+        self.decode_thread = DecodeThread(self.raw_slot, self.display_slot, stream_url)
         self.connected = self.receive_thread.connected
         self.disconnected = self.receive_thread.disconnected
         self.error = self.receive_thread.error

@@ -451,8 +451,8 @@ RoverWebSocket.send
 | distance_band | ±0.075m | 目標距離帯の幅（この範囲内では前後進せず向きのみ補正） |
 | base_speed | 180 | 基準速度 |
 | turn_speed | 190 | 旋回時速度（実機で150はパワー不足と確認） |
-| min_pwm | 150 | 最小PWM |
-| max_follow_pwm | 190 | FOLLOWING時の前後進PWM上限 |
+| min_pwm | 180 | 最小PWM |
+| max_follow_pwm | 200 | FOLLOWING時の前後進PWM上限 |
 | max_steering_w | 80 | 旋回成分wの最大値 |
 | min_confidence | 0.3 | これを下回ると停止 |
 | lost_timeout_sec | 5.0秒 | ロスト継続でLOST_TIMEOUTへ遷移 |

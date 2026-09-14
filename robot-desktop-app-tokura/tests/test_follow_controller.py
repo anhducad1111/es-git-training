@@ -34,7 +34,7 @@ def test_follow_config_defaults_for_distance_band():
     config = FollowConfig()
     assert config.follow_distance == 0.4
     assert config.distance_band == 0.075
-    assert config.min_pwm == 150
+    assert config.min_pwm == 180
     assert config.blind_approach_pwm == 150
     assert config.head_on_threshold == 20.0
     assert config.state_hysteresis_frames == 3
@@ -292,10 +292,10 @@ def test_pan_priority_correction_resumes_spin_after_pause_elapses(monkeypatch):
     thread._compute_command(detection)  # 停止 -> 静止確認開始
 
     pause_sec = thread.config.pan_priority_pause_sec
-    # +0.2はパルス駆動のON区間(既定on_sec=0.15)に確実に入るよう選んだオフセット
-    # (0.35秒周期のうちOFF区間に当たると、静止確認明けでも見かけ上drive:0,0に
-    # なってしまいテストが意図と無関係な理由で揺れるため)
-    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + pause_sec + 0.2)
+    # +0.01はパルス駆動のON区間(既定on_sec=0.08, off_sec=0.2, 周期0.28秒)に
+    # 確実に入るよう選んだオフセット(OFF区間に当たると、静止確認明けでも
+    # 見かけ上drive:0,0になってしまいテストが意図と無関係な理由で揺れるため)
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + pause_sec + 0.01)
     thread._last_cmd_t = 0.0
     result = thread._compute_command(detection)
     v_str, _w_str = result["command"].removeprefix("drive:").split(",")
@@ -305,7 +305,7 @@ def test_pan_priority_correction_resumes_spin_after_pause_elapses(monkeypatch):
 
 def test_following_forward_command_is_clamped_to_min_pwm():
     """ランプアップが完了(_distance_proportional_pwmの目標に到達)した後は、
-    speedがmin_pwm(150)を下回らないことを確認する(motion中の底上げ)。"""
+    speedがmin_pwm(180)を下回らないことを確認する(motion中の底上げ)。"""
     thread = _make_control_thread()
     detection = {"yaw_deg": 5.0, "dist_m": 1.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
                  "frame_w": 640, "frame_h": 480}
@@ -315,7 +315,7 @@ def test_following_forward_command_is_clamped_to_min_pwm():
         result = thread._compute_command(detection)
     assert thread.state == FollowState.FOLLOWING
     if result["command"].startswith("drive:"):
-        assert result["speed"] >= 150
+        assert result["speed"] >= 180
 
 
 def test_pulsed_spin_command_is_on_during_on_phase(monkeypatch):
@@ -374,7 +374,7 @@ def test_pulsed_spin_command_skips_feedforward_when_chassis_disabled(monkeypatch
 
 def test_following_forward_speed_never_exceeds_max_follow_pwm():
     """回帰テスト: 実機で「速すぎて衝突した」ため、遠距離でも255ではなく
-    max_follow_pwm(既定190)を超えないことを確認する。"""
+    max_follow_pwm(既定200)を超えないことを確認する。"""
     thread = _make_control_thread()
     # 距離帯(35-50cm)から遠く離れている(1.5m)ケースを何度も評価してランプアップさせる
     detection = {"yaw_deg": 0.0, "dist_m": 1.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
@@ -384,7 +384,7 @@ def test_following_forward_speed_never_exceeds_max_follow_pwm():
         thread._last_cmd_t = 0.0
         result = thread._compute_command(detection)
         speeds.append(result["speed"])
-    assert max(speeds) <= 190
+    assert max(speeds) <= 200
 
 
 def test_following_forward_speed_ramps_up_gradually_not_instantly():

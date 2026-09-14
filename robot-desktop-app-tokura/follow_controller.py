@@ -39,14 +39,14 @@ class FollowConfig:
     # Camera mounting offset relative to car chassis (degrees)
     # Positive = camera rotated right, Negative = camera rotated left
     camera_yaw_offset: float = 0.0
-    min_pwm: int = 150
+    min_pwm: int = 180
     blind_approach_pwm: int = 150
     head_on_threshold: float = 20.0
     state_hysteresis_frames: int = 3
     lost_timeout_sec: float = 5.0
     # FOLLOWING時の前進/後退PWM上限。実機で速すぎて衝突したため255から引き下げ、
-    # 距離帯(32.5-47.5cm)に近づくほどmin_pwm(150)寄りまで減速する（下のapproach_slowdown_dist参照）
-    max_follow_pwm: int = 190
+    # 距離帯(32.5-47.5cm)に近づくほどmin_pwm(180)寄りまで減速する（下のapproach_slowdown_dist参照）
+    max_follow_pwm: int = 200
     # この距離(m)だけ距離帯の外側にいると、まだmax_follow_pwmまで加速してよい。
     # 距離帯に近づくにつれて比例的にmin_pwmまで減速する
     approach_slowdown_dist: float = 1.0  # 0.5だと近距離(0.6-0.7m)でもPWM160台と速すぎたため拡大
@@ -64,7 +64,11 @@ class FollowConfig:
     # 廃止し、両輪逆回転の超信地旋回に戻した。その代わり、パルス駆動
     # (on/offを繰り返す)で平均回転角速度を落とす。turn_speed(150)そのものは
     # 各パルスのON区間で使う(両輪ともmin_pwmを満たすのでトルクは足りる)。
-    spin_pulse_on_sec: float = 0.15
+    # 実機で「角度補正が連続して右左に旋回を繰り返す」振動が報告された:
+    # 1回のON区間(0.15秒)でturn_speed(190)のまま回りすぎ、次の新しい検出が
+    # 届く頃には反対側へ行き過ぎて逆方向の補正が入る、を繰り返していた。
+    # ON時間を短縮し、1回あたりの回転量を減らして様子を見る。
+    spin_pulse_on_sec: float = 0.08
     spin_pulse_off_sec: float = 0.2
     # pan角度優先補正(pan_offsetが大きい時)で、常時旋回し続けるのではなく
     # pan_priority_burst_sec秒だけ旋回してから、pan_priority_pause_sec秒
@@ -873,9 +877,20 @@ class ControlThread(threading.Thread):
             if self._pan_priority_burst_start is None:
                 self._pan_priority_burst_start = now
             elif now - self._pan_priority_burst_start >= self.config.pan_priority_burst_sec:
-                # バースト時間経過: 次は停止して確認する番
+                # バースト時間経過: 次は停止して確認する番。
+                # ここでpause_untilを更新するだけでは、このtick自体はまだ
+                # 下のpulsed_spin_commandに進んでしまい、パルス位相がたまたま
+                # ON区間と重なると旋回コマンドが漏れてしまう(spin_pulse_on_sec
+                # を0.15→0.08に短縮した際に表面化した回帰: 位相の偶然一致に
+                # 依存していた)。バースト終了はこのtickから即座に完全停止とする。
                 self._pan_priority_pause_until = now + self.config.pan_priority_pause_sec
                 self._pan_priority_burst_start = None
+                return {
+                    "type": "control",
+                    "command": "drive:0,0",
+                    "speed": 0,
+                    "log": f"pan角度優先補正: 静止確認中 pan_offset={pan_offset_deg:.1f}°",
+                }
 
             spin_w = self.config.turn_speed if combined_heading_error <= 0 else -self.config.turn_speed
             command = self._pulsed_spin_command(spin_w)
@@ -958,8 +973,8 @@ class ControlThread(threading.Thread):
 
     def _distance_proportional_pwm(self, dist_error_m: float) -> int:
         """距離帯(32.5-47.5cm)からどれだけ離れているかに比例してPWMを決める。
-        距離帯のすぐ外側ではmin_pwm(150)寄りの低速、approach_slowdown_dist(既定0.5m)
-        以上離れていればmax_follow_pwm(既定190)まで出す。実機で「速すぎて衝突した」
+        距離帯のすぐ外側ではmin_pwm(180)寄りの低速、approach_slowdown_dist(既定1.0m)
+        以上離れていればmax_follow_pwm(既定200)まで出す。実機で「速すぎて衝突した」
         ため、固定でmin_pwmに加算していた旧ロジックから距離比例の減速に変更した。"""
         overshoot = max(0.0, dist_error_m - self.config.distance_band)
         ratio = min(1.0, overshoot / self.config.approach_slowdown_dist)

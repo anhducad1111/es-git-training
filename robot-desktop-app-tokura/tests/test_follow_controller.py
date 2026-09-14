@@ -4,6 +4,7 @@ from queue import Queue
 import pytest
 
 from follow_controller import (
+    CommandThread,
     ControlThread,
     FollowConfig,
     FollowState,
@@ -245,6 +246,63 @@ def test_following_prioritizes_turning_when_pan_offset_large_even_if_far():
     assert "pan角度優先補正" in result["log"]
 
 
+def test_pan_priority_correction_stops_after_burst_then_pauses(monkeypatch):
+    """回帰テスト: pan角度優先補正はturn_speedを150未満に下げられないため、
+    代わりに「短いバースト旋回(既定0.3秒)→完全停止して静止確認(既定0.6秒)」
+    を繰り返す方式にした(実機で旋回が速すぎてカメラがブレ、対象を見失ったと
+    報告されたため)。バースト時間が経過した直後の呼び出しでは、パルスのON/OFF
+    に関わらず必ず完全停止(drive:0,0)が返ることを確認する。"""
+    thread = _make_control_thread()
+    thread._gimbal_thread = _StubGimbal(settled=True, current_pan=55.0, gimbal_center_pan=85.0)
+    detection = {"yaw_deg": 0.0, "dist_m": 2.0, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+
+    monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)  # phase=0 -> パルスON区間の先頭
+    thread._last_cmd_t = -1.0  # レートリミット(0.08秒)をバイパス
+    first = thread._compute_command(detection)
+    v_str, _w_str = first["command"].removeprefix("drive:").split(",")
+    assert v_str == "0"
+    assert first["command"] != "drive:0,0"  # バースト開始直後はONのはず
+
+    burst_sec = thread.config.pan_priority_burst_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    second = thread._compute_command(detection)
+    assert second["command"] == "drive:0,0"  # バースト終了 -> 静止確認へ
+
+    # 静止確認中(pause_sec未満)はまだ完全停止のまま
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + 0.05)
+    thread._last_cmd_t = 0.0
+    third = thread._compute_command(detection)
+    assert third["command"] == "drive:0,0"
+
+
+def test_pan_priority_correction_resumes_spin_after_pause_elapses(monkeypatch):
+    thread = _make_control_thread()
+    thread._gimbal_thread = _StubGimbal(settled=True, current_pan=55.0, gimbal_center_pan=85.0)
+    detection = {"yaw_deg": 0.0, "dist_m": 2.0, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+
+    monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)
+    thread._last_cmd_t = -1.0  # レートリミット(0.08秒)をバイパス
+    thread._compute_command(detection)  # バースト開始
+    burst_sec = thread.config.pan_priority_burst_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    thread._compute_command(detection)  # 停止 -> 静止確認開始
+
+    pause_sec = thread.config.pan_priority_pause_sec
+    # +0.2はパルス駆動のON区間(既定on_sec=0.15)に確実に入るよう選んだオフセット
+    # (0.35秒周期のうちOFF区間に当たると、静止確認明けでも見かけ上drive:0,0に
+    # なってしまいテストが意図と無関係な理由で揺れるため)
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + pause_sec + 0.2)
+    thread._last_cmd_t = 0.0
+    result = thread._compute_command(detection)
+    v_str, _w_str = result["command"].removeprefix("drive:").split(",")
+    assert v_str == "0"
+    assert result["command"] != "drive:0,0"  # 静止確認終了 -> 次のバーストが始まる
+
+
 def test_following_forward_command_is_clamped_to_min_pwm():
     """ランプアップが完了(_distance_proportional_pwmの目標に到達)した後は、
     speedがmin_pwm(150)を下回らないことを確認する(motion中の底上げ)。"""
@@ -446,3 +504,19 @@ def test_scenario_far_then_lost_then_recovered():
     r3 = thread._compute_command({"yaw_deg": 8.0, "dist_m": 1.2, "confidence": 0.9,
                                    "bbox": (300, 200, 20, 20), "frame_w": 640, "frame_h": 480})
     assert thread.state == FollowState.FOLLOWING
+
+
+# _mirror_drive_w: 実機で「対象を右に置いたのに逆方向へ旋回した」ことが確認された
+# ため、CommandThreadが実際に送信する直前でdrive:v,wのwを反転させるようにした
+# (ControlThread側の操舵計算自体はAPI仕様書通りの符号のまま変更していない)。
+
+
+def test_mirror_drive_w_negates_w_component():
+    assert CommandThread._mirror_drive_w("drive:60,-3") == "drive:60,3"
+    assert CommandThread._mirror_drive_w("drive:0,190") == "drive:0,-190"
+    assert CommandThread._mirror_drive_w("drive:0,0") == "drive:0,0"
+
+
+def test_mirror_drive_w_leaves_non_drive_commands_unchanged():
+    assert CommandThread._mirror_drive_w("stop") == "stop"
+    assert CommandThread._mirror_drive_w("servo:90,70") == "servo:90,70"

@@ -391,6 +391,8 @@ class RoverTeleopApp(QWidget):
     def _on_video_stats(self, stats):
         if hasattr(self, '_fps_display'):
             self._fps_display.update_fps(stats.get("fps", 0))
+        if hasattr(self, '_ping_display'):
+            self._ping_display.update_ping(stats.get("ping_ms", 0))
 
     def _emergency_stop(self):
         self._send_command("stop")

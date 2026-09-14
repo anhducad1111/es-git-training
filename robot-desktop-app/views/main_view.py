@@ -30,6 +30,11 @@ def create_main_view(app):
     app._fps_display.setParent(app._video_canvas)
     app._fps_display.move(10, app._video_canvas.height() - 400)
 
+    from widgets.ping_display import PingDisplay
+    app._ping_display = PingDisplay()
+    app._ping_display.setParent(app._video_canvas)
+    app._ping_display.move(10, app._video_canvas.height() - 430)
+
     from widgets.speed_meter import SpeedMeter
     app._speed_meter = SpeedMeter()
     app._speed_meter.setParent(app._video_canvas)

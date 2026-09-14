@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt, pyqtSignal, QPointF
-from PyQt6.QtGui import QPixmap, QImage, QFont, QPainter, QPen, QColor, QBrush
+from PyQt6.QtGui import QPixmap, QImage, QFont, QPainter, QPen, QColor, QBrush, QTransform
 from PyQt6.QtWidgets import QLabel, QSizePolicy
 
 
@@ -30,6 +30,8 @@ class VideoCanvas(QLabel):
         self._sensitivity = 0.3
         self._mouse_gimbal_enabled = True
         self._follow_detections = []
+        self._flip_h = False
+        self._flip_v = False
 
     def set_gimbal(self, pan, tilt):
         self._pan = pan
@@ -39,6 +41,24 @@ class VideoCanvas(QLabel):
         """Set follow mode detections for overlay display."""
         self._follow_detections = detections
         self.update()
+
+    def toggle_flip_h(self):
+        self._flip_h = not self._flip_h
+        self.update()
+
+    def toggle_flip_v(self):
+        self._flip_v = not self._flip_v
+        self.update()
+
+    def _apply_flip(self, pixmap):
+        if not self._flip_h and not self._flip_v:
+            return pixmap
+        transform = QTransform()
+        if self._flip_h:
+            transform.scale(-1, 1)
+        if self._flip_v:
+            transform.scale(1, -1)
+        return pixmap.transformed(transform, Qt.TransformationMode.FastTransformation)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._mouse_gimbal_enabled:
@@ -183,7 +203,8 @@ class VideoCanvas(QLabel):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.FastTransformation,
             )
-            self.setPixmap(scaled)
+            flipped = self._apply_flip(scaled)
+            self.setPixmap(flipped)
 
     def update_frame_jpeg(self, image):
         if isinstance(image, QPixmap):
@@ -200,11 +221,21 @@ class VideoCanvas(QLabel):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.FastTransformation,
             )
-            self.setPixmap(scaled)
-    
+            flipped = self._apply_flip(scaled)
+            self.setPixmap(flipped)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, '_app') and hasattr(self._app, '_gimbal_hud'):
             self._app._gimbal_hud.move(10, self.height() - 260)
         if hasattr(self, '_app') and hasattr(self._app, '_speed_meter'):
             self._app._speed_meter.move(10, self.height() - 330)
+        if hasattr(self, '_app') and hasattr(self._app, '_fps_display'):
+            self._app._fps_display.move(10, self.height() - 400)
+        if hasattr(self, '_app') and hasattr(self._app, '_ping_display'):
+            self._app._ping_display.move(10, self.height() - 430)
+        if hasattr(self, '_app') and hasattr(self._app, '_latency_display'):
+            self._app._latency_display.move(10, self.height() - 460)
+        if hasattr(self, '_app') and hasattr(self._app, '_web_control_banner'):
+            banner = self._app._web_control_banner
+            banner.move((self.width() - banner.width()) // 2, 10)

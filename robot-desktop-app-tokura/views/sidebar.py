@@ -1,7 +1,7 @@
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QCheckBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
+    QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
     QSlider, QStackedWidget, QVBoxLayout, QWidget
 )
 from widgets.sensor_card import SensorCard
@@ -57,6 +57,8 @@ def create_sidebar(app):
     header_layout.addWidget(estop_btn)
 
     main_layout.addLayout(header_layout)
+
+    main_layout.addWidget(_create_controls_group(app))
 
     app._sidebar_stack = QStackedWidget()
 
@@ -286,29 +288,6 @@ def create_sidebar(app):
 
     cam_layout.addLayout(led_row)
 
-    quality_row = QHBoxLayout()
-    quality_row.setSpacing(8)
-    quality_label = QLabel("Q")
-    quality_label.setFixedWidth(24)
-    quality_label.setStyleSheet("color: #64748b; font-size: 11px; letter-spacing: 1px;")
-    quality_row.addWidget(quality_label)
-
-    app._quality_slider = QSlider(Qt.Orientation.Horizontal)
-    app._quality_slider.setRange(0, 63)
-    app._quality_slider.setValue(14)
-    app._quality_slider.setFixedWidth(120)
-    app._quality_slider.valueChanged.connect(lambda v: _on_quality_change(app, v))
-    quality_row.addWidget(app._quality_slider)
-
-    app._quality_label = QLabel("14")
-    app._quality_label.setStyleSheet("color: #e2e8f0; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
-    app._quality_label.setFixedWidth(28)
-    app._quality_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    quality_row.addWidget(app._quality_label)
-
-    quality_row.addStretch()
-    cam_layout.addLayout(quality_row)
-
     cam_group.setLayout(cam_layout)
     settings_layout.addWidget(cam_group)
 
@@ -447,24 +426,10 @@ def create_sidebar(app):
     follow_layout.setContentsMargins(8, 6, 8, 6)
     follow_layout.setSpacing(5)
 
-    k_row = QHBoxLayout()
-    k_row.setSpacing(8)
-    k_label = QLabel("k")
-    k_label.setFixedWidth(24)
-    k_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
-    k_row.addWidget(k_label)
-    app._follow_k_slider = QSlider(Qt.Orientation.Horizontal)
-    app._follow_k_slider.setRange(1, 20)
-    app._follow_k_slider.setValue(5)
-    app._follow_k_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
-    k_row.addWidget(app._follow_k_slider, 1)
-    app._follow_k_label = QLabel("0.5")
-    app._follow_k_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
-    app._follow_k_label.setFixedWidth(30)
-    app._follow_k_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    k_row.addWidget(app._follow_k_label)
-    follow_layout.addLayout(k_row)
-
+    # 距離PID(ControlThread._compute_command, follow_controller.py)のゲイン。
+    # 実際の使用スケール(既定 kp_lin=70.0, ki_lin=0.4, kd_lin=10.0)に合わせて
+    # 値域を設定する。旧版にあった"k"(Stanleyゲイン、本体未使用)と"dist"
+    # (旧設計の重複した距離Kp)は現在の制御に対応する仕組みがないため削除した。
     kp_row = QHBoxLayout()
     kp_row.setSpacing(8)
     kp_label = QLabel("kp")
@@ -472,13 +437,13 @@ def create_sidebar(app):
     kp_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
     kp_row.addWidget(kp_label)
     app._follow_kp_slider = QSlider(Qt.Orientation.Horizontal)
-    app._follow_kp_slider.setRange(1, 50)
-    app._follow_kp_slider.setValue(20)
+    app._follow_kp_slider.setRange(0, 1500)
+    app._follow_kp_slider.setValue(700)
     app._follow_kp_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
     kp_row.addWidget(app._follow_kp_slider, 1)
-    app._follow_kp_label = QLabel("2.0")
+    app._follow_kp_label = QLabel("70.0")
     app._follow_kp_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
-    app._follow_kp_label.setFixedWidth(30)
+    app._follow_kp_label.setFixedWidth(36)
     app._follow_kp_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     kp_row.addWidget(app._follow_kp_label)
     follow_layout.addLayout(kp_row)
@@ -490,13 +455,13 @@ def create_sidebar(app):
     ki_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
     ki_row.addWidget(ki_label)
     app._follow_ki_slider = QSlider(Qt.Orientation.Horizontal)
-    app._follow_ki_slider.setRange(0, 50)
-    app._follow_ki_slider.setValue(1)
+    app._follow_ki_slider.setRange(0, 20)
+    app._follow_ki_slider.setValue(4)
     app._follow_ki_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
     ki_row.addWidget(app._follow_ki_slider, 1)
-    app._follow_ki_label = QLabel("0.1")
+    app._follow_ki_label = QLabel("0.4")
     app._follow_ki_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
-    app._follow_ki_label.setFixedWidth(30)
+    app._follow_ki_label.setFixedWidth(36)
     app._follow_ki_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     ki_row.addWidget(app._follow_ki_label)
     follow_layout.addLayout(ki_row)
@@ -508,34 +473,16 @@ def create_sidebar(app):
     kd_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
     kd_row.addWidget(kd_label)
     app._follow_kd_slider = QSlider(Qt.Orientation.Horizontal)
-    app._follow_kd_slider.setRange(1, 30)
-    app._follow_kd_slider.setValue(5)
+    app._follow_kd_slider.setRange(0, 300)
+    app._follow_kd_slider.setValue(100)
     app._follow_kd_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
     kd_row.addWidget(app._follow_kd_slider, 1)
-    app._follow_kd_label = QLabel("0.5")
+    app._follow_kd_label = QLabel("10.0")
     app._follow_kd_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
-    app._follow_kd_label.setFixedWidth(30)
+    app._follow_kd_label.setFixedWidth(36)
     app._follow_kd_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     kd_row.addWidget(app._follow_kd_label)
     follow_layout.addLayout(kd_row)
-
-    dist_kp_row = QHBoxLayout()
-    dist_kp_row.setSpacing(8)
-    dist_kp_label = QLabel("dist")
-    dist_kp_label.setFixedWidth(24)
-    dist_kp_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500;")
-    dist_kp_row.addWidget(dist_kp_label)
-    app._follow_dist_kp_slider = QSlider(Qt.Orientation.Horizontal)
-    app._follow_dist_kp_slider.setRange(1, 30)
-    app._follow_dist_kp_slider.setValue(10)
-    app._follow_dist_kp_slider.valueChanged.connect(lambda v: _on_follow_param_change(app))
-    dist_kp_row.addWidget(app._follow_dist_kp_slider, 1)
-    app._follow_dist_kp_label = QLabel("1.0")
-    app._follow_dist_kp_label.setStyleSheet("color: #7c3aed; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
-    app._follow_dist_kp_label.setFixedWidth(30)
-    app._follow_dist_kp_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    dist_kp_row.addWidget(app._follow_dist_kp_label)
-    follow_layout.addLayout(dist_kp_row)
 
     # Camera yaw offset
     cam_offset_row = QHBoxLayout()
@@ -682,6 +629,271 @@ def create_sidebar(app):
     return sidebar
 
 
+def _create_controls_group(app):
+    """Drive/camera controls (speed, brake, gimbal, snapshot, recording, detection).
+
+    Kept outside the sidebar's page stack so it stays visible regardless of
+    which page (sensors/settings/snapshots) is active.
+    """
+    group = QGroupBox("CONTROLS")
+    group.setStyleSheet("""
+        QGroupBox {
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 14px 10px 10px 10px;
+            margin-top: 6px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 12px;
+            padding: 0 6px;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+        }
+    """)
+    layout = QVBoxLayout()
+    layout.setContentsMargins(8, 6, 8, 6)
+    layout.setSpacing(8)
+
+    speed_row = QHBoxLayout()
+    speed_row.setSpacing(8)
+    speed_label = QLabel("SPEED")
+    speed_label.setFixedWidth(45)
+    speed_label.setStyleSheet("color: #64748b; font-size: 10px; letter-spacing: 1px;")
+    speed_row.addWidget(speed_label)
+    app._speed_slider = QSlider(Qt.Orientation.Horizontal)
+    app._speed_slider.setRange(180, 255)
+    app._speed_slider.setValue(app._current_speed)
+    app._speed_slider.valueChanged.connect(lambda v: _on_speed_change(app, v))
+    speed_row.addWidget(app._speed_slider, 1)
+    app._speed_label = QLabel(f"{app._current_speed}")
+    app._speed_label.setStyleSheet("color: #06b6d4; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;")
+    app._speed_label.setFixedWidth(28)
+    app._speed_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    speed_row.addWidget(app._speed_label)
+    layout.addLayout(speed_row)
+
+    brake_row = QHBoxLayout()
+    brake_row.setSpacing(8)
+    brake_label = QLabel("BRAKE")
+    brake_label.setFixedWidth(45)
+    brake_label.setStyleSheet("color: #64748b; font-size: 10px; letter-spacing: 1px;")
+    brake_row.addWidget(brake_label)
+    app._brake_toggle = QPushButton("ON")
+    app._brake_toggle.setCheckable(True)
+    app._brake_toggle.setChecked(True)
+    app._brake_toggle.setFixedWidth(50)
+    app._brake_toggle.setFixedHeight(24)
+    app._brake_toggle.setStyleSheet("""
+        QPushButton {
+            background-color: #10b981;
+            color: white;
+            font-weight: 600;
+            font-size: 10px;
+            border: none;
+            border-radius: 12px;
+        }
+        QPushButton:!checked {
+            background-color: #475569;
+        }
+    """)
+    app._brake_toggle.clicked.connect(lambda: _toggle_brake(app))
+    brake_row.addWidget(app._brake_toggle)
+    brake_row.addStretch()
+    layout.addLayout(brake_row)
+
+    gimbal_row = QHBoxLayout()
+    gimbal_row.setSpacing(6)
+    pan_label = QLabel("PAN")
+    pan_label.setStyleSheet("color: #475569; font-size: 8px; letter-spacing: 1px;")
+    gimbal_row.addWidget(pan_label)
+    app._gimbal_pan_label = QLabel(f"{app._gimbal_pan}°")
+    app._gimbal_pan_label.setStyleSheet("color: #e2e8f0; font-size: 10px; font-family: 'JetBrains Mono', monospace;")
+    gimbal_row.addWidget(app._gimbal_pan_label)
+    tilt_label = QLabel("TILT")
+    tilt_label.setStyleSheet("color: #475569; font-size: 8px; letter-spacing: 1px;")
+    gimbal_row.addWidget(tilt_label)
+    app._gimbal_tilt_label = QLabel(f"{app._gimbal_tilt}°")
+    app._gimbal_tilt_label.setStyleSheet("color: #e2e8f0; font-size: 10px; font-family: 'JetBrains Mono', monospace;")
+    gimbal_row.addWidget(app._gimbal_tilt_label)
+    gimbal_row.addStretch()
+    center_btn = QPushButton("C")
+    center_btn.setFixedSize(28, 28)
+    center_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #06b6d4;
+            font-weight: 700;
+            font-size: 10px;
+            border-radius: 14px;
+        }
+        QPushButton:hover {
+            background-color: #334155;
+        }
+    """)
+    center_btn.clicked.connect(app._center_gimbal)
+    gimbal_row.addWidget(center_btn)
+    layout.addLayout(gimbal_row)
+
+    app._mouse_gimbal_btn = QPushButton("MOUSE GIMBAL")
+    app._mouse_gimbal_btn.setFixedHeight(26)
+    app._mouse_gimbal_btn.setCheckable(True)
+    app._mouse_gimbal_btn.setChecked(True)
+    app._mouse_gimbal_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #06b6d4;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        QPushButton:checked {
+            background-color: #06b6d4;
+            color: #0a0e1a;
+        }
+    """)
+    app._mouse_gimbal_btn.clicked.connect(lambda: _toggle_mouse_gimbal(app))
+    layout.addWidget(app._mouse_gimbal_btn)
+
+    actions_row = QHBoxLayout()
+    actions_row.setSpacing(6)
+
+    snapshot_btn = QPushButton("SNAP")
+    snapshot_btn.setFixedHeight(28)
+    snapshot_btn.setStyleSheet("""
+        QPushButton {
+            background-color: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #3b82f6;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        QPushButton:hover {
+            background-color: rgba(59, 130, 246, 0.25);
+        }
+    """)
+    snapshot_btn.clicked.connect(app._take_snapshot)
+    actions_row.addWidget(snapshot_btn, 1)
+
+    app._rec_btn = QPushButton("REC")
+    app._rec_btn.setFixedHeight(28)
+    app._rec_btn.setCheckable(True)
+    app._rec_btn.setStyleSheet("""
+        QPushButton {
+            background-color: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        QPushButton:checked {
+            background-color: #ef4444;
+            color: white;
+        }
+        QPushButton:hover {
+            background-color: rgba(239, 68, 68, 0.25);
+        }
+    """)
+    app._rec_btn.clicked.connect(lambda: _toggle_recording(app))
+    actions_row.addWidget(app._rec_btn, 1)
+    layout.addLayout(actions_row)
+
+    app._super_res_check = QCheckBox("Super Resolution")
+    app._super_res_check.setStyleSheet("color: #64748b; font-size: 10px;")
+    layout.addWidget(app._super_res_check)
+
+    detect_row = QHBoxLayout()
+    detect_row.setSpacing(6)
+    app._detect_combo = QComboBox()
+    app._detect_combo.addItems(["HOG", "YOLO"])
+    app._detect_combo.setFixedHeight(26)
+    app._detect_combo.setStyleSheet("""
+        QComboBox {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            font-size: 10px;
+            padding: 2px 6px;
+        }
+        QComboBox::drop-down {
+            border: none;
+        }
+        QComboBox::down-arrow {
+            image: none;
+        }
+        QComboBox QAbstractItemView {
+            background-color: #1e293b;
+            color: #e2e8f0;
+            selection-background-color: #06b6d4;
+        }
+    """)
+    app._detect_combo.currentTextChanged.connect(lambda t: _on_detect_method_change(app, t))
+    detect_row.addWidget(app._detect_combo, 1)
+
+    app._hog_btn = QPushButton("DETECT")
+    app._hog_btn.setFixedHeight(28)
+    app._hog_btn.setCheckable(True)
+    app._hog_btn.setStyleSheet("""
+        QPushButton {
+            background-color: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #10b981;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        QPushButton:hover {
+            background-color: rgba(16, 185, 129, 0.25);
+        }
+        QPushButton:checked {
+            background-color: #10b981;
+            color: #0a0e1a;
+        }
+    """)
+    app._hog_btn.clicked.connect(app._toggle_hog_detection)
+    detect_row.addWidget(app._hog_btn, 1)
+    layout.addLayout(detect_row)
+
+    group.setLayout(layout)
+    return group
+
+
+def _on_speed_change(app, value):
+    app._global_speed = value
+    app._speed_label.setText(f"{value}")
+    app._send_command(f"speed:{value}")
+    if hasattr(app, '_speed_meter'):
+        app._speed_meter.set_speed(value)
+
+
+def _toggle_mouse_gimbal(app):
+    checked = app._mouse_gimbal_btn.isChecked()
+    if hasattr(app, '_video_canvas'):
+        app._video_canvas._mouse_gimbal_enabled = checked
+    app._add_log("GIMBAL", f"Mouse gimbal {'enabled' if checked else 'disabled'}")
+
+
+def _on_detect_method_change(app, method):
+    if hasattr(app, '_detection_method'):
+        app._detection_method = method
+        app._add_log("DETECT", f"Detection method: {method}")
+
+
+def _toggle_recording(app):
+    checked = app._rec_btn.isChecked()
+    if checked:
+        app._start_recording()
+    else:
+        app._stop_recording()
+
+
 def _toggle_snapshots(app):
     if app._sidebar_stack.currentIndex() == 2:
         app._sidebar_stack.setCurrentIndex(0)
@@ -720,11 +932,6 @@ def _on_led_change(app, value):
         app._esp32_api.set_led(value)
 
 
-def _on_quality_change(app, value):
-    app._quality_label.setText(str(value))
-    if hasattr(app, '_esp32_api'):
-        app._esp32_api.set_quality(value)
-
 
 def _toggle_pid(app):
     checked = app._pid_toggle.isChecked()
@@ -748,26 +955,20 @@ def _on_pid_change(app):
 
 
 def _on_follow_param_change(app):
-    k = app._follow_k_slider.value() / 10.0
-    kp = app._follow_kp_slider.value() / 10.0
-    ki = app._follow_ki_slider.value() / 10.0
-    kd = app._follow_kd_slider.value() / 10.0
-    dist_kp = app._follow_dist_kp_slider.value() / 10.0
+    kp_lin = app._follow_kp_slider.value() / 10.0
+    ki_lin = app._follow_ki_slider.value() / 10.0
+    kd_lin = app._follow_kd_slider.value() / 10.0
     cam_offset = app._follow_cam_offset_slider.value()
-    
-    app._follow_k_label.setText(f"{k:.1f}")
-    app._follow_kp_label.setText(f"{kp:.1f}")
-    app._follow_ki_label.setText(f"{ki:.1f}")
-    app._follow_kd_label.setText(f"{kd:.1f}")
-    app._follow_dist_kp_label.setText(f"{dist_kp:.1f}")
+
+    app._follow_kp_label.setText(f"{kp_lin:.1f}")
+    app._follow_ki_label.setText(f"{ki_lin:.1f}")
+    app._follow_kd_label.setText(f"{kd_lin:.1f}")
     app._follow_cam_offset_label.setText(f"{cam_offset:.0f}")
-    
+
     if hasattr(app, '_detection_mgr') and app._detection_mgr._follow_controller:
-        app._detection_mgr._follow_controller.config.k = k
-        app._detection_mgr._follow_controller.config.kp = kp
-        app._detection_mgr._follow_controller.config.ki = ki
-        app._detection_mgr._follow_controller.config.kd = kd
-        app._detection_mgr._follow_controller.config.dist_kp = dist_kp
+        app._detection_mgr._follow_controller.config.kp_lin = kp_lin
+        app._detection_mgr._follow_controller.config.ki_lin = ki_lin
+        app._detection_mgr._follow_controller.config.kd_lin = kd_lin
         app._detection_mgr._follow_controller.config.camera_yaw_offset = cam_offset
 
 

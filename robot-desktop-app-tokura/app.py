@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage
@@ -16,7 +17,7 @@ from views.main_view import create_main_view
 from views.diagnostics_view import create_diagnostics_view
 from views.snapshots_view import create_snapshots_view
 from views.sidebar import create_sidebar
-from views.bottom_controls import create_bottom_controls
+from views.key_legend import create_key_legend
 from views.log_panel import create_log_panel
 from connection_manager import ConnectionManager
 from video_manager import VideoManager
@@ -38,6 +39,8 @@ class RoverTeleopApp(QWidget):
         self._global_speed = self._current_speed
         self._gimbal_pan = 90
         self._gimbal_tilt = 90
+        self._display_frame_count = 0
+        self._display_fps_last_time = time.time()
         # カメラストリーム接続状態。follow modeトグル時点で既に接続済みなら
         # 新規生成されるGimbalThreadに即座にon_camera_connected()を伝える必要がある
         # (接続イベントはfollow mode開始より先に一度だけ発火するため、フラグで保持する)
@@ -104,7 +107,7 @@ class RoverTeleopApp(QWidget):
 
         main_layout.addLayout(content, 1)
 
-        main_layout.addWidget(create_bottom_controls(self))
+        main_layout.addWidget(create_key_legend(self))
         main_layout.addWidget(create_log_panel(self))
 
         self.setFocus()
@@ -122,6 +125,9 @@ class RoverTeleopApp(QWidget):
         # 一切追従しない（実機で「ジンバルが動かない」として発現したバグ）。
         self._conn_mgr.camera_connected.connect(self._on_camera_connected)
         self._conn_mgr.camera_disconnected.connect(self._on_camera_disconnected)
+        self._conn_mgr.video_stats.connect(self._on_video_stats)
+        self._conn_mgr.rover_connected.connect(self._on_rover_connected)
+        self._conn_mgr.rover_disconnected.connect(self._on_rover_disconnected)
 
     def start_connections(self):
         self._conn_mgr.start_all()
@@ -162,16 +168,36 @@ class RoverTeleopApp(QWidget):
     def _update_video_frame(self):
         frame = self._conn_mgr.take_frame()
         if frame:
-            if self._video_mgr.is_recording and isinstance(frame, QImage):
-                self._video_mgr.save_frame(frame)
-            if isinstance(frame, QImage):
-                self._video_canvas.update_frame_jpeg(frame)
+            if isinstance(frame, tuple):
+                image, frame_time = frame
+            else:
+                image, frame_time = frame, None
+
+            if isinstance(image, QImage):
+                if self._video_mgr.is_recording:
+                    self._video_mgr.save_frame(image)
+                self._video_canvas.update_frame_jpeg(image)
+
+                # FPS/latency measured at the point of actual display, not
+                # at decode/receive time, so they reflect what's on screen.
+                self._display_frame_count += 1
+                now = time.time()
+                elapsed = now - self._display_fps_last_time
+                if elapsed >= 1.0:
+                    fps = self._display_frame_count / elapsed
+                    if hasattr(self, '_fps_display'):
+                        self._fps_display.update_fps(fps)
+                    self._display_frame_count = 0
+                    self._display_fps_last_time = now
+                if frame_time is not None and hasattr(self, '_latency_display'):
+                    self._latency_display.update_latency((now - frame_time) * 1000)
+
                 if self._detection_mgr._follow_mode_active:
                     import cv2
                     import numpy as np
-                    ptr = frame.bits()
-                    ptr.setsize(frame.sizeInBytes())
-                    arr = np.array(ptr).reshape(frame.height(), frame.width(), 4)
+                    ptr = image.bits()
+                    ptr.setsize(image.sizeInBytes())
+                    arr = np.array(ptr).reshape(image.height(), image.width(), 4)
                     bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
                     self._detection_mgr.set_frame(bgr)
             elif isinstance(frame, bytes):
@@ -295,6 +321,32 @@ class RoverTeleopApp(QWidget):
         """Handle camera stream error."""
         self._add_log("CAMERA", f"Error: {error}")
 
+    def _on_rover_connected(self):
+        """Handle rover WebSocket connected."""
+        if hasattr(self, '_rover_status'):
+            self._rover_status.setText("ONLINE")
+            self._rover_status.setStyleSheet("""
+                color: #10b981;
+                font-size: 10px;
+                font-weight: 600;
+                letter-spacing: 1px;
+            """)
+
+    def _on_rover_disconnected(self):
+        """Handle rover WebSocket disconnected."""
+        if hasattr(self, '_rover_status'):
+            self._rover_status.setText("OFFLINE")
+            self._rover_status.setStyleSheet("""
+                color: #ef4444;
+                font-size: 10px;
+                font-weight: 600;
+                letter-spacing: 1px;
+            """)
+
+    def _on_video_stats(self, stats):
+        if hasattr(self, '_ping_display'):
+            self._ping_display.update_ping(stats.get("ping_ms", 0))
+
     def _on_gimbal_update(self, pan, tilt):
         """Update gimbal UI when manually controlled."""
         self._gimbal_pan = int(pan)
@@ -327,6 +379,8 @@ class RoverTeleopApp(QWidget):
             "WEB CONTROL: ON" if self._allow_remote_control else "WEB CONTROL: OFF"
         )
         self._remote_server.set_allowed(self._allow_remote_control)
+        if hasattr(self, '_web_control_banner'):
+            self._web_control_banner.setVisible(self._allow_remote_control)
         state = "enabled" if self._allow_remote_control else "disabled"
         self._add_log("REMOTE", f"Web control {state}")
         
@@ -347,6 +401,8 @@ class RoverTeleopApp(QWidget):
             self._web_control_btn.setChecked(False)
             self._web_control_btn.setText("WEB CONTROL: OFF")
             self._remote_server.set_allowed(False)
+            if hasattr(self, '_web_control_banner'):
+                self._web_control_banner.hide()
             self._add_log("REMOTE", "Local input reclaimed control")
         timestamp = datetime.now().strftime("%H:%M:%S")
         self._add_log("CMD", command)

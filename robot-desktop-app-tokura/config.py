@@ -1,5 +1,6 @@
 import os
 import json
+import socket
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 
@@ -15,6 +16,7 @@ DEFAULT_CONFIG = {
     "brake_threshold": 30,
     "hf_token": "",
     "remote_control_port": 8765,
+    "cam_quality": 14,
     "center_charts": {},
     "custom_charts": {},
     "custom_charts_normalize": {},
@@ -41,3 +43,15 @@ def save_config(config):
             json.dump(config, f, indent=2)
     except IOError as e:
         print(f"Failed to save config: {e}")
+
+
+def get_local_ip():
+    """Best-effort LAN IP of this machine, for the web remote-control address."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()

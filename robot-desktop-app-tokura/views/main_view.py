@@ -1,8 +1,9 @@
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIntValidator
 from PyQt6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+    QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 )
-from mjpeg_receiver import MJPEGReceiver
+from config import save_config
 
 
 def create_main_view(app):
@@ -25,10 +26,40 @@ def create_main_view(app):
     app._gimbal_hud.setParent(app._video_canvas)
     app._gimbal_hud.move(10, app._video_canvas.height() - 260)
 
+    from widgets.fps_display import FPSDisplay
+    app._fps_display = FPSDisplay()
+    app._fps_display.setParent(app._video_canvas)
+    app._fps_display.move(10, app._video_canvas.height() - 400)
+
+    from widgets.ping_display import PingDisplay
+    app._ping_display = PingDisplay()
+    app._ping_display.setParent(app._video_canvas)
+    app._ping_display.move(10, app._video_canvas.height() - 430)
+
+    from widgets.latency_display import LatencyDisplay
+    app._latency_display = LatencyDisplay()
+    app._latency_display.setParent(app._video_canvas)
+    app._latency_display.move(10, app._video_canvas.height() - 460)
+
     from widgets.speed_meter import SpeedMeter
     app._speed_meter = SpeedMeter()
     app._speed_meter.setParent(app._video_canvas)
     app._speed_meter.move(10, app._video_canvas.height() - 330)
+
+    app._web_control_banner = QLabel("WEB CONTROLLED")
+    app._web_control_banner.setParent(app._video_canvas)
+    app._web_control_banner.setStyleSheet("""
+        background-color: rgba(239, 68, 68, 0.9);
+        color: white;
+        font-weight: 700;
+        font-size: 11px;
+        letter-spacing: 2px;
+        padding: 5px 14px;
+        border-radius: 4px;
+    """)
+    app._web_control_banner.adjustSize()
+    app._web_control_banner.move((app._video_canvas.width() - app._web_control_banner.width()) // 2, 10)
+    app._web_control_banner.hide()
 
     resolution_widget = QWidget()
     resolution_widget.setFixedHeight(32)
@@ -46,6 +77,85 @@ def create_main_view(app):
     app._resolution_label = QLabel("640x480")
     app._resolution_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'JetBrains Mono', monospace; margin-left: 8px;")
     res_layout.addWidget(app._resolution_label)
+
+    flip_h_btn = QPushButton("FLIP H")
+    flip_h_btn.setCheckable(True)
+    flip_h_btn.setFixedHeight(22)
+    flip_h_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 8px;
+        }
+        QPushButton:checked {
+            background-color: #06b6d4;
+            color: #0a0e1a;
+        }
+    """)
+    flip_h_btn.clicked.connect(lambda: app._video_canvas.toggle_flip_h())
+    res_layout.addWidget(flip_h_btn)
+
+    flip_v_btn = QPushButton("FLIP V")
+    flip_v_btn.setCheckable(True)
+    flip_v_btn.setFixedHeight(22)
+    flip_v_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 8px;
+        }
+        QPushButton:checked {
+            background-color: #06b6d4;
+            color: #0a0e1a;
+        }
+    """)
+    flip_v_btn.clicked.connect(lambda: app._video_canvas.toggle_flip_v())
+    res_layout.addWidget(flip_v_btn)
+
+    quality_label = QLabel("Q")
+    quality_label.setStyleSheet("color: #64748b; font-size: 10px; letter-spacing: 1px; margin-left: 8px;")
+    res_layout.addWidget(quality_label)
+
+    initial_quality = app._config.get("cam_quality", 14)
+
+    app._quality_input = QLineEdit(str(initial_quality))
+    app._quality_input.setValidator(QIntValidator(0, 63))
+    app._quality_input.setFixedWidth(36)
+    app._quality_input.setStyleSheet("""
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 4px;
+        padding: 2px 4px;
+        color: #e2e8f0;
+        font-size: 11px;
+        font-family: 'JetBrains Mono', monospace;
+    """)
+    app._quality_input.returnPressed.connect(lambda: _on_quality_apply(app))
+    res_layout.addWidget(app._quality_input)
+
+    quality_apply_btn = QPushButton("SET")
+    quality_apply_btn.setFixedHeight(22)
+    quality_apply_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 8px;
+        }
+        QPushButton:hover {
+            background-color: #334155;
+        }
+    """)
+    quality_apply_btn.clicked.connect(lambda: _on_quality_apply(app))
+    res_layout.addWidget(quality_apply_btn)
 
     res_layout.addStretch()
     resolution_widget.setLayout(res_layout)
@@ -80,12 +190,18 @@ def _on_resolution_change(app, text):
 
 
 def _restart_camera_stream(app, resolution):
-    if app._video_receiver:
-        app._video_receiver.stop()
-    stream_url = f"http://{app._config['cam_ip']}/{resolution}.mjpeg"
-    app._video_receiver = MJPEGReceiver(stream_url)
-    app._video_receiver.connected.connect(lambda: app._on_camera_connected())
-    app._video_receiver.disconnected.connect(lambda: app._on_camera_disconnected())
-    app._video_receiver.error.connect(lambda e: app._on_camera_error(e))
-    app._video_receiver.stats_updated.connect(lambda s: app._on_video_stats(s))
-    app._video_receiver.start()
+    app._conn_mgr.reconnect_camera(resolution)
+
+
+def _on_quality_apply(app):
+    text = app._quality_input.text().strip()
+    if not text:
+        return
+    value = max(0, min(63, int(text)))
+    app._quality_input.setText(str(value))
+    app._config['cam_quality'] = value
+    save_config(app._config)
+    if hasattr(app, '_esp32_api'):
+        app._esp32_api.set_quality(value)
+    app._add_log("VIDEO", f"Quality set to {value}")
+    app.setFocus()

@@ -1,4 +1,6 @@
 import os
+import queue
+import threading
 from datetime import datetime, timezone, timedelta
 from PyQt6.QtCore import QBuffer, QIODevice
 from PyQt6.QtGui import QImage
@@ -6,76 +8,109 @@ from PyQt6.QtGui import QImage
 
 class VideoManager:
     """Manages video recording, snapshots, and super resolution."""
-    
+
     def __init__(self, cloud_api, log_callback):
         self._cloud_api = cloud_api
         self._log = log_callback
         self._recording = False
         self._rec_path = None
-        self._rec_writer = None
-        
+        # 録画の実処理(JPEG再エンコード -> cv2デコード -> VideoWriter.write)は
+        # 専用スレッドで行う。以前はsave_frame()がGUIスレッド(app._update_video_frame,
+        # 33ms周期)から直接この3段階を同期実行しており、録画中は毎フレーム
+        # GUIスレッドをブロックして映像・操作全体がラグる原因になっていた
+        # (esp32_mjpeg_detectorがネットワーク受信/デコード/推論を全て専用スレッドに
+        # 分離し、GUIスレッドを描画専任にしているのと同じ考え方に合わせる)。
+        self._rec_queue = queue.Queue(maxsize=4)
+        self._rec_thread = None
+        self._rec_thread_running = False
+
     def start_recording(self):
         """Start video recording."""
         os.makedirs("recordings", exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self._rec_path = f"recordings/rec_{timestamp}.mp4"
         self._recording = True
+        self._rec_thread_running = True
+        self._rec_thread = threading.Thread(target=self._recording_worker, daemon=True)
+        self._rec_thread.start()
         self._log("REC", f"Recording started: {self._rec_path}")
-        
+
     def stop_recording(self):
         """Stop video recording."""
         if not self._recording:
             return
-            
+
         self._recording = False
-        if self._rec_writer:
-            self._rec_writer.release()
-            self._rec_writer = None
-            
+        self._rec_thread_running = False
+        if self._rec_thread:
+            self._rec_queue.put(None)  # sentinel: unblock a queue.get() wait
+            self._rec_thread.join(timeout=5)
+            self._rec_thread = None
+
         if os.path.exists(self._rec_path):
             size = os.path.getsize(self._rec_path)
             self._log("REC", f"Recording saved: {self._rec_path} ({size} bytes)")
             self._upload_recording(self._rec_path)
         else:
             self._log("REC", f"Recording file not found: {self._rec_path}")
-            
+
     def save_frame(self, image):
-        """Save a frame to the recording."""
-        if not self._recording or not self._rec_path:
+        """Queue a frame for the background recording thread.
+
+        Non-blocking: if the encoder thread is behind, drop this frame
+        rather than stall the caller (which runs on the GUI thread)."""
+        if not self._recording:
             return
-            
         try:
-            import cv2
-            import numpy as np
-            
-            rec_dir = os.path.dirname(self._rec_path)
-            if rec_dir and not os.path.exists(rec_dir):
-                os.makedirs(rec_dir, exist_ok=True)
-                
-            buffer = QBuffer()
-            buffer.open(QIODevice.OpenModeFlag.ReadWrite)
-            image.save(buffer, "JPEG")
-            jpeg_data = buffer.data().data()
-            buffer.close()
-            
-            nparr = np.frombuffer(jpeg_data, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
-            if img is not None:
-                if not self._rec_writer:
-                    h, w = img.shape[:2]
-                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                    self._rec_writer = cv2.VideoWriter(
-                        self._rec_path, fourcc, 10.0, (w, h)
-                    )
-                    self._log("REC", f"VideoWriter: {w}x{h}")
-                self._rec_writer.write(img)
-            else:
-                self._log("REC", "Frame decode failed")
-        except ImportError as e:
-            self._log("REC", f"Import error: {e}")
-        except Exception as e:
-            self._log("REC", f"Save frame error: {e}")
+            self._rec_queue.put_nowait(image)
+        except queue.Full:
+            pass
+
+    def _recording_worker(self):
+        """Runs on its own thread: JPEG re-encode -> cv2 decode -> VideoWriter.write."""
+        import cv2
+        import numpy as np
+
+        rec_dir = os.path.dirname(self._rec_path)
+        if rec_dir and not os.path.exists(rec_dir):
+            os.makedirs(rec_dir, exist_ok=True)
+
+        writer = None
+        try:
+            while self._rec_thread_running or not self._rec_queue.empty():
+                try:
+                    image = self._rec_queue.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                if image is None:
+                    break
+
+                try:
+                    buffer = QBuffer()
+                    buffer.open(QIODevice.OpenModeFlag.ReadWrite)
+                    image.save(buffer, "JPEG")
+                    jpeg_data = buffer.data().data()
+                    buffer.close()
+
+                    nparr = np.frombuffer(jpeg_data, np.uint8)
+                    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+                    if img is not None:
+                        if writer is None:
+                            h, w = img.shape[:2]
+                            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                            writer = cv2.VideoWriter(
+                                self._rec_path, fourcc, 10.0, (w, h)
+                            )
+                            self._log("REC", f"VideoWriter: {w}x{h}")
+                        writer.write(img)
+                    else:
+                        self._log("REC", "Frame decode failed")
+                except Exception as e:
+                    self._log("REC", f"Save frame error: {e}")
+        finally:
+            if writer:
+                writer.release()
             
     def _upload_recording(self, filepath):
         """Upload recording to cloud."""

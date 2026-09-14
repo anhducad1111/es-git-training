@@ -1,7 +1,7 @@
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
+    QCheckBox, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QSlider, QStackedWidget, QVBoxLayout, QWidget
 )
 from widgets.sensor_card import SensorCard
@@ -308,15 +308,37 @@ def _create_controls_group(app):
     pan_label = QLabel("PAN")
     pan_label.setStyleSheet("color: #475569; font-size: 8px; letter-spacing: 1px;")
     gimbal_row.addWidget(pan_label)
-    app._gimbal_pan_label = QLabel(f"{app._gimbal_pan}°")
-    app._gimbal_pan_label.setStyleSheet("color: #e2e8f0; font-size: 10px; font-family: 'JetBrains Mono', monospace;")
-    gimbal_row.addWidget(app._gimbal_pan_label)
+    app._gimbal_pan_input = QLineEdit(str(app._gimbal_pan))
+    app._gimbal_pan_input.setFixedWidth(36)
+    app._gimbal_pan_input.setFixedHeight(22)
+    app._gimbal_pan_input.setStyleSheet("""
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 3px;
+        color: #e2e8f0;
+        font-size: 10px;
+        font-family: 'JetBrains Mono', monospace;
+        padding: 2px 4px;
+    """)
+    app._gimbal_pan_input.returnPressed.connect(lambda: _on_gimbal_input(app, 'pan'))
+    gimbal_row.addWidget(app._gimbal_pan_input)
     tilt_label = QLabel("TILT")
     tilt_label.setStyleSheet("color: #475569; font-size: 8px; letter-spacing: 1px;")
     gimbal_row.addWidget(tilt_label)
-    app._gimbal_tilt_label = QLabel(f"{app._gimbal_tilt}°")
-    app._gimbal_tilt_label.setStyleSheet("color: #e2e8f0; font-size: 10px; font-family: 'JetBrains Mono', monospace;")
-    gimbal_row.addWidget(app._gimbal_tilt_label)
+    app._gimbal_tilt_input = QLineEdit(str(app._gimbal_tilt))
+    app._gimbal_tilt_input.setFixedWidth(36)
+    app._gimbal_tilt_input.setFixedHeight(22)
+    app._gimbal_tilt_input.setStyleSheet("""
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 3px;
+        color: #e2e8f0;
+        font-size: 10px;
+        font-family: 'JetBrains Mono', monospace;
+        padding: 2px 4px;
+    """)
+    app._gimbal_tilt_input.returnPressed.connect(lambda: _on_gimbal_input(app, 'tilt'))
+    gimbal_row.addWidget(app._gimbal_tilt_input)
     gimbal_row.addStretch()
     center_btn = QPushButton("C")
     center_btn.setFixedSize(28, 28)
@@ -407,58 +429,6 @@ def _create_controls_group(app):
     app._super_res_check.setStyleSheet("color: #64748b; font-size: 10px;")
     layout.addWidget(app._super_res_check)
 
-    detect_row = QHBoxLayout()
-    detect_row.setSpacing(6)
-    app._detect_combo = QComboBox()
-    app._detect_combo.addItems(["HOG", "YOLO"])
-    app._detect_combo.setFixedHeight(26)
-    app._detect_combo.setStyleSheet("""
-        QComboBox {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            color: #e2e8f0;
-            font-size: 10px;
-            padding: 2px 6px;
-        }
-        QComboBox::drop-down {
-            border: none;
-        }
-        QComboBox::down-arrow {
-            image: none;
-        }
-        QComboBox QAbstractItemView {
-            background-color: #1e293b;
-            color: #e2e8f0;
-            selection-background-color: #06b6d4;
-        }
-    """)
-    app._detect_combo.currentTextChanged.connect(lambda t: _on_detect_method_change(app, t))
-    detect_row.addWidget(app._detect_combo, 1)
-
-    app._hog_btn = QPushButton("DETECT")
-    app._hog_btn.setFixedHeight(28)
-    app._hog_btn.setCheckable(True)
-    app._hog_btn.setStyleSheet("""
-        QPushButton {
-            background-color: rgba(16, 185, 129, 0.15);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            color: #10b981;
-            font-weight: 600;
-            font-size: 10px;
-            letter-spacing: 1px;
-        }
-        QPushButton:hover {
-            background-color: rgba(16, 185, 129, 0.25);
-        }
-        QPushButton:checked {
-            background-color: #10b981;
-            color: #0a0e1a;
-        }
-    """)
-    app._hog_btn.clicked.connect(app._toggle_hog_detection)
-    detect_row.addWidget(app._hog_btn, 1)
-    layout.addLayout(detect_row)
-
     group.setLayout(layout)
     return group
 
@@ -478,10 +448,23 @@ def _toggle_mouse_gimbal(app):
     app._add_log("GIMBAL", f"Mouse gimbal {'enabled' if checked else 'disabled'}")
 
 
-def _on_detect_method_change(app, method):
-    if hasattr(app, '_detection_method'):
-        app._detection_method = method
-        app._add_log("DETECT", f"Detection method: {method}")
+def _on_gimbal_input(app, axis):
+    if axis == 'pan':
+        text = app._gimbal_pan_input.text().strip()
+    else:
+        text = app._gimbal_tilt_input.text().strip()
+    try:
+        angle = max(0, min(180, int(text)))
+    except ValueError:
+        return
+    if axis == 'pan':
+        app._gimbal_pan = angle
+    else:
+        app._gimbal_tilt = angle
+    app._send_command(f"servo:{app._gimbal_pan},{app._gimbal_tilt}")
+    if hasattr(app, '_gimbal_hud'):
+        app._gimbal_hud.set_gimbal(app._gimbal_pan, app._gimbal_tilt)
+
 
 
 def _toggle_recording(app):

@@ -893,10 +893,17 @@ def _on_ota_upload_done(app, result):
         app._ota_upload_btn.setVisible(False)
         if hasattr(app, '_ota_file_path'):
             del app._ota_file_path
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(1000, lambda: _reset_ota_ui(app))
     else:
         msg = result.get("message", str(result)) if isinstance(result, dict) else str(result)
         app._add_log("OTA", f"Upload response: {msg}")
         QMessageBox.information(app, "Upload Result", str(msg))
+
+
+def _reset_ota_ui(app):
+    app._ota_upload_btn.setVisible(True)
+    app._ota_progress.setValue(0)
 
 
 def _on_ota_upload_error(app, error):

@@ -45,6 +45,7 @@ def create_main_view(app):
     app._speed_meter = SpeedMeter()
     app._speed_meter.setParent(app._video_canvas)
     app._speed_meter.move(10, app._video_canvas.height() - 330)
+    app._speed_meter.set_speed(app._current_speed)
 
     app._web_control_banner = QLabel("WEB CONTROLLED")
     app._web_control_banner.setParent(app._video_canvas)

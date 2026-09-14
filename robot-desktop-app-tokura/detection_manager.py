@@ -147,7 +147,7 @@ class DetectionManager(QObject):
         if yaw is not None and dist is not None:
             self._log("FOLLOW", f"[DIST] yaw={yaw:+.1f}° dist={dist:.2f}m conf={conf:.2f}")
         else:
-            self._log("FOLLOW", f"[DIST] 検出なし(yaw/dist欠測) conf={conf:.2f}")
+            self._log("FOLLOW", f"[DIST] No detection (yaw/dist missing) conf={conf:.2f}")
             
         self.follow_detected.emit(detection)
         
@@ -164,10 +164,10 @@ class DetectionManager(QObject):
         if self._app:
             self._app._gimbal_pan = int(pan)
             self._app._gimbal_tilt = int(tilt)
-            if hasattr(self._app, '_gimbal_pan_label'):
-                self._app._gimbal_pan_label.setText(f"{int(pan)}°")
-            if hasattr(self._app, '_gimbal_tilt_label'):
-                self._app._gimbal_tilt_label.setText(f"{int(tilt)}°")
+            if hasattr(self._app, '_gimbal_pan_input'):
+                self._app._gimbal_pan_input.setText(str(int(pan)))
+            if hasattr(self._app, '_gimbal_tilt_input'):
+                self._app._gimbal_tilt_input.setText(str(int(tilt)))
             if hasattr(self._app, '_gimbal_hud'):
                 self._app._gimbal_hud.set_gimbal(int(pan), int(tilt))
             self._app._send_command(f"servo:{int(pan)},{int(tilt)}")

@@ -20,6 +20,11 @@ class SpeedMeter(QWidget):
     def set_speed(self, speed):
         self._target_speed = max(0, min(self._max_speed, speed))
 
+    def reset_speed(self):
+        self._target_speed = 0
+        self._current_speed = 0
+        self.update()
+
     def _animate(self):
         self._current_speed += (self._target_speed - self._current_speed) * 0.25
         self.update()

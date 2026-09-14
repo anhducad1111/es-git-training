@@ -10,7 +10,7 @@ front(前)/rear(後)のキーポイントを自動検出し、1枚ずつ確認�
     pip install PyQt5 ultralytics opencv-python numpy
 
 ■ 実行方法
-    python annotate_data.py
+    python auto_annotate_app.py
 
 ■ 使い方
     1. 「モデルを開く」で学習済みの best.pt を選択
@@ -23,6 +23,14 @@ front(前)/rear(後)のキーポイントを自動検出し、1枚ずつ確認�
     6. 「前へ」「次へ」(A / D キーまたは ←→キー) で自由に行き来できます
        (保存済みの画像を開き直すと、前回保存したラベルが読み込まれます)
 
+■ 角度の光線幾何補正について(任意機能)
+    同じフォルダに ray_based_correction.py と、そこで作成した
+    camera_intrinsics.npz(レンズの内部パラメータ)がある場合、
+    自動的に「補正あり」の角度も画面上部に表示されます。
+    ファイル名に pan090_tilt085 のような記載があれば、tilt/pan欄に自動で
+    反映されます(なければ手動で入力してください)。
+    camera_intrinsics.npz が無い場合は「角度(素)」のみの表示になります。
+
 保存されるラベル形式 (YOLOv8-Pose, 正規化済み):
     class_id x_center y_center width height  front_x front_y front_v  rear_x rear_y rear_v
 """
@@ -31,28 +39,56 @@ import sys
 import os
 import glob
 import math
+import re
 
 import numpy as np
 
+# --- 重要 ---
+# Windows環境でPyTorch 2.9系以降を使う場合、PyQtを先にimportした後にtorch(ultralytics経由)を
+# importするとDLL初期化エラー(WinError 1114)が起きることが報告されています。
+# そのため、ultralytics(torch)は必ずPyQt5より先にimportしてください。
+# 参考: https://github.com/pytorch/pytorch/issues/166628
 try:
     from ultralytics import YOLO
 except ImportError:
     YOLO = None
 
+# 光線幾何によるパースペクティブ補正(同じフォルダの ray_based_correction.py)。
+# ファイルが無い/内部パラメータが未キャリブレーションでも、アプリ自体は
+# 補正なし(素の角度のみ)で動作するようにしています。
+try:
+    import raybasedcorrection as rbc
+except ImportError:
+    rbc = None
+
+# 角度推定MLP(学習済みモデルがあれば読み込む)
+try:
+    import torch as _torch
+    from train_angle_model import AngleMLP, build_features
+    _MLP_AVAILABLE = True
+except ImportError:
+    _MLP_AVAILABLE = False
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QGraphicsView, QGraphicsScene, QGraphicsEllipseItem,
-    QFileDialog, QMessageBox
+    QFileDialog, QMessageBox, QGraphicsSimpleTextItem, QGraphicsRectItem,
+    QDoubleSpinBox
 )
 from PyQt5.QtGui import QPixmap, QPen, QBrush, QColor, QFont, QPainter
 from PyQt5.QtCore import Qt, QRectF
+
+
+# ファイル名から pan/tilt を自動抽出するための正規表現
+# 例: capture_0011_d0.056_yaw+0.0_pan090_tilt085.jpg
+PAN_TILT_PATTERN = re.compile(r"pan([\-0-9.]+).*?tilt([\-0-9.]+)", re.IGNORECASE)
 
 
 POINT_RADIUS = 7
 FRONT_COLOR = QColor(0, 200, 0)
 REAR_COLOR = QColor(220, 0, 0)
 LINE_COLOR = QColor(255, 200, 0)
-CONF_THRESHOLD = 0.3
+CONF_THRESHOLD = 0.15
 INFER_IMGSZ = 960
 
 
@@ -90,7 +126,34 @@ class AnnotatorWindow(QMainWindow):
         self.front_item = None
         self.rear_item = None
         self.line_item = None
+        self.angle_text_item = None
+        self.angle_bg_item = None
         self.current_box = None  # (x1, y1, x2, y2) 画素座標
+
+        # 光線幾何補正用のカメラ内部パラメータ(あれば読み込む)
+        self.K = None
+        self.dist = None
+        if rbc is not None:
+            try:
+                self.K, self.dist = rbc.load_intrinsics()
+            except Exception:
+                self.K = None  # 未キャリブレーションでもアプリは動作させる(補正なしにフォールバック)
+
+        # 角度推定MLP(学習済みモデルがあれば読み込む)
+        self.angle_mlp = None
+        if _MLP_AVAILABLE:
+            mlp_path = os.path.join(os.path.dirname(__file__), "angle_mlp.pth")
+            if os.path.exists(mlp_path):
+                try:
+                    checkpoint = _torch.load(mlp_path, map_location="cpu", weights_only=True)
+                    self.angle_mlp = AngleMLP(
+                        input_dim=checkpoint["input_dim"],
+                        hidden_dim=checkpoint["hidden_dim"],
+                    )
+                    self.angle_mlp.load_state_dict(checkpoint["model_state_dict"])
+                    self.angle_mlp.eval()
+                except Exception:
+                    self.angle_mlp = None
 
         self._build_ui()
 
@@ -124,11 +187,40 @@ class AnnotatorWindow(QMainWindow):
         self.view.setDragMode(QGraphicsView.NoDrag)
         main_layout.addWidget(self.view, stretch=1)
 
+        # --- tilt/pan 入力バー(光線補正用) ---
+        tiltpan_bar = QHBoxLayout()
+        tiltpan_bar.addWidget(QLabel("tilt(サーボ値):"))
+        self.spin_tilt = QDoubleSpinBox()
+        self.spin_tilt.setRange(-360, 360)
+        self.spin_tilt.setValue(rbc.TILT_ZERO_OFFSET if rbc is not None else 0)
+        self.spin_tilt.valueChanged.connect(self.update_line_and_angle)
+        tiltpan_bar.addWidget(self.spin_tilt)
+
+        tiltpan_bar.addSpacing(20)
+        tiltpan_bar.addWidget(QLabel("pan(サーボ値):"))
+        self.spin_pan = QDoubleSpinBox()
+        self.spin_pan.setRange(-360, 360)
+        self.spin_pan.setValue(rbc.PAN_ZERO_OFFSET if rbc is not None else 0)
+        self.spin_pan.valueChanged.connect(self.update_line_and_angle)
+        tiltpan_bar.addWidget(self.spin_pan)
+
+        tiltpan_bar.addStretch()
+        if self.angle_mlp is not None:
+            correction_label = "補正: AI(MLP)"
+        elif self.K is not None:
+            correction_label = "補正: 光線幾何"
+        else:
+            correction_label = "補正: 簡易版"
+        self.lbl_correction_status = QLabel(correction_label)
+        tiltpan_bar.addWidget(self.lbl_correction_status)
+        main_layout.addLayout(tiltpan_bar)
+
         # --- 情報バー ---
         info_bar = QHBoxLayout()
         self.lbl_filename = QLabel("画像: -")
         self.lbl_progress = QLabel("0 / 0")
-        self.lbl_angle = QLabel("角度: -")
+        self.lbl_angle_raw = QLabel("角度(素): -")
+        self.lbl_angle = QLabel("角度(補正後): -")
         angle_font = QFont()
         angle_font.setPointSize(13)
         angle_font.setBold(True)
@@ -138,6 +230,8 @@ class AnnotatorWindow(QMainWindow):
         info_bar.addStretch()
         info_bar.addWidget(self.lbl_progress)
         info_bar.addStretch()
+        info_bar.addWidget(self.lbl_angle_raw)
+        info_bar.addSpacing(20)
         info_bar.addWidget(self.lbl_angle)
         main_layout.addLayout(info_bar)
 
@@ -229,6 +323,17 @@ class AnnotatorWindow(QMainWindow):
         self.lbl_filename.setText(f"画像: {os.path.basename(img_path)}")
         self.lbl_progress.setText(f"{index + 1} / {len(self.image_paths)}")
 
+        # ファイル名に pan090_tilt085 のような記載があれば自動で入力欄に反映する
+        match = PAN_TILT_PATTERN.search(os.path.basename(img_path))
+        if match:
+            pan_val, tilt_val = float(match.group(1)), float(match.group(2))
+            self.spin_pan.blockSignals(True)
+            self.spin_tilt.blockSignals(True)
+            self.spin_pan.setValue(pan_val)
+            self.spin_tilt.setValue(tilt_val)
+            self.spin_pan.blockSignals(False)
+            self.spin_tilt.blockSignals(False)
+
         w, h = pixmap.width(), pixmap.height()
 
         # 既存のラベルがあれば読み込み、なければ自動検出する
@@ -254,7 +359,7 @@ class AnnotatorWindow(QMainWindow):
 
     # ------------------------------------------------------------ 検出処理
     def _auto_detect(self, img_path, w, h):
-        """モデルで front/rear を検出。戻り値: (front_xy, rear_xy, box[x1,y1,x2,y2] or None)"""
+        """モデルで front/rear を検出。"""
         if self.model is None:
             return (w * 0.5, h * 0.4), (w * 0.5, h * 0.6), None
 
@@ -265,7 +370,7 @@ class AnnotatorWindow(QMainWindow):
             self.statusBar().showMessage("車が検出されませんでした。手動で点を配置してください。")
             return (w * 0.5, h * 0.4), (w * 0.5, h * 0.6), None
 
-        kpts_all = r.keypoints.xy.cpu().numpy()  # (num_cars, 2, 2)
+        kpts_all = r.keypoints.xy.cpu().numpy()
         confs = r.keypoints.conf.cpu().numpy() if r.keypoints.conf is not None else None
 
         best_idx = 0
@@ -322,10 +427,50 @@ class AnnotatorWindow(QMainWindow):
         self.line_item = self.scene.addLine(fx, fy, rx, ry, QPen(LINE_COLOR, 2))
         self.line_item.setZValue(5)
 
+        # 角度計算(素)
+        #座標系: 進行方向=0度、時計回りが正
         dx = fx - rx
         dy = -(fy - ry)  # 画像y軸は下向きのため反転
-        angle = math.degrees(math.atan2(dy, dx)) % 360
-        self.lbl_angle.setText(f"角度: {angle:.1f} 度")
+        angle_raw_raw = math.degrees(math.atan2(dy, dx))
+        # atan2: 右=0, 上=90, 左=180, 下=-180
+        # ユーザー座標系: 進行方向(上)=0, 時計回りが正
+        # 変換: user_angle = 90 - raw_angle
+        angle_raw = (90 - angle_raw_raw + 180) % 360 - 180
+        self.lbl_angle_raw.setText(f"角度(素): {angle_raw:+.1f} 度")
+
+        # 角度推定MLPによる補正(学習済みモデルがある場合)
+        if self.angle_mlp is not None and self.pixmap_item is not None:
+            try:
+                pixmap = self.pixmap_item.pixmap()
+                img_w, img_h = pixmap.width(), pixmap.height()
+                feat = build_features(fx, fy, rx, ry, img_w, img_h)
+                feat_tensor = _torch.tensor([feat], dtype=_torch.float32)
+                with _torch.no_grad():
+                    angle_mlp = self.angle_mlp(feat_tensor).item()
+                # MLPは直接yaw角度を予測(進行方向=0, 時計回りが正)
+                self.lbl_angle.setText(f"角度(AI補正): {angle_mlp:+.1f} 度")
+            except Exception as e:
+                self.lbl_angle.setText(f"角度(AI補正): 計算不可 ({e})")
+        # 光線幾何による補正(内部パラメータがキャリブレーション済みの場合のみ)
+        elif self.K is not None and rbc is not None:
+            try:
+                tilt_deg = rbc.servo_tilt_to_degrees(self.spin_tilt.value())
+                pan_deg = rbc.servo_pan_to_degrees(self.spin_pan.value())
+                angle_corrected = rbc.estimate_yaw_from_rays(
+                    (fx, fy), (rx, ry), self.K, tilt_deg, pan_deg
+                )
+                self.lbl_angle.setText(f"角度(補正後): {angle_corrected:.1f} 度")
+            except Exception as e:
+                self.lbl_angle.setText(f"角度(補正後): 計算不可 ({e})")
+        else:
+            # キャリブレーションなしの簡易補正:
+            tilt_servo = self.spin_tilt.value()
+            tilt_rad = math.radians(abs(tilt_servo - 90))
+            y_correction = 1.0 / max(math.cos(tilt_rad), 0.1)
+            dy_corrected = dy * y_correction
+            angle_corrected_raw = math.degrees(math.atan2(dy_corrected, dx))
+            angle_corrected = (90 - angle_corrected_raw + 180) % 360 - 180
+            self.lbl_angle.setText(f"角度(簡易補正): {angle_corrected:+.1f} 度")
 
     # ------------------------------------------------------------ 保存・読み込み
     def _label_path_for(self, img_path):

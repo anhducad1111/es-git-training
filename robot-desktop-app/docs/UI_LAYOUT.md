@@ -29,7 +29,6 @@ Cyberpunk dark theme with modular panels.
 - Brake toggle
 - Gimbal controls (C, MOUSE buttons)
 - Snapshot button
-- Super-Res checkbox
 - Detection dropdown (HOG/YOLO)
 - Detect button
 

@@ -12,6 +12,7 @@ DEFAULT_CONFIG = {
     "detection_enabled": False,
     "detection_interval": 3,
     "detection_confidence": 0.5,
+    "frame_skip": 1,
 }
 
 

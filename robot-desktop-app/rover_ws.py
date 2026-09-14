@@ -10,6 +10,7 @@ class RoverWebSocket(QThread):
     connected = pyqtSignal()
     disconnected = pyqtSignal()
     message_received = pyqtSignal(dict)
+    imu_yaw_rate = pyqtSignal(float)  # deg/s, broadcast by esp32_car at ~20Hz
     error = pyqtSignal(str)
 
     # Commands older than this were queued during a stall/disconnect and no
@@ -75,6 +76,10 @@ class RoverWebSocket(QThread):
         try:
             data = json.loads(message)
             self.message_received.emit(data)
+            if data.get("type") == "imu":
+                yaw_rate = data.get("yaw_rate")
+                if isinstance(yaw_rate, (int, float)):
+                    self.imu_yaw_rate.emit(float(yaw_rate))
         except json.JSONDecodeError:
             pass
 

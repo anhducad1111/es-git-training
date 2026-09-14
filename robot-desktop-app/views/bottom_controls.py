@@ -221,10 +221,6 @@ def create_bottom_controls(app):
     snapshot_btn.clicked.connect(app._take_snapshot)
     layout.addWidget(snapshot_btn)
 
-    app._super_res_check = QCheckBox("SR")
-    app._super_res_check.setStyleSheet("color: #64748b; font-size: 9px;")
-    layout.addWidget(app._super_res_check)
-
     app._rec_btn = QPushButton("REC")
     app._rec_btn.setFixedHeight(28)
     app._rec_btn.setCheckable(True)
@@ -321,6 +317,12 @@ def _toggle_brake(app):
     app._brake_toggle.setText("ON" if checked else "OFF")
     if hasattr(app, '_esp32_api'):
         app._esp32_api.set_brake(checked)
+    if checked:
+        if hasattr(app, '_distance_timer') and not app._distance_timer.isActive():
+            app._distance_timer.start(500)
+    else:
+        if hasattr(app, '_distance_timer') and app._distance_timer.isActive():
+            app._distance_timer.stop()
     app._add_log("SAFETY", f"Auto-brake {'enabled' if checked else 'disabled'}")
 
 

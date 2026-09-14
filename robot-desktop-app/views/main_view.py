@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+    QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 )
 from mjpeg_receiver import MJPEGReceiver
 
@@ -25,6 +25,11 @@ def create_main_view(app):
     app._gimbal_hud.setParent(app._video_canvas)
     app._gimbal_hud.move(10, app._video_canvas.height() - 260)
 
+    from widgets.fps_display import FPSDisplay
+    app._fps_display = FPSDisplay()
+    app._fps_display.setParent(app._video_canvas)
+    app._fps_display.move(10, app._video_canvas.height() - 400)
+
     from widgets.speed_meter import SpeedMeter
     app._speed_meter = SpeedMeter()
     app._speed_meter.setParent(app._video_canvas)
@@ -46,6 +51,46 @@ def create_main_view(app):
     app._resolution_label = QLabel("640x480")
     app._resolution_label.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'JetBrains Mono', monospace; margin-left: 8px;")
     res_layout.addWidget(app._resolution_label)
+
+    flip_h_btn = QPushButton("FLIP H")
+    flip_h_btn.setCheckable(True)
+    flip_h_btn.setFixedHeight(22)
+    flip_h_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 8px;
+        }
+        QPushButton:checked {
+            background-color: #06b6d4;
+            color: #0a0e1a;
+        }
+    """)
+    flip_h_btn.clicked.connect(lambda: app._video_canvas.toggle_flip_h())
+    res_layout.addWidget(flip_h_btn)
+
+    flip_v_btn = QPushButton("FLIP V")
+    flip_v_btn.setCheckable(True)
+    flip_v_btn.setFixedHeight(22)
+    flip_v_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 8px;
+        }
+        QPushButton:checked {
+            background-color: #06b6d4;
+            color: #0a0e1a;
+        }
+    """)
+    flip_v_btn.clicked.connect(lambda: app._video_canvas.toggle_flip_v())
+    res_layout.addWidget(flip_v_btn)
 
     res_layout.addStretch()
     resolution_widget.setLayout(res_layout)
@@ -80,12 +125,12 @@ def _on_resolution_change(app, text):
 
 
 def _restart_camera_stream(app, resolution):
-    if app._video_receiver:
-        app._video_receiver.stop()
+    if app._conn_mgr._video_receiver:
+        app._conn_mgr._video_receiver.stop()
     stream_url = f"http://{app._config['cam_ip']}/{resolution}.mjpeg"
-    app._video_receiver = MJPEGReceiver(stream_url)
-    app._video_receiver.connected.connect(lambda: app._on_camera_connected())
-    app._video_receiver.disconnected.connect(lambda: app._on_camera_disconnected())
-    app._video_receiver.error.connect(lambda e: app._on_camera_error(e))
-    app._video_receiver.stats_updated.connect(lambda s: app._on_video_stats(s))
-    app._video_receiver.start()
+    app._conn_mgr._video_receiver = MJPEGReceiver(stream_url)
+    app._conn_mgr._video_receiver.connected.connect(lambda: app._on_camera_connected())
+    app._conn_mgr._video_receiver.disconnected.connect(lambda: app._on_camera_disconnected())
+    app._conn_mgr._video_receiver.error.connect(lambda e: app._on_camera_error(e))
+    app._conn_mgr._video_receiver.stats_updated.connect(lambda s: app._on_video_stats(s))
+    app._conn_mgr._video_receiver.start()

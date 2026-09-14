@@ -4,13 +4,17 @@ from PyQt6.QtCore import Qt, QTimer, QObject
 class InputHandler(QObject):
     """Handles keyboard input and gimbal control."""
     
-    def __init__(self, send_command_callback, log_callback, on_emergency_stop=None, on_chassis_follow_toggle=None, on_gimbal_update=None):
+    def __init__(self, send_command_callback, log_callback, on_emergency_stop=None, on_chassis_follow_toggle=None, on_gimbal_update=None, on_heading_follow_toggle=None, on_rho_alpha_beta_toggle=None, on_repositioning_toggle=None, on_ai_tracker_v2_toggle=None):
         super().__init__()
         self._send_command = send_command_callback
         self._log = log_callback
         self._on_emergency_stop = on_emergency_stop
         self._on_chassis_follow_toggle = on_chassis_follow_toggle
         self._on_gimbal_update = on_gimbal_update
+        self._on_heading_follow_toggle = on_heading_follow_toggle
+        self._on_rho_alpha_beta_toggle = on_rho_alpha_beta_toggle
+        self._on_repositioning_toggle = on_repositioning_toggle
+        self._on_ai_tracker_v2_toggle = on_ai_tracker_v2_toggle
         
         self._gimbal_pan = 90
         self._gimbal_tilt = 90
@@ -47,18 +51,23 @@ class InputHandler(QObject):
         elif key == Qt.Key.Key_V:
             if self._on_chassis_follow_toggle:
                 self._on_chassis_follow_toggle()
-        elif key == Qt.Key.Key_I:
-            self._gimbal_tilt = min(180, self._gimbal_tilt + 5)
-            self._update_gimbal()
-        elif key == Qt.Key.Key_K:
-            self._gimbal_tilt = max(0, self._gimbal_tilt - 5)
-            self._update_gimbal()
-        elif key == Qt.Key.Key_J:
-            self._gimbal_pan = max(0, self._gimbal_pan - 5)
-            self._update_gimbal()
+        elif key == Qt.Key.Key_B:
+            if self._on_heading_follow_toggle:
+                self._on_heading_follow_toggle()
+        elif key == Qt.Key.Key_N:
+            if self._on_rho_alpha_beta_toggle:
+                self._on_rho_alpha_beta_toggle()
+        elif key == Qt.Key.Key_M:
+            if self._on_repositioning_toggle:
+                self._on_repositioning_toggle()
         elif key == Qt.Key.Key_L:
-            self._gimbal_pan = min(180, self._gimbal_pan + 5)
-            self._update_gimbal()
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                # Ctrl+L: nothing (use L alone)
+                pass
+            else:
+                # L alone: toggle AI Tracker V2
+                if self._on_ai_tracker_v2_toggle:
+                    self._on_ai_tracker_v2_toggle()
         elif key == Qt.Key.Key_C:
             self.center_gimbal()
         elif key == Qt.Key.Key_Shift:

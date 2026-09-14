@@ -67,6 +67,8 @@ class DetectionManager(QObject):
                 self._follow_detector.stop()
             if self._follow_controller:
                 self._follow_controller.stop()
+            if self._app and hasattr(self._app, '_speed_meter'):
+                self._app._speed_meter.reset()
             self._follow_detections = []
             self._log("FOLLOW", "Follow mode stopped")
             # Update button state
@@ -85,8 +87,6 @@ class DetectionManager(QObject):
             self._follow_detector = FollowDetector(confidence=0.35)
             self._follow_detector.detected.connect(self._on_follow_detected)
             self._follow_detector.error.connect(lambda e: self._log("FOLLOW", f"Error: {e}"))
-            self._follow_detector.start_detection()
-            self._follow_detector.start()
             
             config = FollowConfig()
             if self._app and hasattr(self._app, '_follow_k_slider'):
@@ -96,15 +96,28 @@ class DetectionManager(QObject):
                 config.kd = self._app._follow_kd_slider.value() / 10.0
                 config.dist_kp = self._app._follow_dist_kp_slider.value() / 10.0
             
+            def _follow_set_speed(spd):
+                if self._app:
+                    self._app._send_command(f"speed:{spd}")
+                    if hasattr(self._app, '_speed_meter'):
+                        self._app._speed_meter.set_speed(spd)
+
             self._follow_controller = FollowController(
                 config=config,
                 dry_run=False,
                 log_callback=self._log,
                 send_command=lambda cmd: self._app._send_command(cmd) if self._app else self._log("CMD", cmd),
-                set_speed=lambda spd: self._app._send_command(f"speed:{spd}") if self._app else self._log("SPEED", str(spd)),
+                set_speed=_follow_set_speed,
                 set_gimbal=lambda pan, tilt: self._set_gimbal_with_ui(pan, tilt)
             )
             self._follow_controller.start()
+            
+            gimbal_thread = self._follow_controller._gimbal_thread
+            if gimbal_thread:
+                self._follow_detector.set_gimbal_thread(gimbal_thread)
+                gimbal_thread.on_camera_connected()
+            self._follow_detector.start_detection()
+            self._follow_detector.start()
             
             self._log("FOLLOW", f"Follow mode started | k={config.k:.1f} kp={config.kp:.1f} ki={config.ki:.1f} kd={config.kd:.1f}")
             # Update button state
@@ -150,6 +163,9 @@ class DetectionManager(QObject):
         if self._app:
             self._app._gimbal_pan = int(pan)
             self._app._gimbal_tilt = int(tilt)
+            if hasattr(self._app, '_input_handler'):
+                self._app._input_handler._gimbal_pan = int(pan)
+                self._app._input_handler._gimbal_tilt = int(tilt)
             if hasattr(self._app, '_gimbal_pan_label'):
                 self._app._gimbal_pan_label.setText(f"{int(pan)}°")
             if hasattr(self._app, '_gimbal_tilt_label'):

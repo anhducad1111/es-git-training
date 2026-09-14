@@ -37,7 +37,6 @@ python main.py
 - `mjpeg_receiver.py` - Video stream receiver
 - `hog_detector.py` - HOG person detection
 - `yolo_detector.py` - YOLOv8 object detection
-- `super_resolution.py` - Image super resolution
 - `image_processor.py` - Image processing filters
 - `views/` - UI panels
 - `widgets/` - Custom widgets

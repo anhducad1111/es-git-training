@@ -119,11 +119,6 @@ T:28.5°C  H:47.0%  G:150PPM  14:30:25
 snapshot_20260908_162504.png
 ```
 
-## Super Resolution
-Optional bicubic interpolation for higher resolution output.
-- Toggle via "Super-Res" checkbox
-- Output saved as `high_snapshot_*.png`
-
 ## Gallery Layout
 ```
 ┌─────────────────────────────────────────┐

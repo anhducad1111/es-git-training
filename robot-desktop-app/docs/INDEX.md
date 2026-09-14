@@ -44,7 +44,6 @@ robot-desktop-app/
 ├── mjpeg_receiver.py    # Video stream
 ├── hog_detector.py      # HOG detection
 ├── yolo_detector.py     # YOLOv8 detection
-├── super_resolution.py  # Image upscale
 ├── image_processor.py   # Image processing filters
 ├── views/               # UI panels
 │   ├── snapshots_view.py    # Paginated gallery

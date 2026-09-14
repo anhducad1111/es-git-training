@@ -12,6 +12,8 @@ class ConnectionManager(QObject):
     rover_disconnected = pyqtSignal()
     camera_connected = pyqtSignal()
     camera_disconnected = pyqtSignal()
+    video_stats = pyqtSignal(dict)
+    imu_yaw_rate = pyqtSignal(float)
     
     def __init__(self, config, log_callback):
         super().__init__()
@@ -27,7 +29,6 @@ class ConnectionManager(QObject):
         """Start all connections."""
         self._start_rover_ws()
         self._start_camera()
-        self._start_telemetry()
         self._esp32_api = ESP32API(self._config['car_ip'], self._config['cam_ip'])
         
     def stop_all(self):
@@ -46,18 +47,20 @@ class ConnectionManager(QObject):
         """Start WebSocket connection to rover."""
         ws_url = f"ws://{self._config['car_ip']}:81/"
         self._rover_ws = RoverWebSocket(ws_url)
-        self._rover_ws.connected.connect(lambda: self._log("ROVER", f"WebSocket connected - {ws_url}"))
-        self._rover_ws.disconnected.connect(lambda: self._log("ROVER", "WebSocket disconnected"))
+        self._rover_ws.connected.connect(lambda: (self._log("ROVER", f"WebSocket connected - {ws_url}"), self.rover_connected.emit()))
+        self._rover_ws.disconnected.connect(lambda: (self._log("ROVER", "WebSocket disconnected"), self.rover_disconnected.emit()))
         self._rover_ws.error.connect(lambda e: self._log("ROVER", f"Error: {e}"))
+        self._rover_ws.imu_yaw_rate.connect(self.imu_yaw_rate.emit)
         self._rover_ws.start()
         
     def _start_camera(self):
         """Start MJPEG camera connection."""
         cam_url = f"http://{self._config['cam_ip']}/640x480.mjpeg"
         self._video_receiver = MJPEGReceiver(cam_url)
-        self._video_receiver.connected.connect(lambda: self._log("CAMERA", f"Stream connected - {cam_url}"))
-        self._video_receiver.disconnected.connect(lambda: self._log("CAMERA", "Stream disconnected"))
+        self._video_receiver.connected.connect(lambda: (self._log("CAMERA", f"Stream connected - {cam_url}"), self.camera_connected.emit()))
+        self._video_receiver.disconnected.connect(lambda: (self._log("CAMERA", "Stream disconnected"), self.camera_disconnected.emit()))
         self._video_receiver.error.connect(lambda e: self._log("CAMERA", f"Error: {e}"))
+        self._video_receiver.stats_updated.connect(lambda s: self.video_stats.emit(s))
         self._video_receiver.start()
         
     def _start_telemetry(self):
@@ -100,3 +103,14 @@ class ConnectionManager(QObject):
     @property
     def telemetry_poller(self):
         return self._telemetry_poller
+
+    def start_telemetry(self):
+        """Start telemetry polling (call when diagnostics view is shown)."""
+        if self._telemetry_poller is None:
+            self._start_telemetry()
+
+    def stop_telemetry(self):
+        """Stop telemetry polling (call when diagnostics view is hidden)."""
+        if self._telemetry_poller:
+            self._telemetry_poller.stop()
+            self._telemetry_poller = None

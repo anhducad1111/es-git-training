@@ -10,6 +10,8 @@ class SpeedMeter(QWidget):
         self._current_speed = 0
         self._target_speed = 0
         self._max_speed = 255
+        self._set_speed = 0
+        self._obstacle_blocked = False
         self.setFixedSize(120, 70)
         self.setStyleSheet("background: transparent;")
 
@@ -18,7 +20,22 @@ class SpeedMeter(QWidget):
         self._timer.start(30)
 
     def set_speed(self, speed):
-        self._target_speed = max(0, min(self._max_speed, speed))
+        self._set_speed = max(0, min(self._max_speed, speed))
+        self._update_actual_speed()
+        
+    def set_obstacle_blocked(self, blocked):
+        self._obstacle_blocked = blocked
+        self._update_actual_speed()
+        
+    def _update_actual_speed(self):
+        if self._obstacle_blocked:
+            self._target_speed = 0
+        else:
+            self._target_speed = self._set_speed
+        
+    def reset(self):
+        self._set_speed = 0
+        self._target_speed = 0
 
     def _animate(self):
         self._current_speed += (self._target_speed - self._current_speed) * 0.25
@@ -39,6 +56,7 @@ class SpeedMeter(QWidget):
         green = QColor(16, 185, 129)
         yellow = QColor(245, 158, 11)
         red = QColor(239, 68, 68)
+        orange = QColor(249, 115, 22)
 
         header_y = 5
         painter.setPen(QPen(dim_pink, 1))
@@ -48,8 +66,13 @@ class SpeedMeter(QWidget):
         painter.setFont(QFont("JetBrains Mono", 6))
         painter.setPen(QPen(pink, 1))
         painter.drawText(10, header_y + 12, "SPD")
-        painter.setPen(QPen(dim_white, 1))
-        painter.drawText(w - 40, header_y + 12, "MOTOR")
+        
+        if self._obstacle_blocked:
+            painter.setPen(QPen(orange, 1))
+            painter.drawText(w - 50, header_y + 12, "BLOCKED")
+        else:
+            painter.setPen(QPen(dim_white, 1))
+            painter.drawText(w - 40, header_y + 12, "MOTOR")
 
         painter.setPen(QPen(pink, 1))
         painter.drawText(cx - 12, header_y + 12, f"{int(self._current_speed)}")
@@ -62,26 +85,28 @@ class SpeedMeter(QWidget):
         painter.drawEllipse(QPointF(cx, gauge_cy), r, r)
 
         painter.setPen(QPen(QColor(59, 130, 246, 80), 1, Qt.PenStyle.DashLine))
-        painter.drawLine(cx - 18, gauge_cy, cx + 18, gauge_cy)
+        painter.drawLine(cx, gauge_cy - r + 5, cx, gauge_cy - 5)
 
         for deg in range(0, 181, 30):
-            rad = math.pi * (1 - deg / 180)
+            rad = math.pi * deg / 180
             x1 = cx + math.cos(rad) * (r - 2)
-            y1 = gauge_cy + math.sin(rad) * (r - 2)
+            y1 = gauge_cy - math.sin(rad) * (r - 2)
             x2 = cx + math.cos(rad) * (r - 5)
-            y2 = gauge_cy + math.sin(rad) * (r - 5)
+            y2 = gauge_cy - math.sin(rad) * (r - 5)
             is_major = deg % 90 == 0
             painter.setPen(QPen(pink if is_major else dim_white, 1))
             painter.drawLine(int(x1), int(y1), int(x2), int(y2))
 
         speed_frac = self._current_speed / self._max_speed
-        needle_angle = math.pi * (1 - speed_frac)
+        needle_angle = math.pi * speed_frac
         arrow_len = r - 6
         tip_x = cx + arrow_len * math.cos(needle_angle)
-        tip_y = gauge_cy + arrow_len * math.sin(needle_angle)
+        tip_y = gauge_cy - arrow_len * math.sin(needle_angle)
 
         speed_pct = (self._current_speed / self._max_speed) * 100
-        if speed_pct > 80:
+        if self._obstacle_blocked:
+            needle_color = orange
+        elif speed_pct > 80:
             needle_color = red
         elif speed_pct > 50:
             needle_color = yellow
@@ -99,7 +124,7 @@ class SpeedMeter(QWidget):
 
         painter.setFont(QFont("JetBrains Mono", 5))
         painter.setPen(QPen(dim_white, 1))
-        painter.drawText(cx - 3, gauge_cy + r + 8, "0")
-        painter.drawText(cx - 8, gauge_cy - r - 2, "255")
+        painter.drawText(cx + r + 2, gauge_cy + 4, "0")
+        painter.drawText(cx - r - 16, gauge_cy + 4, "255")
 
         painter.end()

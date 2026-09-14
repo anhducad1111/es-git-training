@@ -35,7 +35,10 @@ class RemoteControlServer(QThread):
         self._running = True
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
-        self._loop.run_until_complete(self._serve())
+        try:
+            self._loop.run_until_complete(self._serve())
+        except RuntimeError:
+            pass
 
     async def _serve(self):
         self._server = await serve(
@@ -115,6 +118,10 @@ class RemoteControlServer(QThread):
                 self._loop,
             )
 
+    @property
+    def is_running(self):
+        return self._running
+
     def set_rover_connected(self, connected):
         self._rover_connected = connected
         if self._loop and self._loop.is_running():
@@ -128,6 +135,8 @@ class RemoteControlServer(QThread):
             )
 
     def stop(self):
+        if not self._running:
+            return
         self._running = False
         if self._server:
             self._server.close()

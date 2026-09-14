@@ -294,48 +294,6 @@ def create_sidebar(app):
     cam_group.setLayout(cam_layout)
     settings_layout.addWidget(cam_group)
 
-    hf_group = QGroupBox("HF TOKEN")
-    hf_group.setStyleSheet("""
-        QGroupBox {
-            background-color: #0f172a;
-            border: 1px solid #1e293b;
-            border-radius: 8px;
-            padding: 14px 10px 10px 10px;
-            margin-top: 14px;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 12px;
-            padding: 0 6px;
-            color: #94a3b8;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 1.5px;
-        }
-    """)
-    hf_layout = QVBoxLayout()
-    hf_layout.setContentsMargins(8, 6, 8, 6)
-    hf_layout.setSpacing(4)
-
-    from PyQt6.QtWidgets import QLineEdit
-    app._hf_token_input = QLineEdit()
-    app._hf_token_input.setPlaceholderText("Enter HF token...")
-    app._hf_token_input.setEchoMode(QLineEdit.EchoMode.Password)
-    app._hf_token_input.setText(app._config.get("hf_token", ""))
-    app._hf_token_input.setStyleSheet("""
-        background-color: #1e293b;
-        border: 1px solid #334155;
-        color: #e2e8f0;
-        font-size: 11px;
-        padding: 6px 10px;
-        border-radius: 4px;
-    """)
-    app._hf_token_input.returnPressed.connect(lambda: _save_hf_token(app))
-    hf_layout.addWidget(app._hf_token_input)
-
-    hf_group.setLayout(hf_layout)
-    settings_layout.addWidget(hf_group)
-
     cloud_group = QGroupBox("CLOUD")
     cloud_group.setStyleSheet("""
         QGroupBox {
@@ -680,19 +638,17 @@ def _toggle_settings(app, btn):
         app._sidebar_stack.setCurrentIndex(0)
 
 
-def _save_hf_token(app):
-    from config import save_config
-    token = app._hf_token_input.text().strip()
-    app._config["hf_token"] = token
-    save_config(app._config)
-    app._add_log("CONFIG", f"HF token saved ({len(token)} chars)")
-
-
 def _toggle_brake(app):
     checked = app._brake_toggle.isChecked()
     app._brake_toggle.setText("ON" if checked else "OFF")
     if hasattr(app, '_esp32_api'):
         app._esp32_api.set_brake(checked)
+    if checked:
+        if hasattr(app, '_distance_timer') and not app._distance_timer.isActive():
+            app._distance_timer.start(500)
+    else:
+        if hasattr(app, '_distance_timer') and app._distance_timer.isActive():
+            app._distance_timer.stop()
     app._add_log("SAFETY", f"Auto-brake {'enabled' if checked else 'disabled'}")
 
 

@@ -6,37 +6,48 @@ import cv2
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 
-# Add app2 to path for importing RcCarPoseDetector
 sys.path.insert(0, str(Path(__file__).parent))
-from app2.detectors import RcCarPoseDetector
+from rccar_pose_inference import PoseInference, DetectionResult
 
 
 class FollowDetector(QThread):
     """YOLOv8-pose based car detection for follow mode.
     
-    Uses RcCarPoseDetector from app2 to detect 3 keypoints (L wheel, R wheel, front)
-    and compute yaw angle and distance to the target car.
+    Uses PoseInference module (Kalman-filtered, ArUco-fused, gimbal-compensated)
+    to detect 3 keypoints (L wheel, R wheel, front) and compute yaw angle
+    and distance to the target car.
     """
     
-    detected = pyqtSignal(dict)  # {yaw_deg, dist_m, confidence, bbox, keypoints}
+    detected = pyqtSignal(dict)
     error = pyqtSignal(str)
     
-    def __init__(self, confidence: float = 0.35):
+    def __init__(self, confidence: float = 0.35, gimbal_thread=None):
         super().__init__()
         self._running = False
         self._frame = None
         self._frame_lock = False
         self._detector = None
         self._confidence = confidence
+        self._gimbal_thread = gimbal_thread
         
     def start_detection(self):
-        """Initialize the YOLO model."""
+        """Initialize the pose inference module."""
         try:
-            self._detector = RcCarPoseDetector(confidence=self._confidence)
-            self._add_log("FOLLOW", "YOLOv8-pose model loaded")
+            model_dir = Path(__file__).parent / "rccar_pose_inference" / "rccar_pose_model"
+            weights_path = Path(__file__).parent / "follow-mode" / "weight" / "best.pt"
+            gimbal_provider = self._gimbal_thread.get_pan_tilt_state if self._gimbal_thread else None
+            self._detector = PoseInference(
+                model_dir=model_dir, weights_path=weights_path,
+                confidence=self._confidence, gimbal_provider=gimbal_provider,
+            )
+            self._add_log("FOLLOW", "Pose inference module loaded")
         except Exception as e:
             self._add_log("FOLLOW", f"Failed to load model: {e}")
             self.error.emit(str(e))
+            
+    def set_gimbal_thread(self, gimbal_thread):
+        """Set the gimbal thread reference (call before start_detection)."""
+        self._gimbal_thread = gimbal_thread
             
     def set_frame(self, frame: np.ndarray):
         """Set the current frame for detection (thread-safe)."""
@@ -56,59 +67,36 @@ class FollowDetector(QThread):
             if self._frame is not None and self._detector is not None:
                 try:
                     self._frame_lock = True
-                    result = self._detector.detect(self._frame)
+                    result = self._detector.infer(self._frame)
                     self._frame_lock = False
                     
                     frame_count += 1
-                    if frame_count % 50 == 0:
-                        self._add_log("FOLLOW", f"フレーム処理中... {frame_count}フレーム目")
+                    if frame_count % 10 == 0:
+                        self._add_log("FOLLOW", f"frame={frame_count} yaw={result.yaw_deg} dist={result.dist_m} conf={result.confidence:.2f} bbox={result.bbox is not None}")
+                    if result.bbox is not None and (result.yaw_deg is None or result.dist_m is None):
+                        if frame_count % 5 == 0:
+                            self._add_log("FOLLOW", f"[POSE-DIAG] bbox={result.bbox} yaw={result.yaw_deg} dist={result.dist_m}")
                     
-                    if result.boxes:
-                        # Get best detection
-                        best_idx = int(np.argmax(result.scores))
-                        box = result.boxes[best_idx]
-                        label = result.labels[best_idx]
-                        score = result.scores[best_idx]
-                        
-                        # Use yaw_deg and dist_m directly from Detection object
-                        yaw_deg = result.yaw_deg
-                        dist_m = result.dist_m
-                        
-                        # Get frame dimensions
-                        h, w = self._frame.shape[:2]
-                        
-                        # Emit detection result
-                        self.detected.emit({
-                            "yaw_deg": yaw_deg,
-                            "dist_m": dist_m,
-                            "confidence": score,
-                            "bbox": box,
-                            "label": label,
-                            "frame_w": w,
-                            "frame_h": h,
-                        })
-                    else:
-                        # No detection
-                        self.detected.emit({
-                            "yaw_deg": None,
-                            "dist_m": None,
-                            "confidence": 0.0,
-                            "bbox": None,
-                            "label": None,
-                            "frame_w": 640,
-                            "frame_h": 480,
-                        })
-                        
+                    self.detected.emit({
+                        "yaw_deg": result.yaw_deg,
+                        "dist_m": result.dist_m,
+                        "bearing_deg": result.bearing_deg,
+                        "theta_deg": result.yaw_deg,
+                        "confidence": result.confidence,
+                        "bbox": result.bbox,
+                        "frame_w": result.frame_w,
+                        "frame_h": result.frame_h,
+                    })
                 except Exception as e:
                     self._frame_lock = False
                     self.error.emit(f"Detection error: {e}")
             else:
                 if frame_count == 0 and self._frame is None:
-                    pass  # Frame not received yet
+                    pass
                 elif frame_count == 0 and self._detector is None:
                     self._add_log("FOLLOW", "検出器が初期化されていません")
                     
-            self.msleep(100)  # ~10 FPS detection rate
+            self.msleep(100)
             
     def stop(self):
         """Stop the detection loop."""

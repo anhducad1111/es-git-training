@@ -27,6 +27,7 @@ class RemoteControlServer(QThread):
         self._clients = set()
         self._loop = None
         self._server = None
+        self._stop_event = None
 
     def run(self):
         if serve is None:
@@ -40,8 +41,13 @@ class RemoteControlServer(QThread):
         self._server = await serve(
             self._on_connect, self._host, self._port
         )
-        while self._running:
-            await asyncio.sleep(0.5)
+        self._stop_event = asyncio.Event()
+        # stop()からcall_soon_threadsafe()経由で_request_stop()が呼ばれ、
+        # サーバclose+このイベントsetによってここが起床する(0.5秒ポーリングでは
+        # ないため停止までのラグがない)。このコルーチンが自然に完了してから
+        # run_until_complete()が戻るため、_request_stopの docstring 参照
+        await self._stop_event.wait()
+        await self._server.wait_closed()
 
     async def _on_connect(self, websocket):
         self._clients.add(websocket)
@@ -117,8 +123,19 @@ class RemoteControlServer(QThread):
 
     def stop(self):
         self._running = False
+        if self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._request_stop)
+        self.wait()
+
+    def _request_stop(self):
+        """call_soon_threadsafe()経由でループのスレッド上で呼ばれる。
+        Server.close()は内部でself.get_loop().create_task(...)するため、
+        (以前のように)ループとは別のGUIスレッドから直接呼ぶとスレッドセーフでない。
+        また、stop()側でrun_until_complete()実行中のFuture(_serve())を
+        loop.stop()で強制停止すると"Event loop stopped before Future
+        completed."になっていたため、代わりにこのイベントをsetして_serve()を
+        自然に完了させる(実際のクローズ待機はwait_closed()で_serve()側が行う)"""
         if self._server:
             self._server.close()
-        if self._loop and self._loop.is_running():
-            self._loop.call_soon_threadsafe(self._loop.stop)
-        self.wait()
+        if self._stop_event:
+            self._stop_event.set()

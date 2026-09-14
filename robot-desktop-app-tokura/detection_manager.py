@@ -68,6 +68,8 @@ class DetectionManager(QObject):
             if self._follow_controller:
                 self._follow_controller.stop()
             self._follow_detections = []
+            if self._app and hasattr(self._app, '_video_canvas'):
+                self._app._video_canvas.set_follow_detections([])
             self._log("FOLLOW", "Follow mode stopped")
             # Update button state
             if self._app and hasattr(self._app, '_follow_btn'):
@@ -89,12 +91,10 @@ class DetectionManager(QObject):
             self._follow_detector.start()
             
             config = FollowConfig()
-            if self._app and hasattr(self._app, '_follow_k_slider'):
-                config.k = self._app._follow_k_slider.value() / 10.0
-                config.kp = self._app._follow_kp_slider.value() / 10.0
-                config.ki = self._app._follow_ki_slider.value() / 10.0
-                config.kd = self._app._follow_kd_slider.value() / 10.0
-                config.dist_kp = self._app._follow_dist_kp_slider.value() / 10.0
+            if self._app and hasattr(self._app, '_follow_kp_slider'):
+                config.kp_lin = self._app._follow_kp_slider.value() / 10.0
+                config.ki_lin = self._app._follow_ki_slider.value() / 10.0
+                config.kd_lin = self._app._follow_kd_slider.value() / 10.0
             
             self._follow_controller = FollowController(
                 config=config,
@@ -120,7 +120,7 @@ class DetectionManager(QObject):
                     and self._follow_controller._gimbal_thread):
                 self._follow_controller._gimbal_thread.on_camera_connected()
 
-            self._log("FOLLOW", f"Follow mode started | k={config.k:.1f} kp={config.kp:.1f} ki={config.ki:.1f} kd={config.kd:.1f}")
+            self._log("FOLLOW", f"Follow mode started | kp_lin={config.kp_lin:.1f} ki_lin={config.ki_lin:.1f} kd_lin={config.kd_lin:.1f}")
             # Update button state
             if self._app and hasattr(self._app, '_follow_btn'):
                 self._app._follow_btn.setText("FOLLOWING...")

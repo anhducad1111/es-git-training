@@ -50,6 +50,16 @@ class DetectionResult:
     # missing keypoints) -- callers should fall back to a pixel-based
     # estimate in that case.
     bearing_deg: float | None = None
+    # Kalman-filter velocity estimate (robot-frame X=right, Z=forward), m/s.
+    # None until the filter has been updated at least once.
+    vx_mps: float | None = None
+    vz_mps: float | None = None
+    # dist_m projected `prediction_time_sec` into the future using vx_mps/
+    # vz_mps (constant-velocity extrapolation), so callers can react to a
+    # closing/opening lead car before the raw distance measurement catches
+    # up. None whenever velocity isn't available yet (same conditions as
+    # vx_mps/vz_mps above).
+    dist_m_predicted: float | None = None
 
 
 class PoseInference:
@@ -74,6 +84,11 @@ class PoseInference:
         # ほぼ無視する(position_confidenceを下げる)。この小さいRCカーの
         # 実速度に対して十分余裕を持たせた初期値であり、実車で調整してよい
         self._max_plausible_speed_mps = float(config.get("max_plausible_speed_mps", 2.0))
+        # Phase 6 (future position prediction): how far ahead to project the
+        # target's position using the Kalman filter's velocity estimate.
+        # Configurable per docs/APP_TECHNICAL.md; set to 0.0 to disable
+        # (dist_m_predicted will then equal the current dist_m).
+        self._prediction_time_sec = float(config.get("prediction_time_sec", 0.5))
 
         # Gimbal compensation (docs/superpowers/specs/2026-09-11-gimbal-pose-compensation-design.md).
         # gimbal_provider=None (default) disables all of this -- fixed-camera
@@ -141,7 +156,20 @@ class PoseInference:
                 # 直前の推定距離との差分から implied速度を求め、明らかに
                 # 車体の実速度を超える場合はこの観測をほぼ信用しない
                 # (position_confidenceを下げる、ジンバル未安定時と同じ仕組み)。
-                if self._kalman.is_initialized() and dt > 1e-6:
+                #
+                # ただし self._kalman.state はコースト(predict()のみ)中も
+                # ドリフトし続けるため、遮蔽から再検出した直後は「新しい正しい
+                # 観測」と「ドリフトした内部状態」の差が implied速度チェックに
+                # 引っかかり、正しい観測の方が信用されずヨーが戻らないバグが
+                # 実機で確認された(esp32_mjpeg_detectorにはこのチェック自体が
+                # 存在せず発生しない)。coast_seconds() > 0 は直前の実update()
+                # 以降coastが入っている(=今の内部状態は数フレーム前の実観測より
+                # 古い予測値)ことを意味するので、その場合はこのチェックを適用
+                # しない。本来の目的(起動直後などcoastを挟まず連続update()して
+                # いる最中の単発の外れ値対策)はcoast_seconds()==0の場合に限定
+                # することで維持される。
+                if (self._kalman.is_initialized() and dt > 1e-6
+                        and self._kalman.coast_seconds() < 1e-6):
                     implied_speed_mps = abs(dist_fused - self._kalman.state["dist_m"]) / dt
                     if implied_speed_mps > self._max_plausible_speed_mps:
                         position_confidence = min(position_confidence, 0.05)
@@ -157,9 +185,19 @@ class PoseInference:
                 return DetectionResult(
                     yaw_deg=state["yaw_deg"], dist_m=state["dist_m"], confidence=score,
                     bbox=bbox, frame_w=w, frame_h=h, timestamp=now, bearing_deg=bearing_deg,
+                    vx_mps=state["vx_mps"], vz_mps=state["vz_mps"],
+                    dist_m_predicted=self._predict_dist_m(state),
                 )
 
         return self._coast_or_empty(dt, w, h, now, bbox=bbox, score=score)
+
+    def _predict_dist_m(self, state: dict) -> float:
+        """Constant-velocity projection of dist_m `self._prediction_time_sec`
+        seconds ahead, per docs/APP_TECHNICAL.md Phase 6 (future position
+        prediction): future_position = current_position + velocity * t."""
+        pred_x = state["X"] + state["vx_mps"] * self._prediction_time_sec
+        pred_z = state["Z"] + state["vz_mps"] * self._prediction_time_sec
+        return math.hypot(pred_x, pred_z)
 
     def _apply_gimbal_compensation(self, pose: dict | None) -> tuple[dict | None, float]:
         """Returns (pose_in_robot_frame_or_None, position_confidence).
@@ -194,6 +232,8 @@ class PoseInference:
                 return DetectionResult(
                     yaw_deg=state["yaw_deg"], dist_m=state["dist_m"], confidence=decayed_confidence,
                     bbox=bbox, frame_w=w, frame_h=h, timestamp=now,
+                    vx_mps=state["vx_mps"], vz_mps=state["vz_mps"],
+                    dist_m_predicted=self._predict_dist_m(state),
                 )
         return DetectionResult(
             yaw_deg=None, dist_m=None, confidence=score, bbox=bbox, frame_w=w, frame_h=h, timestamp=now,

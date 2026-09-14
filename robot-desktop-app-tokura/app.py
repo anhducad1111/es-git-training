@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage
@@ -16,7 +17,7 @@ from views.main_view import create_main_view
 from views.diagnostics_view import create_diagnostics_view
 from views.snapshots_view import create_snapshots_view
 from views.sidebar import create_sidebar
-from views.bottom_controls import create_bottom_controls
+from views.key_legend import create_key_legend
 from views.log_panel import create_log_panel
 from connection_manager import ConnectionManager
 from video_manager import VideoManager
@@ -38,6 +39,8 @@ class RoverTeleopApp(QWidget):
         self._global_speed = self._current_speed
         self._gimbal_pan = 90
         self._gimbal_tilt = 90
+        self._display_frame_count = 0
+        self._display_fps_last_time = time.time()
         # カメラストリーム接続状態。follow modeトグル時点で既に接続済みなら
         # 新規生成されるGimbalThreadに即座にon_camera_connected()を伝える必要がある
         # (接続イベントはfollow mode開始より先に一度だけ発火するため、フラグで保持する)
@@ -53,6 +56,18 @@ class RoverTeleopApp(QWidget):
         self._pid_apply_timer.timeout.connect(self._apply_pid_params)
         self._pid_workers = []
 
+        # LEDスライダー(views/sidebar.py)も同じ理由で、動かすたびに
+        # esp32_api.set_led()を同期HTTPで直接呼んでおり、ドラッグ中GUIスレッドが
+        # 何度もブロックされて映像が激しくカクつく原因になっていた。さらに実機
+        # 検証の結果、ESP32-CamのHTTPサーバは映像ストリーム配信中は他の
+        # リクエストを一切処理できない(ストリームを止めた直後は正常応答する)
+        # ことが分かったため、_apply_led()では送信の間だけ一瞬カメラを止める。
+        # PIDと同じデバウンス+CloudWorkerの非同期方式に合わせる
+        self._led_apply_timer = QTimer()
+        self._led_apply_timer.setSingleShot(True)
+        self._led_apply_timer.timeout.connect(self._apply_led_from_slider)
+        self._led_workers = []
+
         # 今後の調整・デバッグ用に、全ログをテキストファイルにも自動保存する。
         # GUIログウィジェットは表示件数に上限があるため、後から見返す・
         # 貼り付ける用途にはこのファイルの方が確実
@@ -62,11 +77,19 @@ class RoverTeleopApp(QWidget):
         print(f"[LOG] ログをファイルにも保存します: {log_filename}", flush=True)
 
         # Initialize managers
-        self._conn_mgr = ConnectionManager(self._config, self._add_log)
-        self._video_mgr = VideoManager(None, self._add_log)
-        self._detection_mgr = DetectionManager(self._add_log, app=self)
-        self._input_handler = InputHandler(self._send_command, self._add_log, on_emergency_stop=self._emergency_stop, on_chassis_follow_toggle=self._toggle_chassis_follow, on_gimbal_update=self._on_gimbal_update)
-        self._cloud_mgr = CloudManager(self._config, self._add_log)
+        # log_message.emit(category, message)をコールバックとして渡す(直接
+        # self._add_logを渡さない)。DetectionManager経由のfollow_controller.py
+        # (GimbalThread/ControlThread/DetectionThread)は素のthreading.Threadで
+        # 動いており、そこから直接self._add_log()経由でQTextEditを操作すると
+        # PyQtのGUIスレッド専有ルールに違反する。pyqtSignalは発行元がどのスレッド
+        # でも安全で、接続先(self._add_log、GUIスレッド所属)へ自動的にキューイング
+        # されるため、ここを経由するだけでバックグラウンドスレッドからのログが
+        # 安全になる。
+        self._conn_mgr = ConnectionManager(self._config, self.log_message.emit)
+        self._video_mgr = VideoManager(None, self.log_message.emit)
+        self._detection_mgr = DetectionManager(self.log_message.emit, app=self)
+        self._input_handler = InputHandler(self._send_command, self.log_message.emit, on_emergency_stop=self._emergency_stop, on_chassis_follow_toggle=self._toggle_chassis_follow, on_gimbal_update=self._on_gimbal_update)
+        self._cloud_mgr = CloudManager(self._config, self.log_message.emit)
         self._allow_remote_control = False
         self._remote_server = None
         
@@ -104,7 +127,7 @@ class RoverTeleopApp(QWidget):
 
         main_layout.addLayout(content, 1)
 
-        main_layout.addWidget(create_bottom_controls(self))
+        main_layout.addWidget(create_key_legend(self))
         main_layout.addWidget(create_log_panel(self))
 
         self.setFocus()
@@ -122,6 +145,9 @@ class RoverTeleopApp(QWidget):
         # 一切追従しない（実機で「ジンバルが動かない」として発現したバグ）。
         self._conn_mgr.camera_connected.connect(self._on_camera_connected)
         self._conn_mgr.camera_disconnected.connect(self._on_camera_disconnected)
+        self._conn_mgr.video_stats.connect(self._on_video_stats)
+        self._conn_mgr.rover_connected.connect(self._on_rover_connected)
+        self._conn_mgr.rover_disconnected.connect(self._on_rover_disconnected)
 
     def start_connections(self):
         self._conn_mgr.start_all()
@@ -162,17 +188,44 @@ class RoverTeleopApp(QWidget):
     def _update_video_frame(self):
         frame = self._conn_mgr.take_frame()
         if frame:
-            if self._video_mgr.is_recording and isinstance(frame, QImage):
-                self._video_mgr.save_frame(frame)
-            if isinstance(frame, QImage):
-                self._video_canvas.update_frame_jpeg(frame)
+            if isinstance(frame, tuple):
+                image, frame_time = frame
+            else:
+                image, frame_time = frame, None
+
+            if isinstance(image, QImage):
+                if self._video_mgr.is_recording:
+                    self._video_mgr.save_frame(image)
+                self._video_canvas.update_frame_jpeg(image)
+
+                # FPS/latency measured at the point of actual display, not
+                # at decode/receive time, so they reflect what's on screen.
+                self._display_frame_count += 1
+                now = time.time()
+                elapsed = now - self._display_fps_last_time
+                if elapsed >= 1.0:
+                    fps = self._display_frame_count / elapsed
+                    if hasattr(self, '_fps_display'):
+                        self._fps_display.update_fps(fps)
+                    self._display_frame_count = 0
+                    self._display_fps_last_time = now
+                if frame_time is not None and hasattr(self, '_latency_display'):
+                    self._latency_display.update_latency((now - frame_time) * 1000)
+
                 if self._detection_mgr._follow_mode_active:
                     import cv2
                     import numpy as np
-                    ptr = frame.bits()
-                    ptr.setsize(frame.sizeInBytes())
-                    arr = np.array(ptr).reshape(frame.height(), frame.width(), 4)
-                    bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
+                    ptr = image.bits()
+                    ptr.setsize(image.sizeInBytes())
+                    arr = np.array(ptr).reshape(image.height(), image.width(), 4)
+                    # QImage.Format_RGB32 is stored in memory as B,G,R,A (not
+                    # R,G,B,A) on little-endian platforms - confirmed by
+                    # inspecting the raw bytes of a known pure-red pixel.
+                    # COLOR_RGBA2BGR treats the input as R,G,B,A and was
+                    # therefore swapping the red/blue channels of every frame
+                    # fed into follow-mode's pose inference (a real,
+                    # long-standing accuracy bug, not a tuning issue).
+                    bgr = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)
                     self._detection_mgr.set_frame(bgr)
             elif isinstance(frame, bytes):
                 from video_worker import VideoWorker
@@ -295,6 +348,32 @@ class RoverTeleopApp(QWidget):
         """Handle camera stream error."""
         self._add_log("CAMERA", f"Error: {error}")
 
+    def _on_rover_connected(self):
+        """Handle rover WebSocket connected."""
+        if hasattr(self, '_rover_status'):
+            self._rover_status.setText("ONLINE")
+            self._rover_status.setStyleSheet("""
+                color: #10b981;
+                font-size: 10px;
+                font-weight: 600;
+                letter-spacing: 1px;
+            """)
+
+    def _on_rover_disconnected(self):
+        """Handle rover WebSocket disconnected."""
+        if hasattr(self, '_rover_status'):
+            self._rover_status.setText("OFFLINE")
+            self._rover_status.setStyleSheet("""
+                color: #ef4444;
+                font-size: 10px;
+                font-weight: 600;
+                letter-spacing: 1px;
+            """)
+
+    def _on_video_stats(self, stats):
+        if hasattr(self, '_ping_display'):
+            self._ping_display.update_ping(stats.get("ping_ms", 0))
+
     def _on_gimbal_update(self, pan, tilt):
         """Update gimbal UI when manually controlled."""
         self._gimbal_pan = int(pan)
@@ -327,6 +406,8 @@ class RoverTeleopApp(QWidget):
             "WEB CONTROL: ON" if self._allow_remote_control else "WEB CONTROL: OFF"
         )
         self._remote_server.set_allowed(self._allow_remote_control)
+        if hasattr(self, '_web_control_banner'):
+            self._web_control_banner.setVisible(self._allow_remote_control)
         state = "enabled" if self._allow_remote_control else "disabled"
         self._add_log("REMOTE", f"Web control {state}")
         
@@ -347,6 +428,8 @@ class RoverTeleopApp(QWidget):
             self._web_control_btn.setChecked(False)
             self._web_control_btn.setText("WEB CONTROL: OFF")
             self._remote_server.set_allowed(False)
+            if hasattr(self, '_web_control_banner'):
+                self._web_control_banner.hide()
             self._add_log("REMOTE", "Local input reclaimed control")
         timestamp = datetime.now().strftime("%H:%M:%S")
         self._add_log("CMD", command)
@@ -379,6 +462,42 @@ class RoverTeleopApp(QWidget):
         self._pid_workers.append(worker)
         worker.finished.connect(lambda: self._pid_workers.remove(worker) if worker in self._pid_workers else None)
         worker.start()
+
+    def _schedule_led_apply(self):
+        """LEDスライダー(views/sidebar.py)のドラッグ中に何度も呼ばれるが、
+        実際にESP32へ送るのは操作が止まってから300ms後の1回だけにする。"""
+        self._led_apply_timer.start(300)
+
+    def _apply_led_from_slider(self):
+        if hasattr(self, '_led_slider'):
+            self._apply_led(self._led_slider.value())
+
+    def _apply_led(self, value):
+        """LED明るさをESP32-Camへ送る。
+
+        ESP32-Cam実機で検証したところ、MJPEGストリーム配信中は他のHTTP
+        リクエストを一切処理できず(/api/ledが5秒でタイムアウト)、ストリームを
+        切断した直後は65msで正常応答する(API_DOCUMENTATION記載の
+        `{"brightness":N,"status":"ok"}`が返る)ことを確認済み。単に非同期化
+        しただけではハード側の同時接続不可という制約自体は解決しないため、
+        送信の間だけ一瞬カメラ接続を止め、応答が来たら再接続する。"""
+        if not hasattr(self, '_esp32_api'):
+            return
+        self._conn_mgr.stop_camera()
+        url = f"http://{self._esp32_api.cam_ip}/api/led?val={value}"
+        worker = CloudWorker("GET", url)
+        worker.result.connect(lambda data: self._add_log(
+            "LED", f"brightness={data.get('brightness')}"
+        ))
+        worker.error.connect(lambda e: self._add_log("LED", f"Apply failed: {e}"))
+        worker.finished.connect(lambda: self._on_led_worker_finished(worker))
+        self._led_workers.append(worker)
+        worker.start()
+
+    def _on_led_worker_finished(self, worker):
+        if worker in self._led_workers:
+            self._led_workers.remove(worker)
+        self._conn_mgr.start_camera()
 
     def _add_log(self, category, message):
         timestamp = datetime.now().strftime("%H:%M:%S")

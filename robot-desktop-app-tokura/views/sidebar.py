@@ -203,6 +203,28 @@ def create_sidebar(app):
     app._snapshot_btn = snapshot_btn
     main_layout.addWidget(snapshot_btn)
 
+    # 開発用デバッグ/キャリブレーションタブ。不要になったらこのブロックと
+    # app._toggle_debug_view/views/debug_view.py/calibration.pyを削除すればよい。
+    debug_btn = QPushButton("DEBUG")
+    debug_btn.setCheckable(True)
+    debug_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #64748b;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        QPushButton:checked {
+            background-color: #ef4444;
+            color: #0a0e1a;
+        }
+    """)
+    debug_btn.clicked.connect(app._toggle_debug_view)
+    app._debug_btn = debug_btn
+    main_layout.addWidget(debug_btn)
+
     app._web_control_btn = QPushButton("WEB CONTROL: OFF")
     app._web_control_btn.setCheckable(True)
     app._web_control_btn.setStyleSheet("""
@@ -436,9 +458,9 @@ def _create_controls_group(app):
 def _on_speed_change(app, value):
     app._global_speed = value
     app._speed_label.setText(f"{value}")
-    app._send_command(f"speed:{value}")
     if hasattr(app, '_speed_meter'):
         app._speed_meter.set_speed(value)
+    app._schedule_speed_apply()
 
 
 def _toggle_mouse_gimbal(app):

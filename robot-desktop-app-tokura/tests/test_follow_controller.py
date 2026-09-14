@@ -217,14 +217,17 @@ def test_gimbal_unsettled_decelerates_smoothly_instead_of_hard_stop():
 
 
 def test_following_moves_chassis_once_gimbal_settled():
+    """回帰テスト: ヘディング補正がほぼ不要(|w|<=straight_command_w_threshold)
+    なため、ESP32のジャイロ直進PIDが効くforward/backward経路が使われることを
+    確認する(drive:v,wはPIDを経由しないため実機で直進が不安定だった)。"""
     thread = _make_control_thread()
     thread._gimbal_thread = _StubGimbal(settled=True)
     detection = {"yaw_deg": 5.0, "dist_m": 1.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
                  "frame_w": 640, "frame_h": 480}
     result = thread._compute_command(detection)
     assert thread.state == FollowState.FOLLOWING
-    assert result["command"] != "drive:0,0"
-    assert result["command"].startswith("drive:")
+    assert result["command"] == "forward"
+    assert result["speed"] > 0
 
 
 def test_following_prioritizes_turning_when_pan_offset_large_even_if_far():
@@ -314,8 +317,9 @@ def test_following_forward_command_is_clamped_to_min_pwm():
         thread._last_cmd_t = 0.0
         result = thread._compute_command(detection)
     assert thread.state == FollowState.FOLLOWING
-    if result["command"].startswith("drive:"):
-        assert result["speed"] >= 180
+    # yaw_deg=5.0でforward経路になる(straight_command_w_threshold参照)が、
+    # speedフィールドはdrive:のときと同じくmin_pwmで底上げされる
+    assert result["speed"] >= 180
 
 
 def test_pulsed_spin_command_is_on_during_on_phase(monkeypatch):
@@ -387,6 +391,72 @@ def test_following_forward_speed_never_exceeds_max_follow_pwm():
     assert max(speeds) <= 200
 
 
+def test_following_uses_drive_when_heading_error_exceeds_straight_threshold():
+    """API_DOCUMENTATION.md 2.1/2.6: forward/backwardはESP32のジャイロ直進PIDを
+    経由するがdrive:v,wは経由しない。ヘディング補正が閾値を超えて実際に操舵が
+    必要なときは、直進PID頼みではなくdrive:v,wの差動制御にフォールバックする
+    ことを確認する。"""
+    thread = _make_control_thread()
+    thread._gimbal_thread = _StubGimbal(settled=True)  # pan center -> pan_error=0
+    # error_x = 60/45 = 1.333 -> combined_heading_error = 0.15*1.333 = 0.2
+    # -> w = int(-0.2*80) = -16 (straight_command_w_threshold=10を超える)
+    detection = {"yaw_deg": 60.0, "dist_m": 1.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+    result = thread._compute_command(detection)
+    assert thread.state == FollowState.FOLLOWING
+    assert result["command"].startswith("drive:")
+
+
+def test_command_thread_sets_speed_before_forward_command(monkeypatch):
+    """回帰テスト: forward/backwardではESP32へ速度を先に反映してから移動コマンドを
+    送る(逆順だと1tick古い速度でforward/backwardが実行されてしまう)。"""
+    calls = []
+    thread = CommandThread(
+        Queue(),
+        send_command=lambda cmd: calls.append(("send", cmd)),
+        set_speed=lambda spd: calls.append(("speed", spd)),
+        log_callback=None,
+    )
+    thread._execute_command({"command": "forward", "speed": 200, "chassis_enabled": True})
+    assert calls == [("speed", 200), ("send", "forward")]
+
+
+def test_command_thread_skips_set_speed_for_drive_command():
+    """drive:v,wはvに速度を含むため、別途set_speedを呼んではいけない
+    (二重に送ると後続のforward等にまで意図しない速度が残ってしまう)。"""
+    calls = []
+    thread = CommandThread(
+        Queue(),
+        send_command=lambda cmd: calls.append(("send", cmd)),
+        set_speed=lambda spd: calls.append(("speed", spd)),
+        log_callback=None,
+    )
+    thread._execute_command({"command": "drive:180,0", "speed": 180, "chassis_enabled": True})
+    assert calls == [("send", "drive:180,0")]
+
+
+def test_command_thread_resends_speed_only_on_startup_and_on_change():
+    """起動直後の1回は必ずspeed:Nを送り、以降は値が変わった時だけ送る
+    (同じ速度のforwardが連続しても毎tick再送しない)。"""
+    calls = []
+    thread = CommandThread(
+        Queue(),
+        send_command=lambda cmd: calls.append(("send", cmd)),
+        set_speed=lambda spd: calls.append(("speed", spd)),
+        log_callback=None,
+    )
+    thread._execute_command({"command": "forward", "speed": 200, "chassis_enabled": True})
+    thread._execute_command({"command": "forward", "speed": 200, "chassis_enabled": True})
+    thread._execute_command({"command": "forward", "speed": 200, "chassis_enabled": True})
+    thread._execute_command({"command": "forward", "speed": 220, "chassis_enabled": True})
+    assert calls == [
+        ("speed", 200), ("send", "forward"),
+        ("send", "forward"),
+        ("send", "forward"),
+        ("speed", 220), ("send", "forward"),
+    ]
+
+
 def test_following_forward_speed_ramps_up_gradually_not_instantly():
     """回帰テスト: 目標PWMまで_max_v_step刻みで滑らかに立ち上がり、
     1回目のティックでいきなり最大速度が出ないことを確認する
@@ -396,7 +466,9 @@ def test_following_forward_speed_ramps_up_gradually_not_instantly():
                  "frame_w": 640, "frame_h": 480}
     thread._last_cmd_t = 0.0
     first = thread._compute_command(detection)
-    assert first["command"].startswith("drive:")
+    # yaw_deg=0.0でヘディング補正がほぼ不要なため、ジャイロ直進PIDが効く
+    # forward経路が使われる(straight_command_w_threshold参照)
+    assert first["command"] == "forward"
     assert first["speed"] == thread._max_v_step  # 初回は0から_max_v_step分しか立ち上がらない
     thread._last_cmd_t = 0.0
     second = thread._compute_command(detection)
@@ -472,7 +544,8 @@ def test_run_never_enqueues_none_when_rate_limited():
         thread.input_queue.put(detection)
         first = thread.output_queue.get(timeout=1.0)
         assert first is not None
-        assert first["command"].startswith("drive:")
+        # yaw_deg=5.0でヘディング補正がほぼ不要なため、forward経路が使われる
+        assert first["command"] == "forward"
         # 2件目がNoneのまま積まれていないことを確認(積まれていればここで取得できてしまう)
         try:
             second = thread.output_queue.get(timeout=0.2)

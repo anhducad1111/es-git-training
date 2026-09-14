@@ -54,6 +54,15 @@ class FollowConfig:
     # (Left_PWM=v+w, Right_PWM=v-w)。v(前進速度)を旋回で潰しすぎないよう、
     # max_follow_pwmより小さい値にする
     max_steering_w: int = 80
+    # 実機のAPI仕様(API_DOCUMENTATION.md 2.1/2.6)によると、WSの"forward"/"backward"
+    # (REST /forward)はESP32側のMPU-6050ジャイロ直進PID補正を経由するが、
+    # 2.2のdrive:v,w(差動PWM直接指定)は経由しない(「subject to ultrasonic
+    # auto-brake」としか明記されていない)。実機で「WASD操作(forward)は直進が
+    # 安定するのに、follow modeのdrive:v,wは安定しない」と報告されたのはこのため。
+    # ヘディング補正量|w|がこの閾値以下(=ほぼ直進でよい)のときはforward/backward+
+    # speed:Nを使ってジャイロPIDの恩恵を受け、大きく操舵が必要なときのみ
+    # drive:v,wの差動制御を使う。
+    straight_command_w_threshold: int = 10
     # GimbalThreadが参照できない場合(テスト等)のパン中央値フォールバック。
     # GimbalThread._gimbal_center_pan(既定85.0)と揃えること
     gimbal_center_pan_deg: float = 85.0
@@ -916,10 +925,10 @@ class ControlThread(threading.Thread):
             command = self._pulsed_spin_command(spin_w)
         elif err_lin > self.config.distance_band:
             v = self._ramp_speed_signed(self._distance_proportional_pwm(err_lin))
-            command = f"drive:{v},{w}"
+            command = self._forward_or_drive_command(v, w)
         elif err_lin < -self.config.distance_band:
             v = self._ramp_speed_signed(-self._distance_proportional_pwm(abs(err_lin)))
-            command = f"drive:{v},{w}"
+            command = self._forward_or_drive_command(v, w)
         else:
             # 距離帯には収まっているが向きの補正が必要 -> その場で軽く旋回
             self._prev_v_cmd = 0
@@ -970,6 +979,25 @@ class ControlThread(threading.Thread):
         if is_on:
             return f"drive:0,{spin_w}"
         return "drive:0,0"
+
+    def _forward_or_drive_command(self, v: int, w: int) -> str:
+        """API_DOCUMENTATION.md 2.1/2.6: WSの"forward"/"backward"はESP32側の
+        MPU-6050ジャイロ直進PID補正を経由するが、2.2のdrive:v,w(差動PWM直接指定)
+        は経由しない。ヘディング補正がほぼ不要(|w|が閾値以下)なときはforward/
+        backwardを使ってジャイロPIDの恩恵を受け、実際に操舵が必要なときのみ
+        drive:v,wの差動制御にフォールバックする(config.straight_command_w_threshold
+        参照)。speed(PWM)はCommandThread側がforward/backward送信時にのみ
+        speed:Nとして送るため、ここではコマンド文字列だけ決めればよい。
+
+        v==0(_ramp_speed_signedがまだ0からランプアップし切っていない等)のときは
+        forward/backwardを返さない。CommandThreadはspeed>0のときしかspeed:Nを
+        送らないため、v==0で"forward"を返すとspeedが送られずESP32側に残っている
+        古い速度のまま動いてしまう(実機で報告されたバグ)。"""
+        if v == 0:
+            return "drive:0,0"
+        if abs(w) <= self.config.straight_command_w_threshold:
+            return "forward" if v >= 0 else "backward"
+        return f"drive:{v},{w}"
 
     def _distance_proportional_pwm(self, dist_error_m: float) -> int:
         """距離帯(32.5-47.5cm)からどれだけ離れているかに比例してPWMを決める。
@@ -1046,6 +1074,10 @@ class CommandThread(threading.Thread):
         self.log_callback = log_callback
         self._running = False
         self._cmd_count = 0
+        # None = このCommandThreadでまだ一度もspeed:Nを送っていない(起動直後)。
+        # 起動直後の1回は必ず送り、以降は値が変わった時だけ送る(無駄な再送を
+        # 減らしつつ、ESP32側が起動直後は速度未設定の状態にならないようにする)。
+        self._last_sent_speed = None
 
     def run(self):
         self._running = True
@@ -1054,9 +1086,16 @@ class CommandThread(threading.Thread):
         while self._running:
             try:
                 command_data = self.input_queue.get(timeout=0.1)
-                self._execute_command(command_data)
-            except:
+            except queue.Empty:
                 continue
+            try:
+                self._execute_command(command_data)
+            except Exception as e:
+                # ここを握りつぶすと、set_speed/send_command(WebSocket送信)の失敗が
+                # 完全にサイレントになり、モーターへの送信が抜けたまま追従が
+                # 続いてしまう。ログに出して次のコマンドへ進む。
+                if self.log_callback:
+                    self.log_callback("FOLLOW", f"CommandThread実行エラー: {e}")
 
     def _execute_command(self, command_data: dict):
         command = command_data.get("command", "stop")
@@ -1075,13 +1114,21 @@ class CommandThread(threading.Thread):
 
         # Send motor command (Tier 2: only when chassis enabled)
         if chassis_enabled:
-            if self.send_command:
-                self.send_command(self._mirror_drive_w(command))
             # "drive:v,w" (API_DOCUMENTATION.md 2.2)はvに速度を直接含むため、
             # 別途/speed(またはws "speed:N")を送る必要はない。二重に送ると
             # 後続の"forward"等の旧式コマンドにまで意図しない速度が残ってしまう。
-            if self.set_speed and speed > 0 and not command.startswith("drive:"):
+            # forward/backwardの場合はESP32側にspeedを先に反映させてから
+            # 移動コマンドを送る(逆順だと1tick古い速度でforward/backwardが
+            # 実行されてしまう)。
+            # 起動直後の1回目は必ず送信し(ESP32側に未設定のまま動かさない)、
+            # 2回目以降は前回送った値からspeedが変化した時だけ送る
+            # (毎tickの再送は無駄なWS送信になるため)。
+            if (self.set_speed and speed > 0 and not command.startswith("drive:")
+                    and speed != self._last_sent_speed):
                 self.set_speed(speed)
+                self._last_sent_speed = speed
+            if self.send_command:
+                self.send_command(self._mirror_drive_w(command))
 
     @staticmethod
     def _mirror_drive_w(command: str) -> str:

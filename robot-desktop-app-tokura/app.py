@@ -17,6 +17,7 @@ from views.main_view import create_main_view
 from views.diagnostics_view import create_diagnostics_view
 from views.snapshots_view import create_snapshots_view
 from views.settings_view import create_settings_view
+from views.debug_view import create_debug_view
 from views.sidebar import create_sidebar
 from views.key_legend import create_key_legend
 from views.log_panel import create_log_panel
@@ -68,6 +69,15 @@ class RoverTeleopApp(QWidget):
         self._led_apply_timer.setSingleShot(True)
         self._led_apply_timer.timeout.connect(self._apply_led_from_slider)
         self._led_workers = []
+
+        # 速度スライダー(views/sidebar.py)も同じ理由で、ドラッグ中に動かすたびに
+        # speed:N をWebSocketへ即送信しており、無駄な送信とログ行の大量発生に
+        # なっていた。PID/LEDと同じデバウンス方式に合わせ、操作が止まってから
+        # 150ms後の1回だけ実際に送信する(ラベル/メーター表示はドラッグ中も
+        # 即座に更新する)。
+        self._speed_apply_timer = QTimer()
+        self._speed_apply_timer.setSingleShot(True)
+        self._speed_apply_timer.timeout.connect(self._apply_speed_change)
 
         # 今後の調整・デバッグ用に、全ログをテキストファイルにも自動保存する。
         # GUIログウィジェットは表示件数に上限があるため、後から見返す・
@@ -125,6 +135,7 @@ class RoverTeleopApp(QWidget):
         self._center_stack.addWidget(create_diagnostics_view(self))
         self._center_stack.addWidget(create_snapshots_view(self))
         self._center_stack.addWidget(create_settings_view(self))
+        self._center_stack.addWidget(create_debug_view(self))  # index 4: 開発用デバッグタブ、削除時はこの行ごと消せばよい
         content.addWidget(self._center_stack, 1)
 
         self._sidebar = create_sidebar(self)
@@ -278,6 +289,8 @@ class RoverTeleopApp(QWidget):
                 self._snapshot_btn.setChecked(False)
             if hasattr(self, '_settings_btn'):
                 self._settings_btn.setChecked(False)
+            if hasattr(self, '_debug_btn'):
+                self._debug_btn.setChecked(False)
 
     def _toggle_snapshots_view(self):
         if self._view_mode == "snapshots":
@@ -294,6 +307,8 @@ class RoverTeleopApp(QWidget):
                 self._diag_btn.setChecked(False)
             if hasattr(self, '_settings_btn'):
                 self._settings_btn.setChecked(False)
+            if hasattr(self, '_debug_btn'):
+                self._debug_btn.setChecked(False)
             from views.snapshots_view import _load_snapshots
             _load_snapshots(self)
 
@@ -312,6 +327,28 @@ class RoverTeleopApp(QWidget):
                 self._diag_btn.setChecked(False)
             if hasattr(self, '_snapshot_btn'):
                 self._snapshot_btn.setChecked(False)
+            if hasattr(self, '_debug_btn'):
+                self._debug_btn.setChecked(False)
+
+    def _toggle_debug_view(self):
+        """開発用デバッグ/キャリブレーションタブの表示切替。
+        不要になったらこのメソッドとsidebarの_debug_btn配線を削除すればよい。"""
+        if self._view_mode == "debug":
+            self._center_stack.setCurrentIndex(0)
+            self._view_mode = "main"
+            if hasattr(self, '_debug_btn'):
+                self._debug_btn.setChecked(False)
+        else:
+            self._center_stack.setCurrentIndex(4)
+            self._view_mode = "debug"
+            if hasattr(self, '_debug_btn'):
+                self._debug_btn.setChecked(True)
+            if hasattr(self, '_diag_btn'):
+                self._diag_btn.setChecked(False)
+            if hasattr(self, '_snapshot_btn'):
+                self._snapshot_btn.setChecked(False)
+            if hasattr(self, '_settings_btn'):
+                self._settings_btn.setChecked(False)
 
     def _toggle_follow_mode(self):
         self._detection_mgr.toggle_follow_mode()
@@ -543,7 +580,6 @@ class RoverTeleopApp(QWidget):
             if hasattr(self, '_web_control_banner'):
                 self._web_control_banner.hide()
             self._add_log("REMOTE", "Local input reclaimed control")
-        timestamp = datetime.now().strftime("%H:%M:%S")
         self._add_log("CMD", command)
         self._conn_mgr.send_command(command)
         if command == "stop":
@@ -551,6 +587,15 @@ class RoverTeleopApp(QWidget):
                 self._speed_meter.reset_speed()
             if hasattr(self, '_speed_label'):
                 self._speed_label.setText("0")
+
+    def _schedule_speed_apply(self):
+        """speed:Nの送信をデバウンスする。スライダーをドラッグしている間は
+        何度も呼ばれるが、実際にESP32へ送るのは操作が止まってから150ms後の
+        1回だけにする。"""
+        self._speed_apply_timer.start(150)
+
+    def _apply_speed_change(self):
+        self._send_command(f"speed:{self._global_speed}")
 
     def _schedule_pid_apply(self):
         """ジャイロ直進PID(/api/pid)の適用をデバウンスする。スライダーを

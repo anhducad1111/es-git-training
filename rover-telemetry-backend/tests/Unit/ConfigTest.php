@@ -19,5 +19,6 @@ final class ConfigTest extends TestCase
         $this->assertSame(5, $config->expectedIntervalSeconds);
         $this->assertSame(80.0, $config->cpuTempWarningC);
         $this->assertSame('storage/media_test', $config->mediaStoragePath);
+        $this->assertSame('storage/firmware_test', $config->firmwareStoragePath);
     }
 }

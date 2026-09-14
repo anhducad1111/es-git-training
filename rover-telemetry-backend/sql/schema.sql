@@ -90,3 +90,16 @@ INSERT INTO sensor_limits (field, min_value, max_value) VALUES
   ('gas_ppm',         0, 10000),
   ('distance_cm',     2, 400)
 ON DUPLICATE KEY UPDATE min_value = VALUES(min_value), max_value = VALUES(max_value);
+
+CREATE TABLE IF NOT EXISTS firmware_releases (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  version         VARCHAR(30)  NOT NULL,
+  file_path       VARCHAR(255) NOT NULL,
+  file_size_bytes INT UNSIGNED NOT NULL DEFAULT 0,
+  mime_type       VARCHAR(50)  NOT NULL DEFAULT 'application/octet-stream',
+  file_hash       CHAR(64)     NULL,
+  release_notes   TEXT         NULL,
+  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_firmware_version (version)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

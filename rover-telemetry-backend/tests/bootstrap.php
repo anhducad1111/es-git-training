@@ -20,6 +20,7 @@ $env = [
     'DISK_USED_WARNING_PERCENT' => '90',
     'MEMORY_USED_WARNING_PERCENT' => '90',
     'MEDIA_STORAGE_PATH' => 'storage/media_test',
+    'FIRMWARE_STORAGE_PATH' => 'storage/firmware_test',
 ];
 
 foreach ($env as $key => $value) {

@@ -68,7 +68,10 @@ def create_main_view(app):
     res_layout.setContentsMargins(8, 4, 8, 4)
 
     app._resolution_combo = QComboBox()
-    app._resolution_combo.addItems(["640x480 (30 FPS)", "1280x720 (15 FPS)", "320x240 (60 FPS)", "160x120 (90 FPS)"])
+    app._resolution_combo.addItems([
+        "640x480 (VGA)", "800x600 (SVGA)", "1024x768 (XGA)",
+        "320x240 (QVGA)", "1600x1200 (UXGA)",
+    ])
     app._resolution_combo.setFixedWidth(180)
     app._resolution_combo.setStyleSheet("background-color: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 2px 6px; color: #f1f5f9; font-size: 11px;")
     app._resolution_combo.currentTextChanged.connect(lambda text: _on_resolution_change(app, text))
@@ -169,22 +172,13 @@ def create_main_view(app):
 
 
 def _on_resolution_change(app, text):
-    if "640x480" in text:
-        app._send_command("resolution:640,480")
-        app._resolution_label.setText("640x480")
-        _restart_camera_stream(app, "640x480")
-    elif "1280x720" in text:
-        app._send_command("resolution:1280,720")
-        app._resolution_label.setText("1280x720")
-        _restart_camera_stream(app, "1280x720")
-    elif "320x240" in text:
-        app._send_command("resolution:320,240")
-        app._resolution_label.setText("320x240")
-        _restart_camera_stream(app, "320x240")
-    elif "160x120" in text:
-        app._send_command("resolution:160,120")
-        app._resolution_label.setText("160x120")
-        _restart_camera_stream(app, "160x120")
+    # Resolution only selects which ESP32-Cam stream URL to connect to
+    # (GET /{w}x{h}.mjpeg); there is no "resolution:" command in the
+    # ESP32-Car WebSocket API (API_DOCUMENTATION.md section 2.7), so nothing
+    # is sent to the rover here.
+    resolution = text.split(" ")[0]
+    app._resolution_label.setText(resolution)
+    _restart_camera_stream(app, resolution)
     app._add_log("VIDEO", f"Resolution changed to {text}")
     app.setFocus()
 

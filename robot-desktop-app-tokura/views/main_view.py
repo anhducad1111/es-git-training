@@ -45,6 +45,7 @@ def create_main_view(app):
     app._speed_meter = SpeedMeter()
     app._speed_meter.setParent(app._video_canvas)
     app._speed_meter.move(10, app._video_canvas.height() - 330)
+    app._speed_meter.set_speed(app._current_speed)
 
     app._web_control_banner = QLabel("WEB CONTROLLED")
     app._web_control_banner.setParent(app._video_canvas)
@@ -60,6 +61,22 @@ def create_main_view(app):
     app._web_control_banner.adjustSize()
     app._web_control_banner.move((app._video_canvas.width() - app._web_control_banner.width()) // 2, 10)
     app._web_control_banner.hide()
+
+    app._obstacle_warning = QLabel("⚠ OBSTACLE DETECTED")
+    app._obstacle_warning.setParent(app._video_canvas)
+    app._obstacle_warning.setStyleSheet("""
+        background-color: rgba(245, 158, 11, 0.95);
+        color: #0a0e1a;
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 2px;
+        padding: 6px 16px;
+        border-radius: 4px;
+        border: 1px solid rgba(245, 158, 11, 0.5);
+    """)
+    app._obstacle_warning.adjustSize()
+    app._obstacle_warning.move((app._video_canvas.width() - app._obstacle_warning.width()) // 2, 10)
+    app._obstacle_warning.hide()
 
     resolution_widget = QWidget()
     resolution_widget.setFixedHeight(32)

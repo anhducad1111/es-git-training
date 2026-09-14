@@ -142,13 +142,13 @@ def summarize_coverage(samples: list[CoverageSample]) -> list[str]:
     )
     tips = []
     if not has_far:
-        tips.append("遠い距離のショットが少ないようです。もう少し離れて撮影すると精度が安定します。")
+        tips.append("Few distant shots. Try capturing from further away to stabilize accuracy.")
     if not has_close:
-        tips.append("近い距離のショットも追加すると良さそうです。")
+        tips.append("Adding closer shots would improve calibration.")
     if not has_edge:
-        tips.append("画面の端や四隅でも撮影すると、レンズ歪みの補正精度が上がります。")
+        tips.append("Capturing at edges and corners improves lens distortion correction accuracy.")
     if not tips:
-        tips.append("撮影バランス良好です。")
+        tips.append("Good capture balance.")
     return tips
 
 

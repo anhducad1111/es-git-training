@@ -356,7 +356,7 @@ class GimbalThread(threading.Thread):
         self._camera_connected = True
         self._camera_stable_since = time.time()
         if self._log:
-            self._log("FOLLOW", "[Gimbal] カメラ接続 - 安定するまで待機")
+            self._log("FOLLOW", "[Gimbal] Camera connected - waiting for stabilization")
 
     def on_camera_disconnected(self):
         """Called when camera stream disconnects."""

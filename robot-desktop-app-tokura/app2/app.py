@@ -84,7 +84,7 @@ def format_marker_panel(result: MarkerTrackResult) -> str:
     to "no marker".
     """
     if result.status == "none":
-        return "Marker: 検出なし"
+        return "Marker: Not detected"
     if result.status == "uncalibrated":
         return "Marker: キャリブレーション未設定のため距離不明"
     if result.status == "multiple":
@@ -228,7 +228,7 @@ class MainWindow(QMainWindow):
         detection_layout.addLayout(self._labeled_row("Confidence:", self.confidence))
         detection_layout.addLayout(self._labeled_row("Marker Size:", self.marker_size))
         self.follow_check = QCheckBox("Follow Mode")
-        self.follow_check.setToolTip("Stanley制御で前の車を自動追従")
+        self.follow_check.setToolTip("Auto-follow the car ahead using Stanley control")
         detection_layout.addWidget(self.follow_check)
         detection_box.setLayout(detection_layout)
 
@@ -566,7 +566,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(dialog)
         list_widget = None
         if not entries:
-            layout.addWidget(QLabel("履歴がありません。"))
+            layout.addWidget(QLabel("No history available."))
         else:
             list_widget = QListWidget()
             list_widget.addItems([format_history_entry(entry) for entry in entries])
@@ -603,7 +603,7 @@ class MainWindow(QMainWindow):
     def _on_capture_mode_toggled(self, checked: bool) -> None:
         self.capture_mode_button.setText(f"Capture Mode: {'On' if checked else 'Off'}")
         if checked:
-            self._set_status(f"Capture Mode ON — Enterで撮影 ({self.capture_dir_edit.text()})", "info")
+            self._set_status(f"Capture Mode ON — Press Enter to capture ({self.capture_dir_edit.text()})", "info")
 
     def _browse_capture_dir(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, "Select capture folder", self.capture_dir_edit.text())
@@ -612,7 +612,7 @@ class MainWindow(QMainWindow):
 
     def capture_photo(self) -> None:
         if self._last_raw_image is None:
-            self._set_status("撮影するには接続してください", "warn")
+            self._set_status("Connect to the stream first", "warn")
             return
         suffix = (
             capture_filename_suffix(self._last_track_result, self.distance_spin.value())

@@ -16,6 +16,7 @@ from views.header import create_header
 from views.main_view import create_main_view
 from views.diagnostics_view import create_diagnostics_view
 from views.snapshots_view import create_snapshots_view
+from views.settings_view import create_settings_view
 from views.sidebar import create_sidebar
 from views.key_legend import create_key_legend
 from views.log_panel import create_log_panel
@@ -74,7 +75,7 @@ class RoverTeleopApp(QWidget):
         os.makedirs("logs", exist_ok=True)
         log_filename = f"logs/follow_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
         self._log_file = open(log_filename, "a", encoding="utf-8")
-        print(f"[LOG] ログをファイルにも保存します: {log_filename}", flush=True)
+        print(f"[LOG] Log file: {log_filename}", flush=True)
 
         # Initialize managers
         # log_message.emit(category, message)をコールバックとして渡す(直接
@@ -90,8 +91,11 @@ class RoverTeleopApp(QWidget):
         self._detection_mgr = DetectionManager(self.log_message.emit, app=self)
         self._input_handler = InputHandler(self._send_command, self.log_message.emit, on_emergency_stop=self._emergency_stop, on_chassis_follow_toggle=self._toggle_chassis_follow, on_gimbal_update=self._on_gimbal_update)
         self._cloud_mgr = CloudManager(self._config, self.log_message.emit)
+        self._latest_telemetry = {}
         self._allow_remote_control = False
         self._remote_server = None
+        self._obstacle_brake_active = False
+        self._speed_limit_active = False
         
         self._speed_timer = QTimer()
         self._speed_timer.timeout.connect(self._input_handler._tick_speed)
@@ -120,6 +124,7 @@ class RoverTeleopApp(QWidget):
         self._center_stack.addWidget(create_main_view(self))
         self._center_stack.addWidget(create_diagnostics_view(self))
         self._center_stack.addWidget(create_snapshots_view(self))
+        self._center_stack.addWidget(create_settings_view(self))
         content.addWidget(self._center_stack, 1)
 
         self._sidebar = create_sidebar(self)
@@ -151,6 +156,9 @@ class RoverTeleopApp(QWidget):
 
     def start_connections(self):
         self._conn_mgr.start_all()
+        # TelemetryPollerのdata_receivedをConnectionManager経由で接続。
+        # reconnect_rover()でpollerが差し替わってもシグナルが途切れない。
+        self._conn_mgr.telemetry_data.connect(self._on_telemetry_received)
         # ConnectionManagerが生成したESP32APIをappにも持たせる。sidebar.py等の
         # UI側は`hasattr(app, '_esp32_api')`で存在チェックしているが、この属性が
         # 一度も設定されておらず、PIDトグル・kp/ki/kdスライダー・ブレーキ・LED・
@@ -184,6 +192,10 @@ class RoverTeleopApp(QWidget):
         self._cloud_timer.start(10000)
         
         self._add_log("MODE", "Connecting to REAL ESP32 hardware...")
+        
+        self._gimbal_pan = 90
+        self._gimbal_tilt = 90
+        self._send_command("servo:90,90")
 
     def _update_video_frame(self):
         frame = self._conn_mgr.take_frame()
@@ -264,6 +276,8 @@ class RoverTeleopApp(QWidget):
                 self._diag_btn.setChecked(True)
             if hasattr(self, '_snapshot_btn'):
                 self._snapshot_btn.setChecked(False)
+            if hasattr(self, '_settings_btn'):
+                self._settings_btn.setChecked(False)
 
     def _toggle_snapshots_view(self):
         if self._view_mode == "snapshots":
@@ -278,8 +292,26 @@ class RoverTeleopApp(QWidget):
                 self._snapshot_btn.setChecked(True)
             if hasattr(self, '_diag_btn'):
                 self._diag_btn.setChecked(False)
+            if hasattr(self, '_settings_btn'):
+                self._settings_btn.setChecked(False)
             from views.snapshots_view import _load_snapshots
             _load_snapshots(self)
+
+    def _toggle_settings(self):
+        if self._view_mode == "settings":
+            self._center_stack.setCurrentIndex(0)
+            self._view_mode = "main"
+            if hasattr(self, '_settings_btn'):
+                self._settings_btn.setChecked(False)
+        else:
+            self._center_stack.setCurrentIndex(3)
+            self._view_mode = "settings"
+            if hasattr(self, '_settings_btn'):
+                self._settings_btn.setChecked(True)
+            if hasattr(self, '_diag_btn'):
+                self._diag_btn.setChecked(False)
+            if hasattr(self, '_snapshot_btn'):
+                self._snapshot_btn.setChecked(False)
 
     def _toggle_follow_mode(self):
         self._detection_mgr.toggle_follow_mode()
@@ -374,14 +406,94 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_ping_display'):
             self._ping_display.update_ping(stats.get("ping_ms", 0))
 
+    def _on_telemetry_received(self, data):
+        """Handle telemetry data from ESP32 and update UI elements."""
+        self._latest_telemetry = data
+        
+        # Update sidebar labels
+        if hasattr(self, '_temp_label') and "temperature" in data:
+            self._temp_label.setText(f"{data['temperature']:.1f}°C")
+        if hasattr(self, '_humidity_label') and "humidity" in data:
+            self._humidity_label.setText(f"{data['humidity']:.1f}%")
+        if hasattr(self, '_gas_label') and "gas" in data:
+            self._gas_label.setText(f"{data['gas']:.0f} PPM")
+        if hasattr(self, '_distance_card') and "distance" in data:
+            distance = data["distance"]
+            self._distance_card.update_value(f"{distance:.1f} cm", distance / 2)
+        
+        # Obstacle warning + auto-brake + speed limit
+        if hasattr(self, '_obstacle_warning') and "distance" in data:
+            distance = data["distance"]
+            threshold = self._config.get("brake_threshold", 30)
+            auto_brake = self._config.get("auto_brake", True)
+            if auto_brake and distance < threshold:
+                self._obstacle_warning.setText(f"⚠ OBSTACLE: {distance:.0f} cm")
+                self._obstacle_warning.adjustSize()
+                self._obstacle_warning.move(
+                    (self._video_canvas.width() - self._obstacle_warning.width()) // 2, 10
+                )
+                self._obstacle_warning.show()
+                if not self._obstacle_brake_active:
+                    self._obstacle_brake_active = True
+                    self._send_command("stop")
+                    self._add_log("SAFETY", f"Auto-brake: {distance:.0f} cm < {threshold} cm → STOP")
+            else:
+                self._obstacle_warning.hide()
+                self._obstacle_brake_active = False
+
+            # Speed limit: 150-255 range, reduced when distance < 150cm (forward only)
+            MIN_SPEED = 150
+            SPEED_DIST_MAX = 150
+            is_reversing = hasattr(self, '_input_handler') and not self._input_handler._driving_forward
+            if not is_reversing and distance < SPEED_DIST_MAX:
+                ratio = distance / SPEED_DIST_MAX
+                ratio = ratio * ratio
+                limited = int(MIN_SPEED + (self._global_speed - MIN_SPEED) * ratio)
+                limited = max(MIN_SPEED, min(self._global_speed, limited))
+                if not self._speed_limit_active or limited != self._current_speed:
+                    self._speed_limit_active = True
+                    self._current_speed = limited
+                    self._send_command(f"speed:{limited}")
+                    if hasattr(self, '_speed_label'):
+                        self._speed_label.setText(f"{limited}")
+                    if hasattr(self, '_speed_meter'):
+                        self._speed_meter.set_speed(limited)
+            elif self._speed_limit_active:
+                self._speed_limit_active = False
+                self._current_speed = self._global_speed
+                self._send_command(f"speed:{self._global_speed}")
+                if hasattr(self, '_speed_label'):
+                    self._speed_label.setText(f"{self._global_speed}")
+                if hasattr(self, '_speed_meter'):
+                    self._speed_meter.set_speed(self._global_speed)
+        
+        # Update diagnostics sensor cards
+        if hasattr(self, '_temp_card') and "temperature" in data:
+            temp = data["temperature"]
+            self._temp_card.update_value(f"{temp:.1f}°C", temp / 50 * 100)
+        if hasattr(self, '_humidity_card') and "humidity" in data:
+            humidity = data["humidity"]
+            self._humidity_card.update_value(f"{humidity:.1f}%", humidity)
+        if hasattr(self, '_gas_card') and "gas" in data:
+            gas = data["gas"]
+            self._gas_card.update_value(f"{gas:.0f} PPM", gas / 1000 * 100)
+        
+        # Update link quality
+        if hasattr(self, '_link_label') and "link_quality" in data:
+            quality = data["link_quality"]
+            self._link_label.setText(f"Link: {quality}% ({'Optimal' if quality >= 80 else 'Weak'})")
+        
+        # Send telemetry data to cloud
+        self._cloud_mgr.send_telemetry(data)
+
     def _on_gimbal_update(self, pan, tilt):
         """Update gimbal UI when manually controlled."""
         self._gimbal_pan = int(pan)
         self._gimbal_tilt = int(tilt)
-        if hasattr(self, '_gimbal_pan_label'):
-            self._gimbal_pan_label.setText(f"{int(pan)}°")
-        if hasattr(self, '_gimbal_tilt_label'):
-            self._gimbal_tilt_label.setText(f"{int(tilt)}°")
+        if hasattr(self, '_gimbal_pan_input'):
+            self._gimbal_pan_input.setText(str(int(pan)))
+        if hasattr(self, '_gimbal_tilt_input'):
+            self._gimbal_tilt_input.setText(str(int(tilt)))
         if hasattr(self, '_gimbal_hud'):
             self._gimbal_hud.set_gimbal(int(pan), int(tilt))
 
@@ -434,6 +546,11 @@ class RoverTeleopApp(QWidget):
         timestamp = datetime.now().strftime("%H:%M:%S")
         self._add_log("CMD", command)
         self._conn_mgr.send_command(command)
+        if command == "stop":
+            if hasattr(self, '_speed_meter'):
+                self._speed_meter.reset_speed()
+            if hasattr(self, '_speed_label'):
+                self._speed_label.setText("0")
 
     def _schedule_pid_apply(self):
         """ジャイロ直進PID(/api/pid)の適用をデバウンスする。スライダーを
@@ -544,15 +661,17 @@ class RoverTeleopApp(QWidget):
         self._input_handler._gimbal_tilt = int(tilt)
         self._gimbal_pan = int(pan)
         self._gimbal_tilt = int(tilt)
-        if hasattr(self, '_gimbal_pan_label'):
-            self._gimbal_pan_label.setText(f"{int(pan)}°")
-        if hasattr(self, '_gimbal_tilt_label'):
-            self._gimbal_tilt_label.setText(f"{int(tilt)}°")
+        if hasattr(self, '_gimbal_pan_input'):
+            self._gimbal_pan_input.setText(str(int(pan)))
+        if hasattr(self, '_gimbal_tilt_input'):
+            self._gimbal_tilt_input.setText(str(int(tilt)))
         if hasattr(self, '_gimbal_hud'):
             self._gimbal_hud.set_gimbal(int(pan), int(tilt))
         self._send_command(f"servo:{int(pan)},{int(tilt)}")
 
     def closeEvent(self, event):
+        if hasattr(self, '_ota_url_input'):
+            self._config["ota_server_url"] = self._ota_url_input.text().strip()
         if hasattr(self, '_video_timer'):
             self._video_timer.stop()
         if self._remote_server:

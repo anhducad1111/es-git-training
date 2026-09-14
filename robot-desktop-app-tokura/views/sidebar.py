@@ -266,11 +266,11 @@ def create_sidebar(app):
     app._led_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     led_row.addWidget(app._led_label)
 
-    app._led_flash_btn = QPushButton("FLASH")
-    app._led_flash_btn.setCheckable(True)
-    app._led_flash_btn.setFixedWidth(50)
-    app._led_flash_btn.setFixedHeight(22)
-    app._led_flash_btn.setStyleSheet("""
+    app._led_toggle_btn = QPushButton("OFF")
+    app._led_toggle_btn.setCheckable(True)
+    app._led_toggle_btn.setFixedWidth(40)
+    app._led_toggle_btn.setFixedHeight(22)
+    app._led_toggle_btn.setStyleSheet("""
         QPushButton {
             background-color: #475569;
             color: white;
@@ -283,8 +283,8 @@ def create_sidebar(app):
             background-color: #f59e0b;
         }
     """)
-    app._led_flash_btn.clicked.connect(lambda: _toggle_led_flash(app))
-    led_row.addWidget(app._led_flash_btn)
+    app._led_toggle_btn.clicked.connect(lambda: _toggle_led(app))
+    led_row.addWidget(app._led_toggle_btn)
 
     cam_layout.addLayout(led_row)
 
@@ -928,8 +928,20 @@ def _toggle_brake(app):
 
 def _on_led_change(app, value):
     app._led_label.setText(str(value))
-    if hasattr(app, '_esp32_api'):
-        app._esp32_api.set_led(value)
+    app._led_toggle_btn.setChecked(value > 0)
+    app._led_toggle_btn.setText("ON" if value > 0 else "OFF")
+    app._schedule_led_apply()
+
+
+def _toggle_led(app):
+    checked = app._led_toggle_btn.isChecked()
+    value = app._led_slider.value() if checked and app._led_slider.value() > 0 else (255 if checked else 0)
+    app._led_toggle_btn.setText("ON" if checked else "OFF")
+    app._led_slider.blockSignals(True)
+    app._led_slider.setValue(value)
+    app._led_slider.blockSignals(False)
+    app._led_label.setText(str(value))
+    app._schedule_led_apply()
 
 
 
@@ -970,28 +982,6 @@ def _on_follow_param_change(app):
         app._detection_mgr._follow_controller.config.ki_lin = ki_lin
         app._detection_mgr._follow_controller.config.kd_lin = kd_lin
         app._detection_mgr._follow_controller.config.camera_yaw_offset = cam_offset
-
-
-def _toggle_led_flash(app):
-    checked = app._led_flash_btn.isChecked()
-    if checked:
-        app._led_flash_state = False
-        app._led_flash_timer = QTimer()
-        app._led_flash_timer.timeout.connect(lambda: _flash_led(app))
-        app._led_flash_timer.start(200)
-        app._add_log("LED", "Flash mode ON")
-    else:
-        if hasattr(app, '_led_flash_timer'):
-            app._led_flash_timer.stop()
-        if hasattr(app, '_esp32_api'):
-            app._esp32_api.set_led(0)
-        app._add_log("LED", "Flash mode OFF")
-
-
-def _flash_led(app):
-    app._led_flash_state = not getattr(app, '_led_flash_state', False)
-    if hasattr(app, '_esp32_api'):
-        app._esp32_api.set_led(255 if app._led_flash_state else 0)
 
 
 def _load_snapshots(app):

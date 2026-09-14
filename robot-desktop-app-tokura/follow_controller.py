@@ -336,7 +336,7 @@ class GimbalThread(threading.Thread):
         self._camera_connected = True
         self._camera_stable_since = time.time()
         if self._log:
-            self._log("FOLLOW", "[Gimbal] カメラ接続 - 安定するまで待機")
+            self._log("FOLLOW", "[Gimbal] Camera connected - waiting for stabilization")
 
     def on_camera_disconnected(self):
         """Called when camera stream disconnects."""
@@ -552,7 +552,7 @@ class GimbalThread(threading.Thread):
             self._search_start_pan = self._current_pan
             self._search_timer = now
             if self._log:
-                self._log("FOLLOW", f"[Gimbal] 車をlost → {self._last_seen_side}方向を探索")
+                self._log("FOLLOW", f"[Gimbal] Target lost → searching {self._last_seen_side} direction")
         
         if self._search_state == "search_direction":
             # Search in the direction where target was last seen
@@ -579,7 +579,7 @@ class GimbalThread(threading.Thread):
                 self._search_start_pan = self._current_pan
                 self._search_timer = now
                 if self._log:
-                    self._log("FOLLOW", "[Gimbal] 方向探索失敗 → ぐるぐる探索")
+                    self._log("FOLLOW", "[Gimbal] Direction search failed → spinning")
         
         if self._search_state == "search_spin":
             # Spin around to find target

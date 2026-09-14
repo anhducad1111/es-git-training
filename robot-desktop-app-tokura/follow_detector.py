@@ -84,7 +84,7 @@ class FollowDetector(QThread):
                 self._frame_set_count = 0
             self._frame_set_count += 1
             if self._frame_set_count % 50 == 0:
-                self._add_log("FOLLOW", f"フレーム受信中... {self._frame_set_count}枚目")
+                self._add_log("FOLLOW", f"Receiving frame... {self._frame_set_count}")
 
     def run(self):
         """Main detection loop."""
@@ -99,7 +99,7 @@ class FollowDetector(QThread):
 
                     frame_count += 1
                     if frame_count % 50 == 0:
-                        self._add_log("FOLLOW", f"フレーム処理中... {frame_count}フレーム目")
+                        self._add_log("FOLLOW", f"Processing frame... {frame_count}")
 
                     # Emit detection result (follow_controller.py側が期待する辞書形式は変更しない)
                     self.detected.emit({
@@ -127,7 +127,7 @@ class FollowDetector(QThread):
                 if frame_count == 0 and self._frame is None:
                     pass  # Frame not received yet
                 elif frame_count == 0 and self._detector is None:
-                    self._add_log("FOLLOW", "検出器が初期化されていません")
+                    self._add_log("FOLLOW", "Detector not initialized")
 
             self.msleep(100)  # ~10 FPS detection rate
 

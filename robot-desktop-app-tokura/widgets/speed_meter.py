@@ -20,6 +20,11 @@ class SpeedMeter(QWidget):
     def set_speed(self, speed):
         self._target_speed = max(0, min(self._max_speed, speed))
 
+    def reset_speed(self):
+        self._target_speed = 0
+        self._current_speed = 0
+        self.update()
+
     def _animate(self):
         self._current_speed += (self._target_speed - self._current_speed) * 0.25
         self.update()
@@ -54,7 +59,7 @@ class SpeedMeter(QWidget):
         painter.setPen(QPen(pink, 1))
         painter.drawText(cx - 12, header_y + 12, f"{int(self._current_speed)}")
 
-        gauge_cy = 48
+        gauge_cy = 50
         r = 22
 
         painter.setPen(QPen(dim_pink, 1))
@@ -65,20 +70,20 @@ class SpeedMeter(QWidget):
         painter.drawLine(cx - 18, gauge_cy, cx + 18, gauge_cy)
 
         for deg in range(0, 181, 30):
-            rad = math.pi * (1 - deg / 180)
+            rad = math.pi * (deg / 180)
             x1 = cx + math.cos(rad) * (r - 2)
-            y1 = gauge_cy + math.sin(rad) * (r - 2)
+            y1 = gauge_cy - math.sin(rad) * (r - 2)
             x2 = cx + math.cos(rad) * (r - 5)
-            y2 = gauge_cy + math.sin(rad) * (r - 5)
+            y2 = gauge_cy - math.sin(rad) * (r - 5)
             is_major = deg % 90 == 0
             painter.setPen(QPen(pink if is_major else dim_white, 1))
             painter.drawLine(int(x1), int(y1), int(x2), int(y2))
 
         speed_frac = self._current_speed / self._max_speed
-        needle_angle = math.pi * (1 - speed_frac)
+        needle_angle = math.pi * speed_frac
         arrow_len = r - 6
         tip_x = cx + arrow_len * math.cos(needle_angle)
-        tip_y = gauge_cy + arrow_len * math.sin(needle_angle)
+        tip_y = gauge_cy - arrow_len * math.sin(needle_angle)
 
         speed_pct = (self._current_speed / self._max_speed) * 100
         if speed_pct > 80:

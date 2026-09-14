@@ -13,6 +13,7 @@ class ConnectionManager(QObject):
     camera_connected = pyqtSignal()
     camera_disconnected = pyqtSignal()
     video_stats = pyqtSignal(dict)
+    telemetry_data = pyqtSignal(dict)
     
     def __init__(self, config, log_callback):
         super().__init__()
@@ -109,6 +110,7 @@ class ConnectionManager(QObject):
         """Start telemetry polling."""
         self._telemetry_poller = TelemetryPoller(self._config['car_ip'])
         self._telemetry_poller.error.connect(lambda e: self._log("TELEMETRY", f"Error: {e[:60]}"))
+        self._telemetry_poller.data_received.connect(self.telemetry_data.emit)
         self._telemetry_poller.start()
         
     def send_command(self, command):

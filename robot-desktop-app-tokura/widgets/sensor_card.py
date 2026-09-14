@@ -75,7 +75,7 @@ class SensorCard(QWidget):
         
         safe_angle = min(180, max(0, (dist / 100) * 180))
         painter.setPen(QPen(status_color, 10))
-        painter.drawArc(cx - r, cy - r, r * 2, r * 2, 0, int(safe_angle * 16))
+        painter.drawArc(cx - r, cy - r, r * 2, r * 2, 180 * 16, int(-safe_angle * 16))
         
         needle_rad = 3.14159 * (1 - safe_angle / 180)
         tip_x = cx + (r - 8) * __import__('math').cos(needle_rad)

@@ -1,3 +1,4 @@
+import math
 from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QPixmap, QImage, QFont, QPainter, QPen, QColor, QBrush, QRadialGradient
 from PyQt6.QtWidgets import QLabel, QSizePolicy
@@ -45,10 +46,11 @@ class CameraDirectionWidget(QLabel):
         painter.setPen(QPen(QColor(59, 130, 246, 120), 1, Qt.PenStyle.DashLine))
         painter.drawLine(cx - 25, pan_cy, cx + 25, pan_cy)
 
-        pan_rad = 3.14159 + (self._pan / 180.0) * 3.14159
+        pan_norm = (self._pan - 90.0) / 90.0
+        pan_rad = math.pi * (0.5 + pan_norm * 0.5)
         arrow_len = r - 8
-        tip_x = cx + arrow_len * __import__('math').cos(pan_rad)
-        tip_y = pan_cy + arrow_len * __import__('math').sin(pan_rad)
+        tip_x = cx + arrow_len * math.cos(pan_rad)
+        tip_y = pan_cy - arrow_len * math.sin(pan_rad)
 
         painter.setPen(QPen(pink, 2))
         painter.drawLine(cx, pan_cy, int(tip_x), int(tip_y))
@@ -65,16 +67,13 @@ class CameraDirectionWidget(QLabel):
         painter.setPen(QPen(QColor(59, 130, 246, 120), 1, Qt.PenStyle.DashLine))
         painter.drawLine(cx - 25, tilt_cy, cx + 25, tilt_cy)
 
-        tilt_frac = (self._tilt - 90.0) / 90.0
-        max_deflection = 0.95
-        needle_angle = -tilt_frac * max_deflection
-
-        import math
+        tilt_norm = (self._tilt - 90.0) / 90.0
+        tilt_rad = math.pi * (0.5 - tilt_norm * 0.5)
         start_x = cx - 12
         start_y = tilt_cy
         needle_len = r - 5
-        tip_x = start_x + needle_len * math.cos(needle_angle)
-        tip_y = start_y + needle_len * math.sin(needle_angle)
+        tip_x = start_x + needle_len * math.cos(tilt_rad)
+        tip_y = start_y - needle_len * math.sin(tilt_rad)
 
         painter.setPen(QPen(pink, 2))
         painter.drawLine(start_x, start_y, int(tip_x), int(tip_y))

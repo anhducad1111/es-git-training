@@ -61,6 +61,22 @@ def create_main_view(app):
     app._web_control_banner.move((app._video_canvas.width() - app._web_control_banner.width()) // 2, 10)
     app._web_control_banner.hide()
 
+    app._obstacle_warning = QLabel("⚠ OBSTACLE DETECTED")
+    app._obstacle_warning.setParent(app._video_canvas)
+    app._obstacle_warning.setStyleSheet("""
+        background-color: rgba(245, 158, 11, 0.95);
+        color: #0a0e1a;
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 2px;
+        padding: 6px 16px;
+        border-radius: 4px;
+        border: 1px solid rgba(245, 158, 11, 0.5);
+    """)
+    app._obstacle_warning.adjustSize()
+    app._obstacle_warning.move((app._video_canvas.width() - app._obstacle_warning.width()) // 2, 10)
+    app._obstacle_warning.hide()
+
     resolution_widget = QWidget()
     resolution_widget.setFixedHeight(32)
     resolution_widget.setStyleSheet("background-color: #131b2e; border-top: 1px solid #334155;")

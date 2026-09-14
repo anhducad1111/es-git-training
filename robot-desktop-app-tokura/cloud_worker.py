@@ -19,11 +19,16 @@ class CloudWorker(QThread):
                 resp = requests.get(self.url, timeout=self.timeout)
             elif self.method == "POST":
                 resp = requests.post(self.url, json=self.payload, timeout=self.timeout)
+            elif self.method == "DELETE":
+                resp = requests.delete(self.url, timeout=self.timeout)
             else:
                 self.error.emit("Invalid method")
                 return
             
             resp.raise_for_status()
-            self.result.emit(resp.json())
+            if resp.status_code == 204:
+                self.result.emit({"success": True})
+            else:
+                self.result.emit(resp.json())
         except requests.RequestException as e:
             self.error.emit(str(e))

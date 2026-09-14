@@ -156,7 +156,20 @@ class PoseInference:
                 # 直前の推定距離との差分から implied速度を求め、明らかに
                 # 車体の実速度を超える場合はこの観測をほぼ信用しない
                 # (position_confidenceを下げる、ジンバル未安定時と同じ仕組み)。
-                if self._kalman.is_initialized() and dt > 1e-6:
+                #
+                # ただし self._kalman.state はコースト(predict()のみ)中も
+                # ドリフトし続けるため、遮蔽から再検出した直後は「新しい正しい
+                # 観測」と「ドリフトした内部状態」の差が implied速度チェックに
+                # 引っかかり、正しい観測の方が信用されずヨーが戻らないバグが
+                # 実機で確認された(esp32_mjpeg_detectorにはこのチェック自体が
+                # 存在せず発生しない)。coast_seconds() > 0 は直前の実update()
+                # 以降coastが入っている(=今の内部状態は数フレーム前の実観測より
+                # 古い予測値)ことを意味するので、その場合はこのチェックを適用
+                # しない。本来の目的(起動直後などcoastを挟まず連続update()して
+                # いる最中の単発の外れ値対策)はcoast_seconds()==0の場合に限定
+                # することで維持される。
+                if (self._kalman.is_initialized() and dt > 1e-6
+                        and self._kalman.coast_seconds() < 1e-6):
                     implied_speed_mps = abs(dist_fused - self._kalman.state["dist_m"]) / dt
                     if implied_speed_mps > self._max_plausible_speed_mps:
                         position_confidence = min(position_confidence, 0.05)

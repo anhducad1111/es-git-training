@@ -274,3 +274,102 @@ def test_infer_does_not_report_a_phantom_position_jump_while_gimbal_is_moving():
     # Low position_confidence keeps the filter close to its prior estimate
     # instead of snapping to the (rotation-corrupted) new observation.
     assert second.dist_m == pytest.approx(first.dist_m, abs=0.1)
+
+
+class _FakeGroundReacquire:
+    """First pose() call is near; every call after that is far -- simulates
+    the car being close, then (after occlusion) reappearing much farther
+    away, which looks like an implausible speed jump against the Kalman
+    filter's now-stale (coasted) internal state."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def pose(self, L, R, F):
+        self.calls += 1
+        if self.calls == 1:
+            return {"X": 0.0, "Z": 1.0, "yaw_deg": 0.0, "dist_m": 1.0}
+        return {"X": 0.0, "Z": 3.0, "yaw_deg": 45.0, "dist_m": 3.0}
+
+
+class _StubModelToggle:
+    """Returns a detection or an empty result per a fixed True/False sequence,
+    to simulate the car being occluded for a few frames then reappearing."""
+
+    def __init__(self, detected_sequence):
+        self._sequence = list(detected_sequence)
+        self._index = 0
+
+    def predict(self, frame, conf, verbose):
+        detected = self._sequence[self._index]
+        self._index += 1
+        if not detected:
+            return [_FakeResult(boxes=_FakeBoxes(xyxy=np.empty((0, 4)), conf=np.empty(0)))]
+        boxes = _FakeBoxes(xyxy=[[10.0, 10.0, 50.0, 50.0]], conf=[0.9])
+        keypoints = _FakeKeypoints(xy=[[[1, 1], [2, 2], [3, 3]]])
+        return [_FakeResult(boxes=boxes, keypoints=keypoints)]
+
+
+def test_infer_trusts_reacquired_detection_after_occlusion_despite_apparent_speed_jump(monkeypatch):
+    """Regression test for a bug found by comparing against
+    esp32_mjpeg_detector (which has no implausible-speed check and correctly
+    snaps back to the true pose on reacquisition): the plausible-speed veto
+    was comparing a fresh detection against the Kalman filter's own coasted
+    (predict()-only) internal state, so a real detection reappearing after
+    occlusion was itself flagged as "impossibly fast" and given almost no
+    trust -- leaving yaw/dist stuck near the stale pre-occlusion value
+    instead of correcting. The fix: only apply the veto when the filter's
+    state came from an update() on the immediately preceding frame
+    (coast_seconds() == 0), not from several frames of pure prediction."""
+    import rccar_pose_inference.pose_inference as pi_module
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr(pi_module.time, "time", lambda: clock["t"])
+
+    inference = PoseInference.__new__(PoseInference)
+    inference._ground = _FakeGroundReacquire()
+    inference._aruco = None
+    inference._use_aruco_dist = False
+    inference._sigma_ground = 0.05
+    inference._sigma_aruco = 0.02
+    inference._max_coast_sec = 5.0  # keep the track alive across the occlusion below
+    inference._calibration_tilt_deg = 70.0
+    inference._tilt_max_deviation_deg = 10.0
+    inference._gimbal_center_pan_deg = 90.0
+    inference._max_plausible_speed_mps = 2.0
+    inference._prediction_time_sec = 0.5
+    inference._confidence = 0.35
+    inference._kalman = PoseKalmanFilter()
+    inference._last_infer_time = None
+    inference._gimbal_provider = None
+    inference._model = _StubModelToggle([True, False, False, False, True])
+
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+    first = inference.infer(frame)
+    assert first.dist_m == pytest.approx(1.0, abs=0.05)
+
+    # 3 frames of occlusion (no detection): the filter only predicts, drifting
+    # its internal state without correction.
+    for _ in range(3):
+        clock["t"] += 0.1
+        inference.infer(frame)
+
+    # Reacquired: a legitimate, correct detection 2m farther away. Against
+    # the drifted internal state this looks like a large implied speed, but
+    # it must still be trusted since it follows an occlusion, not a single
+    # bad frame mid-track.
+    clock["t"] += 0.1
+    result = inference.infer(frame)
+
+    # dist_m is the clearest signal here: R for X/Z is tight (measurement_noise
+    # = 0.05), so a trusted (position_confidence=1.0) observation converges
+    # almost fully in one update, while a distrusted one (position_confidence
+    # capped at 0.05, R scaled up 20x) would barely move off the stale 1.0m
+    # estimate -- which is exactly the bug this fix addresses.
+    assert result.dist_m == pytest.approx(3.0, abs=0.3)
+    # yaw's own measurement noise (R[2,2]=25) makes it converge slowly by
+    # design regardless of position_confidence (that's what
+    # yaw_snap_threshold_deg is for on a genuine reversal) - just confirm it
+    # moved toward the true 45 deg instead of staying pinned at the stale 0.
+    assert result.yaw_deg > 1.0

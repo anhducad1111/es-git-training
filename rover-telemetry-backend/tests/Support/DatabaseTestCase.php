@@ -21,7 +21,7 @@ abstract class DatabaseTestCase extends TestCase
         $this->pdo = Database::connection($this->config);
 
         $this->pdo->exec('SET FOREIGN_KEY_CHECKS=0');
-        foreach (['telemetry_readings', 'telemetry_summaries', 'validation_errors', 'media_files', 'gateway_metrics', 'rovers'] as $table) {
+        foreach (['telemetry_readings', 'telemetry_summaries', 'validation_errors', 'media_files', 'firmware_releases', 'gateway_metrics', 'rovers'] as $table) {
             $this->pdo->exec("TRUNCATE TABLE {$table}");
         }
         $this->pdo->exec('SET FOREIGN_KEY_CHECKS=1');
@@ -32,12 +32,13 @@ abstract class DatabaseTestCase extends TestCase
             . "ON DUPLICATE KEY UPDATE min_value = VALUES(min_value), max_value = VALUES(max_value)"
         );
 
-        $this->clearMediaTestStorage();
+        $this->clearTestStorage($this->config->mediaStoragePath);
+        $this->clearTestStorage($this->config->firmwareStoragePath);
     }
 
-    private function clearMediaTestStorage(): void
+    private function clearTestStorage(string $relativePath): void
     {
-        $root = __DIR__ . '/../../' . $this->config->mediaStoragePath;
+        $root = __DIR__ . '/../../' . $relativePath;
         if (!is_dir($root)) {
             return;
         }

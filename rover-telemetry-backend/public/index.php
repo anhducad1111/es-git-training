@@ -25,6 +25,10 @@ use RoverTelemetry\Controllers\MediaUploadController;
 use RoverTelemetry\Controllers\MediaListController;
 use RoverTelemetry\Controllers\MediaServeController;
 use RoverTelemetry\Controllers\MediaDeleteController;
+use RoverTelemetry\Controllers\FirmwareUploadController;
+use RoverTelemetry\Controllers\FirmwareListController;
+use RoverTelemetry\Controllers\FirmwareLatestController;
+use RoverTelemetry\Controllers\FirmwareServeController;
 
 header('Content-Type: application/json; charset=UTF-8');
 
@@ -57,6 +61,10 @@ $mediaUploadController = new MediaUploadController($pdo, $config);
 $mediaListController = new MediaListController($pdo);
 $mediaServeController = new MediaServeController($pdo, $config);
 $mediaDeleteController = new MediaDeleteController($pdo, $config);
+$firmwareUploadController = new FirmwareUploadController($pdo, $config);
+$firmwareListController = new FirmwareListController($pdo);
+$firmwareLatestController = new FirmwareLatestController($pdo);
+$firmwareServeController = new FirmwareServeController($pdo, $config);
 
 $router->add('POST', '/api/v1/telemetry', function () use ($telemetryController) {
     $raw = file_get_contents('php://input');
@@ -122,6 +130,9 @@ $router->add('DELETE', '/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/media/(?P<
     return $mediaDeleteController->delete($params);
 });
 
+$router->add('GET', '/api/v1/firmware/latest', fn() => $firmwareLatestController->latest());
+$router->add('GET', '/api/v1/firmware', fn() => $firmwareListController->list());
+
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 $apiPos = strpos($uri, '/api/v1');
 $path = $apiPos !== false ? substr($uri, $apiPos) : $uri;
@@ -143,6 +154,29 @@ if (preg_match('#^/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/media$#', $path,
 if (preg_match('#^/api/v1/rovers/(?P<device_uid>[A-Za-z0-9_-]+)/media/(?P<id>\d+)$#', $path, $m) && ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET') {
     try {
         $mediaServeController->serve($m);
+    } catch (ApiException $e) {
+        http_response_code($e->httpStatus);
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode($e->toArray($requestId));
+    }
+    exit;
+}
+
+if ($path === '/api/v1/firmware' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    try {
+        $result = $firmwareUploadController->upload($_POST, $_FILES['file'] ?? []);
+        http_response_code($result['status']);
+        echo json_encode($result['body']);
+    } catch (ApiException $e) {
+        http_response_code($e->httpStatus);
+        echo json_encode($e->toArray($requestId));
+    }
+    exit;
+}
+
+if (preg_match('#^/api/v1/firmware/(?P<id>\d+)/download$#', $path, $m) && ($_SERVER['REQUEST_METHOD'] ?? '') === 'GET') {
+    try {
+        $firmwareServeController->serve($m);
     } catch (ApiException $e) {
         http_response_code($e->httpStatus);
         header('Content-Type: application/json; charset=UTF-8');

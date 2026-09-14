@@ -22,6 +22,7 @@ final class Config
         public readonly float $diskUsedWarningPercent,
         public readonly float $memoryUsedWarningPercent,
         public readonly string $mediaStoragePath,
+        public readonly string $firmwareStoragePath,
     ) {
     }
 
@@ -43,6 +44,7 @@ final class Config
             diskUsedWarningPercent: (float) (getenv('DISK_USED_WARNING_PERCENT') ?: 90.0),
             memoryUsedWarningPercent: (float) (getenv('MEMORY_USED_WARNING_PERCENT') ?: 90.0),
             mediaStoragePath: getenv('MEDIA_STORAGE_PATH') ?: 'storage/media',
+            firmwareStoragePath: getenv('FIRMWARE_STORAGE_PATH') ?: 'storage/firmware',
         );
     }
 }

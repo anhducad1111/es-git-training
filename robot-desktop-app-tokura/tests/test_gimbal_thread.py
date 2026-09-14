@@ -103,7 +103,32 @@ def test_bearing_deg_moves_pan_by_exact_angle_not_fixed_step():
     bbox = (frame_w - 40, frame_h // 2 - 10, 20, 20)  # ピクセル的には大きくずれている
     thread._track_target(bbox, frame_w, frame_h, bearing_deg=12.3)
     # 固定5度ではなく、bearing_degそのもの(12.3度)だけ動く
-    assert thread._current_pan == 85.0 - 12.3
+    assert thread._current_pan == 85.0 + 12.3
+
+
+def test_set_gimbal_receives_pan_mirrored_around_center_not_raw_internal_pan():
+    """Regression test: on real hardware the pan servo was confirmed to turn
+    the opposite way from what the internal tracking/search model (higher
+    _current_pan = camera turned toward what the code calls "left", used
+    consistently by _track_target/_search_target/get_camera_yaw_offset and
+    PoseInference's gimbal compensation) assumes. Rather than flip that
+    internal model everywhere it's used, only the value actually sent to the
+    servo is mirrored around the center pan, in one place (_send_gimbal)."""
+    thread = _make_gimbal(gimbal_center_pan_deg=85.0, move_cooldown_sec=0.0,
+                           bearing_deadband=1.0, max_bearing_step=20.0)
+    thread._current_pan = 85.0
+    thread._current_tilt = 70.0
+    frame_w, frame_h = 640, 480
+    bbox = (frame_w - 40, frame_h // 2 - 10, 20, 20)
+
+    thread._track_target(bbox, frame_w, frame_h, bearing_deg=12.3)
+
+    # Internal model: unchanged, still 85.0 + 12.3 (see the sibling test above).
+    assert thread._current_pan == 85.0 + 12.3
+    # What's actually sent to the servo is that value mirrored around the
+    # center, not the raw internal value.
+    sent_pan, _sent_tilt = thread._calls[-1]
+    assert sent_pan == int(2 * 85.0 - (85.0 + 12.3))
 
 
 def test_bearing_deg_within_deadband_does_not_move():
@@ -123,7 +148,7 @@ def test_bearing_deg_is_clamped_to_max_bearing_step():
     frame_w, frame_h = 640, 480
     bbox = (frame_w - 40, frame_h // 2 - 10, 20, 20)
     thread._track_target(bbox, frame_w, frame_h, bearing_deg=80.0)  # 外れ値
-    assert thread._current_pan == 85.0 - 20.0  # max_bearing_stepでクランプされる
+    assert thread._current_pan == 85.0 + 20.0  # max_bearing_stepでクランプされる
 
 
 def test_bearing_deg_none_falls_back_to_fixed_step():
@@ -315,3 +340,44 @@ def test_is_settled_false_immediately_after_move_then_true_after_cooldown():
 def test_gimbal_center_pan_default_is_85():
     thread = _make_gimbal()
     assert thread._gimbal_center_pan == 85.0
+
+
+# 探索: search_step_deg刻み + search_step_wait_secの待機(以前は1度刻みで
+# 毎ループ(0.1秒ごと)動かし続けており、狭い範囲を素早く往復するだけで
+# 新しい方向を推論が落ち着いて見る前に次へ動いてしまっていた)
+
+
+def test_search_direction_moves_by_search_step_deg_per_call():
+    thread = _make_gimbal(gimbal_center_pan_deg=85.0, search_step_deg=10.0,
+                           search_step_wait_sec=0.6)
+    thread._current_pan = 85.0
+    thread._last_seen_side = "left"
+    # tracking -> search_direction: moves immediately in the last-seen direction
+    thread._search_target()
+    assert thread._search_state == "search_direction"
+    assert thread._current_pan == 95.0  # left -> pan increases by search_step_deg
+    assert len(thread._calls) == 1
+
+
+def test_search_direction_does_not_move_again_before_wait_elapses(monkeypatch):
+    thread = _make_gimbal(gimbal_center_pan_deg=85.0, search_step_deg=10.0,
+                           search_step_wait_sec=0.6)
+    thread._current_pan = 85.0
+    thread._last_seen_side = "left"
+
+    clock = {"t": 100.0}
+    monkeypatch.setattr(time, "time", lambda: clock["t"])
+
+    thread._search_target()  # enters search_direction, moves immediately: 85 -> 95
+    assert thread._current_pan == 95.0
+    assert len(thread._calls) == 1
+
+    clock["t"] += 0.3  # still within search_step_wait_sec
+    thread._search_target()
+    assert thread._current_pan == 95.0  # unchanged: still waiting
+    assert len(thread._calls) == 1
+
+    clock["t"] += 0.4  # now past search_step_wait_sec (0.6s total elapsed)
+    thread._search_target()
+    assert thread._current_pan == 105.0  # second step now allowed
+    assert len(thread._calls) == 2

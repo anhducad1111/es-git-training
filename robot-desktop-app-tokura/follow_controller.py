@@ -39,14 +39,14 @@ class FollowConfig:
     # Camera mounting offset relative to car chassis (degrees)
     # Positive = camera rotated right, Negative = camera rotated left
     camera_yaw_offset: float = 0.0
-    min_pwm: int = 150
+    min_pwm: int = 180
     blind_approach_pwm: int = 150
     head_on_threshold: float = 20.0
     state_hysteresis_frames: int = 3
     lost_timeout_sec: float = 5.0
     # FOLLOWING時の前進/後退PWM上限。実機で速すぎて衝突したため255から引き下げ、
-    # 距離帯(32.5-47.5cm)に近づくほどmin_pwm(150)寄りまで減速する（下のapproach_slowdown_dist参照）
-    max_follow_pwm: int = 190
+    # 距離帯(32.5-47.5cm)に近づくほどmin_pwm(180)寄りまで減速する（下のapproach_slowdown_dist参照）
+    max_follow_pwm: int = 200
     # この距離(m)だけ距離帯の外側にいると、まだmax_follow_pwmまで加速してよい。
     # 距離帯に近づくにつれて比例的にmin_pwmまで減速する
     approach_slowdown_dist: float = 1.0  # 0.5だと近距離(0.6-0.7m)でもPWM160台と速すぎたため拡大
@@ -64,8 +64,18 @@ class FollowConfig:
     # 廃止し、両輪逆回転の超信地旋回に戻した。その代わり、パルス駆動
     # (on/offを繰り返す)で平均回転角速度を落とす。turn_speed(150)そのものは
     # 各パルスのON区間で使う(両輪ともmin_pwmを満たすのでトルクは足りる)。
-    spin_pulse_on_sec: float = 0.15
+    # 実機で「角度補正が連続して右左に旋回を繰り返す」振動が報告された:
+    # 1回のON区間(0.15秒)でturn_speed(190)のまま回りすぎ、次の新しい検出が
+    # 届く頃には反対側へ行き過ぎて逆方向の補正が入る、を繰り返していた。
+    # ON時間を短縮し、1回あたりの回転量を減らして様子を見る。
+    spin_pulse_on_sec: float = 0.08
     spin_pulse_off_sec: float = 0.2
+    # pan角度優先補正(pan_offsetが大きい時)で、常時旋回し続けるのではなく
+    # pan_priority_burst_sec秒だけ旋回してから、pan_priority_pause_sec秒
+    # 完全停止して検出が安定するのを待ち、改めてpan_offsetを確認する
+    # (実機で連続旋回が速すぎてカメラがブレ対象を見失ったと報告された)。
+    pan_priority_burst_sec: float = 0.3
+    pan_priority_pause_sec: float = 0.6
     # 旋回中、車体の回転によってカメラの絶対的な向きがどれだけズレるかを
     # 見越して、ジンバルのpanを先読みで補正する(フィードフォワード)。
     # body_deg_per_sec_per_pwm: PWM1あたり・1秒あたりの推定回転角度(度)。
@@ -224,7 +234,9 @@ class GimbalThread(threading.Thread):
                  track_loop_sleep: float = 0.02,
                  bearing_deadband: float = 6.0,
                  max_bearing_step: float = 20.0,
-                 bbox_loss_grace_sec: float = 0.5):
+                 bbox_loss_grace_sec: float = 0.5,
+                 search_step_deg: float = 10.0,
+                 search_step_wait_sec: float = 0.6):
         super().__init__(daemon=True)
         self._set_gimbal = set_gimbal
         self._log = log_callback
@@ -266,6 +278,15 @@ class GimbalThread(threading.Thread):
         # 対象を追従中は素早く反応できるようループ間隔を短くする。
         self.search_loop_sleep = search_loop_sleep
         self.track_loop_sleep = track_loop_sleep
+        # 探索は毎ループ(0.1秒ごと)1度ずつ細かく動かし続けていたため、実際には
+        # 常に動いている最中の画像を推論しており、同じような狭い範囲を素早く
+        # 往復するだけで新しい方向をちゃんと見る前に次へ動いてしまっていた
+        # (実機で「同じようなところばかり見ている」と報告された)。search_step_deg
+        # 単位で一気に動かし、その後search_step_wait_sec秒は角度を保持して
+        # 推論結果が出揃うのを待ってから次の一歩を出す方式に変更する。
+        self.search_step_deg = search_step_deg
+        self.search_step_wait_sec = search_step_wait_sec
+        self._search_next_step_time = 0.0
         # bearing_deg(atan2(X,Z)による実角度)ベースのパン制御用パラメータ
         self.bearing_deadband = bearing_deadband
         self.max_bearing_step = max_bearing_step
@@ -309,7 +330,6 @@ class GimbalThread(threading.Thread):
         self._search_timer = 0.0
         self._search_timeout = 3.0
         self._spin_speed = 1.5
-        self._spin_range = 60.0
         # Camera connection state
         self._camera_connected = False
         self._camera_stable_since = 0.0
@@ -372,8 +392,24 @@ class GimbalThread(threading.Thread):
         with self._frame_lock:
             new_pan = max(self.pan_min_deg, min(self.pan_max_deg, self._current_pan + delta_deg))
             self._current_pan = new_pan
-        if self._set_gimbal:
-            self._set_gimbal(int(self._current_pan), int(self._current_tilt))
+        self._send_gimbal()
+
+    def _send_gimbal(self) -> None:
+        """実機で「探索中にサーボが逆方向へ動く」ことが確認された: このクラスの
+        追従・探索ロジック全体(_track_target/_search_target/get_camera_yaw_offset/
+        PoseInference._apply_gimbal_compensation)は「pan値が大きいほどカメラが
+        左を向く」という一貫した内部モデルの上に組まれており、それ自体は自己
+        整合的だが、実際のサーボの向きはこれと逆だった。ロジック側を全箇所
+        直すのではなく、サーボへ実際に送る値だけを中心角(_gimbal_center_pan)
+        周りで鏡像反転させ、このメソッド1箇所に閉じ込める
+        (_current_panは内部モデルのままなので追従計算・探索方向判定・
+        get_camera_yaw_offset()・gimbal_provider経由のPoseInference補正は
+        一切変更不要)。"""
+        if not self._set_gimbal:
+            return
+        physical_pan = 2 * self._gimbal_center_pan - self._current_pan
+        physical_pan = max(self.pan_min_deg, min(self.pan_max_deg, physical_pan))
+        self._set_gimbal(int(physical_pan), int(self._current_tilt))
 
     def run(self):
         self._running = True
@@ -508,11 +544,14 @@ class GimbalThread(threading.Thread):
         error_y = (cy - frame_h / 2.0) / (frame_h / 2.0)
 
         # --- パン: bearing_degがあれば実角度で正確に、なければ従来のピクセル固定ステップ ---
+        # 符号は実機で確認済み: ローバーから見て左に対象を置くと、以前は
+        # (self._current_pan - pan_delta)でカメラが右へ動いてしまっていた
+        # (逆方向)。+pan_deltaに反転して正しい方向へ追従するようにする。
         if bearing_deg is not None:
             pan_delta = self._compute_bearing_pan_delta(bearing_deg)
         else:
             pan_delta = self._compute_discrete_step(error_x, self.deadband, self.step_deg)
-        new_pan = self._current_pan - pan_delta
+        new_pan = self._current_pan + pan_delta
         new_pan = max(self.pan_min_deg, min(self.pan_max_deg, new_pan))
 
         # --- チルト: デッドバンド内ならキャリブレーション角度へ復帰、外れていれば追従優先 ---
@@ -539,67 +578,74 @@ class GimbalThread(threading.Thread):
 
         if moved:
             self._last_move_time = now
-            if self._set_gimbal:
-                self._set_gimbal(int(self._current_pan), int(self._current_tilt))
+            self._send_gimbal()
 
     def _search_target(self):
-        """Search for target when lost."""
+        """Search for target when lost.
+
+        Moves in search_step_deg(既定10度)刻みの離散ジャンプにして、動かした
+        直後はsearch_step_wait_sec(既定0.6秒)だけ角度を保持する。以前は毎ループ
+        (0.1秒ごと)1度ずつ動かし続けており、常に動いている最中のフレームで
+        推論していたため実質的に新しい方向をちゃんと見る前に次へ動いてしまい、
+        結果として同じ狭い範囲を素早く往復するだけになっていた(実機で「同じ
+        ようなところばかり見ている」と報告された)。
+        """
         now = time.time()
-        
+
         if self._search_state == "tracking":
             # Target just lost: start searching in the last seen direction
             self._search_state = "search_direction"
             self._search_start_pan = self._current_pan
             self._search_timer = now
+            self._search_next_step_time = 0.0
             if self._log:
-                self._log("FOLLOW", f"[Gimbal] Target lost → searching {self._last_seen_side} direction")
-        
+                self._log("FOLLOW", f"[Gimbal] 車をlost → {self._last_seen_side}方向を探索")
+
         if self._search_state == "search_direction":
+            if now < self._search_next_step_time:
+                return
             # Search in the direction where target was last seen
             elapsed = now - self._search_timer
-            
+
             if self._last_seen_side == "right":
-                # Search right (decrease pan)
-                pan_step = -1.0
+                pan_step = -self.search_step_deg
             elif self._last_seen_side == "left":
-                # Search left (increase pan)
-                pan_step = 1.0
+                pan_step = self.search_step_deg
             else:
                 # Center: search right first
-                pan_step = -1.0
-            
-            self._current_pan = max(0, min(180, self._current_pan + pan_step))
-            
-            if self._set_gimbal:
-                self._set_gimbal(int(self._current_pan), int(self._current_tilt))
-            
+                pan_step = -self.search_step_deg
+
+            self._current_pan = max(self.pan_min_deg, min(self.pan_max_deg, self._current_pan + pan_step))
+
+            self._send_gimbal()
+            self._search_next_step_time = now + self.search_step_wait_sec
+
             # If search timeout or hit servo limit, switch to spin search
-            if elapsed > self._search_timeout or self._current_pan <= 5 or self._current_pan >= 175:
+            if (elapsed > self._search_timeout
+                    or self._current_pan <= self.pan_min_deg + 5
+                    or self._current_pan >= self.pan_max_deg - 5):
                 self._search_state = "search_spin"
-                self._search_start_pan = self._current_pan
                 self._search_timer = now
+                self._search_next_step_time = 0.0
                 if self._log:
-                    self._log("FOLLOW", "[Gimbal] Direction search failed → spinning")
-        
+                    self._log("FOLLOW", "[Gimbal] 方向探索失敗 → ぐるぐる探索")
+
         if self._search_state == "search_spin":
-            # Spin around to find target
-            elapsed = now - self._search_timer
-            
-            # Alternating left-right sweep
-            cycle_pos = (elapsed * 0.5) % 2.0  # 2 second cycle
-            if cycle_pos < 1.0:
-                pan_step = self._spin_speed
-            else:
-                pan_step = -self._spin_speed
-            
-            self._current_pan = max(0, min(180, self._current_pan + pan_step))
-            
-            if self._set_gimbal:
-                self._set_gimbal(int(self._current_pan), int(self._current_tilt))
-            
-            # Limit total spin range
-            if abs(self._current_pan - self._search_start_pan) > self._spin_range:
-                # Reverse direction
+            if now < self._search_next_step_time:
+                return
+            # Sweep the FULL pan range end-to-end, reversing only at the
+            # physical limits (pan_min_deg/pan_max_deg). Previously this
+            # bounced back and forth inside a fixed 60-degree window around
+            # wherever search_direction happened to stop, so most of the
+            # pan range was never actually scanned - reported on hardware
+            # as "the search keeps looking at the same places".
+            pan_step = self.search_step_deg if self._spin_speed > 0 else -self.search_step_deg
+            self._current_pan = max(self.pan_min_deg, min(self.pan_max_deg, self._current_pan + pan_step))
+
+            self._send_gimbal()
+            self._search_next_step_time = now + self.search_step_wait_sec
+
+            if self._current_pan <= self.pan_min_deg or self._current_pan >= self.pan_max_deg:
                 self._spin_speed = -self._spin_speed
 
     def stop(self):
@@ -655,6 +701,15 @@ class ControlThread(threading.Thread):
         # Occlusion guard
         self._dist_jump_limit = 0.6
         self._searching_since = None
+
+        # パン角度優先補正(pan_offsetが大きい時の旋回)用の状態。turn_speed
+        # (既定190)自体は150未満に下げるとトルク不足で車体が動かなくなる
+        # ため下げられない。代わりに、常時パルス駆動し続けるのではなく
+        # 「短いバースト旋回→完全停止して検出が安定するのを待つ→pan_offset
+        # を確認して必要なら次のバースト」という段階的な方式にする(実機で
+        # 旋回が速すぎてカメラがブレ対象を見失ったと報告されたため)。
+        self._pan_priority_burst_start = None
+        self._pan_priority_pause_until = 0.0
 
     def run(self):
         self._running = True
@@ -806,6 +861,37 @@ class ControlThread(threading.Thread):
         pan_offset_deg = abs(pan_angle - pan_center)
         if pan_offset_deg > self.config.pan_priority_threshold_deg:
             self._prev_v_cmd = 0
+            now = time.time()
+
+            if now < self._pan_priority_pause_until:
+                # バースト後の静止確認中: 完全停止してカメラのブレが収まり
+                # 検出が安定するのを待つ(この間もpan_offsetは毎フレーム
+                # 再評価されるので、対象を見失っていれば別の分岐に移る)
+                return {
+                    "type": "control",
+                    "command": "drive:0,0",
+                    "speed": 0,
+                    "log": f"pan角度優先補正: 静止確認中 pan_offset={pan_offset_deg:.1f}°",
+                }
+
+            if self._pan_priority_burst_start is None:
+                self._pan_priority_burst_start = now
+            elif now - self._pan_priority_burst_start >= self.config.pan_priority_burst_sec:
+                # バースト時間経過: 次は停止して確認する番。
+                # ここでpause_untilを更新するだけでは、このtick自体はまだ
+                # 下のpulsed_spin_commandに進んでしまい、パルス位相がたまたま
+                # ON区間と重なると旋回コマンドが漏れてしまう(spin_pulse_on_sec
+                # を0.15→0.08に短縮した際に表面化した回帰: 位相の偶然一致に
+                # 依存していた)。バースト終了はこのtickから即座に完全停止とする。
+                self._pan_priority_pause_until = now + self.config.pan_priority_pause_sec
+                self._pan_priority_burst_start = None
+                return {
+                    "type": "control",
+                    "command": "drive:0,0",
+                    "speed": 0,
+                    "log": f"pan角度優先補正: 静止確認中 pan_offset={pan_offset_deg:.1f}°",
+                }
+
             spin_w = self.config.turn_speed if combined_heading_error <= 0 else -self.config.turn_speed
             command = self._pulsed_spin_command(spin_w)
             return {
@@ -814,6 +900,11 @@ class ControlThread(threading.Thread):
                 "speed": self.config.turn_speed,
                 "log": f"pan角度優先補正: pan_offset={pan_offset_deg:.1f}° {command}",
             }
+
+        # pan角度優先補正の対象外になった(pan_offsetが閾値以下に収まった) ->
+        # 次に大きくずれた時のために、バースト/停止確認の状態をリセットする
+        self._pan_priority_burst_start = None
+        self._pan_priority_pause_until = 0.0
 
         TURN_ONLY_HEADING_ERROR = 0.35
         if abs(combined_heading_error) > TURN_ONLY_HEADING_ERROR:
@@ -882,8 +973,8 @@ class ControlThread(threading.Thread):
 
     def _distance_proportional_pwm(self, dist_error_m: float) -> int:
         """距離帯(32.5-47.5cm)からどれだけ離れているかに比例してPWMを決める。
-        距離帯のすぐ外側ではmin_pwm(150)寄りの低速、approach_slowdown_dist(既定0.5m)
-        以上離れていればmax_follow_pwm(既定190)まで出す。実機で「速すぎて衝突した」
+        距離帯のすぐ外側ではmin_pwm(180)寄りの低速、approach_slowdown_dist(既定1.0m)
+        以上離れていればmax_follow_pwm(既定200)まで出す。実機で「速すぎて衝突した」
         ため、固定でmin_pwmに加算していた旧ロジックから距離比例の減速に変更した。"""
         overshoot = max(0.0, dist_error_m - self.config.distance_band)
         ratio = min(1.0, overshoot / self.config.approach_slowdown_dist)
@@ -985,12 +1076,29 @@ class CommandThread(threading.Thread):
         # Send motor command (Tier 2: only when chassis enabled)
         if chassis_enabled:
             if self.send_command:
-                self.send_command(command)
+                self.send_command(self._mirror_drive_w(command))
             # "drive:v,w" (API_DOCUMENTATION.md 2.2)はvに速度を直接含むため、
             # 別途/speed(またはws "speed:N")を送る必要はない。二重に送ると
             # 後続の"forward"等の旧式コマンドにまで意図しない速度が残ってしまう。
             if self.set_speed and speed > 0 and not command.startswith("drive:"):
                 self.set_speed(speed)
+
+    @staticmethod
+    def _mirror_drive_w(command: str) -> str:
+        """実機で確認済み: 対象をローバーの右側に置いて追従させたところ、
+        計算上は正しい方向(右旋回=w正)のはずが実際には逆方向へ旋回した。
+        API_DOCUMENTATION.mdのw符号規約(正=右旋回、Left_PWM=v+w,Right_PWM=v-w)
+        通りに車体側モーターが結線されていない(パンサーボと同種のハード側の
+        反転)と考えられるため、_send_gimbal()と同じ方針で、実際に送信する
+        直前の1箇所だけでwを反転させる。上流の操舵計算(ControlThreadの
+        combined_heading_error等)はAPI仕様書通りの符号のまま変更しない。"""
+        if not command.startswith("drive:"):
+            return command
+        try:
+            v_str, w_str = command[len("drive:"):].split(",", 1)
+            return f"drive:{v_str},{-int(w_str)}"
+        except ValueError:
+            return command
 
     def stop(self):
         self._running = False

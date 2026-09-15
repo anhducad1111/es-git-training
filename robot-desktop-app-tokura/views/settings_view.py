@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QCheckBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout,
     QWidget, QFrame
 )
@@ -663,6 +663,12 @@ def _create_follow_group(app):
     cam_offset_row.addWidget(app._follow_cam_offset_label)
     layout.addLayout(cam_offset_row)
 
+    app._predictive_control_check = QCheckBox("予測ヨー追従(実験的)")
+    app._predictive_control_check.setChecked(False)
+    app._predictive_control_check.setStyleSheet("color: #cbd5e1; background-color: transparent; border: none;")
+    app._predictive_control_check.toggled.connect(lambda checked: _on_predictive_control_toggled(app, checked))
+    layout.addWidget(app._predictive_control_check)
+
     group.setLayout(layout)
     return group
 
@@ -823,6 +829,16 @@ def _on_follow_param_change(app):
         app._detection_mgr._follow_controller.config.ki_lin = ki_lin
         app._detection_mgr._follow_controller.config.kd_lin = kd_lin
         app._detection_mgr._follow_controller.config.camera_yaw_offset = cam_offset
+
+
+def _on_predictive_control_toggled(app, checked):
+    """follow mode実行中にチェックボックスを切り替えたとき、既に動いている
+    FollowControllerのconfigへ即座に反映する(_on_follow_param_changeと同じ
+    パターン。kp_lin等もself.configから都度読むため実行中の変更が効く)。
+    follow mode開始前の状態はdetection_manager.toggle_follow_mode()が
+    起動時に読み取る(config.predictive_control_enabled = app._predictive_control_check.isChecked())。"""
+    if hasattr(app, '_detection_mgr') and app._detection_mgr._follow_controller:
+        app._detection_mgr._follow_controller.config.predictive_control_enabled = checked
 
 
 def _select_ota_file(app):

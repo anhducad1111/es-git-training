@@ -60,6 +60,10 @@ class DetectionResult:
     # up. None whenever velocity isn't available yet (same conditions as
     # vx_mps/vz_mps above).
     dist_m_predicted: float | None = None
+    # dist_m_predictedと対の、prediction_time_sec先のヨー角の等角速度予測
+    # (yaw_future = yaw_deg + yaw_rate_deg_s * prediction_time_sec)。
+    # 条件はdist_m_predictedと同じ(速度/回転速度が未確定のうちはNone)。
+    yaw_deg_predicted: float | None = None
     # True if ArUco marker was detected in this frame
     aruco_detected: bool = False
 
@@ -164,27 +168,16 @@ class PoseInference:
         if pose is not None:
             dist_fused = fuse_distance(pose["dist_m"], dist_aruco, self._sigma_ground, self._sigma_aruco)
             if dist_fused is not None:
-                # 起動直後などカメラ・推論が安定する前の1フレームだけ極端に
-                # おかしい観測(距離が物理的にありえない速さで変化)が来ると、
-                # カルマンフィルタがそれを本当の速度として学習してしまい、
-                # その後のcoast(predict)で「急接近しているかのような」誤った
-                # 値を出し続けることが実機で確認された(yaw_snap_threshold_degは
-                # 向きの反転を許容するためのものでこの種の外れ値は防げない)。
-                # 直前の推定距離との差分から implied速度を求め、明らかに
-                # 車体の実速度を超える場合はこの観測をほぼ信用しない
-                # (position_confidenceを下げる、ジンバル未安定時と同じ仕組み)。
+                # 起動直後の1フレームだけ極端な外れ値(距離が物理的にありえない
+                # 速さで変化)が来るとカルマンがそれを速度として学習し、以後の
+                # coastで誤った値を出し続けることが実機で確認された。直前距離との
+                # implied速度が実速度を超えたら、この観測をほぼ信用しない
+                # (position_confidenceを下げる)。
                 #
-                # ただし self._kalman.state はコースト(predict()のみ)中も
-                # ドリフトし続けるため、遮蔽から再検出した直後は「新しい正しい
-                # 観測」と「ドリフトした内部状態」の差が implied速度チェックに
-                # 引っかかり、正しい観測の方が信用されずヨーが戻らないバグが
-                # 実機で確認された(esp32_mjpeg_detectorにはこのチェック自体が
-                # 存在せず発生しない)。coast_seconds() > 0 は直前の実update()
-                # 以降coastが入っている(=今の内部状態は数フレーム前の実観測より
-                # 古い予測値)ことを意味するので、その場合はこのチェックを適用
-                # しない。本来の目的(起動直後などcoastを挟まず連続update()して
-                # いる最中の単発の外れ値対策)はcoast_seconds()==0の場合に限定
-                # することで維持される。
+                # coast中(predict()のみ)はstateがドリフトし続けるため、遮蔽から
+                # 再検出した直後は「正しい新観測」とこのチェックが衝突し、ヨーが
+                # 戻らないバグが確認された。coast_seconds()>0(直近がcoast)の
+                # ときはこのチェックを適用しない。
                 if (self._kalman.is_initialized() and dt > 1e-6
                         and self._kalman.coast_seconds() < 1e-6):
                     implied_speed_mps = abs(dist_fused - self._kalman.state["dist_m"]) / dt
@@ -204,6 +197,7 @@ class PoseInference:
                     bbox=bbox, frame_w=w, frame_h=h, timestamp=now, bearing_deg=bearing_deg,
                     vx_mps=state["vx_mps"], vz_mps=state["vz_mps"],
                     dist_m_predicted=self._predict_dist_m(state),
+                    yaw_deg_predicted=self._predict_yaw_deg(state),
                     aruco_detected=aruco_detected,
                 )
 
@@ -216,6 +210,13 @@ class PoseInference:
         pred_x = state["X"] + state["vx_mps"] * self._prediction_time_sec
         pred_z = state["Z"] + state["vz_mps"] * self._prediction_time_sec
         return math.hypot(pred_x, pred_z)
+
+    def _predict_yaw_deg(self, state: dict) -> float:
+        """Constant-turn-rate projection of yaw_deg `self._prediction_time_sec`
+        seconds ahead, mirroring _predict_dist_m()'s constant-velocity distance
+        projection: future_yaw = current_yaw + yaw_rate * t."""
+        predicted = state["yaw_deg"] + state["yaw_rate_deg_s"] * self._prediction_time_sec
+        return (predicted + 180.0) % 360.0 - 180.0
 
     def _update_ground_for_tilt(self, tilt_deg: float) -> bool:
         """Corrects self._ground's floor-plane constants (A, v0, fx) for the
@@ -273,6 +274,7 @@ class PoseInference:
                     bbox=bbox, frame_w=w, frame_h=h, timestamp=now,
                     vx_mps=state["vx_mps"], vz_mps=state["vz_mps"],
                     dist_m_predicted=self._predict_dist_m(state),
+                    yaw_deg_predicted=self._predict_yaw_deg(state),
                 )
         return DetectionResult(
             yaw_deg=None, dist_m=None, confidence=score, bbox=bbox, frame_w=w, frame_h=h, timestamp=now,

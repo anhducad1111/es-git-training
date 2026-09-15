@@ -1094,12 +1094,22 @@ class ControlThread(threading.Thread):
         return f"drive:{v},{w}"
 
     def _distance_proportional_pwm(self, dist_error_m: float) -> int:
-        """距離帯(32.5-47.5cm)からどれだけ離れているかに比例してPWMを決める。
+        """距離帯(32.5-47.5cm)からどれだけ離れているかに応じてPWMを決める。
         距離帯のすぐ外側ではmin_pwm(180)寄りの低速、approach_slowdown_dist(既定1.0m)
         以上離れていればmax_follow_pwm(既定200)まで出す。実機で「速すぎて衝突した」
-        ため、固定でmin_pwmに加算していた旧ロジックから距離比例の減速に変更した。"""
+        ため、固定でmin_pwmに加算していた旧ロジックから距離比例の減速に変更した。
+
+        線形(ratio=overshoot/approach_slowdown_dist)ではなく平方根カーブを使う:
+        「1m離れたら即Maxスピードで、そこから先(近距離)は一律の減速だった」ため、
+        近距離での詰めが甘くぶつかりやすいと実機で報告された。sqrtカーブは
+        overshoot=0付近(距離帯のすぐ外)で傾き(dPWM/d距離)が最も急になるため、
+        対象に近づくほど急激に減速する(＝終盤の詰めでしっかりブレーキがかかる)。
+        逆に遠距離側は傾きが緩やかになるため、比較的早い段階からそこそこの
+        速度に達し、その後はゆるやかにMaxへ近づく(＝遠いときは速度を出す)。
+        approach_slowdown_dist地点でMax(ratio=1)になる点は線形時と変わらない。"""
         overshoot = max(0.0, dist_error_m - self.config.distance_band)
-        ratio = min(1.0, overshoot / self.config.approach_slowdown_dist)
+        linear_ratio = min(1.0, overshoot / self.config.approach_slowdown_dist)
+        ratio = math.sqrt(linear_ratio)
         pwm_range = self.config.max_follow_pwm - self.config.min_pwm
         return int(self.config.min_pwm + ratio * pwm_range)
 

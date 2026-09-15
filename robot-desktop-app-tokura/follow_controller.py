@@ -155,6 +155,13 @@ class FollowConfig:
     kp_lin: float = 70.0
     ki_lin: float = 0.4
     kd_lin: float = 10.0
+    # 予測ヨー追従モード(実車未検証の実験的機能)。Trueのとき、FOLLOWING中の
+    # 操舵計算(error_x)に生のyaw_degではなくyaw_deg_predicted(Kalmanフィルタの
+    # yaw_rate_deg_sからprediction_time_sec先まで投影した値)を使う。
+    # detection辞書にyaw_deg_predictedが無い/Noneの場合(フィルタ未初期化・
+    # 対象未検出直後など)は自動的に生のyaw_degへフォールバックする。
+    # 効果が薄い/悪化する場合に備え既定はFalse。
+    predictive_control_enabled: bool = False
 
 
 def wrap_angle(deg: float) -> float:

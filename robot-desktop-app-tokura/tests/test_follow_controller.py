@@ -41,6 +41,11 @@ def test_follow_config_defaults_for_distance_band():
     assert config.lost_timeout_sec == 5.0
 
 
+def test_follow_config_predictive_control_defaults_to_disabled():
+    config = FollowConfig()
+    assert config.predictive_control_enabled is False
+
+
 # --- Task 2: FollowState ---
 
 

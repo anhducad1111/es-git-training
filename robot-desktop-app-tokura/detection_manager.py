@@ -167,7 +167,9 @@ class DetectionManager(QObject):
                 config.kp_lin = self._app._follow_kp_slider.value() / 10.0
                 config.ki_lin = self._app._follow_ki_slider.value() / 10.0
                 config.kd_lin = self._app._follow_kd_slider.value() / 10.0
-            
+            if self._app and hasattr(self._app, '_predictive_control_check'):
+                config.predictive_control_enabled = self._app._predictive_control_check.isChecked()
+
             self._follow_controller = FollowController(
                 config=config,
                 dry_run=False,

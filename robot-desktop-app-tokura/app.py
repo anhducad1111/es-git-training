@@ -39,8 +39,8 @@ class RoverTeleopApp(QWidget):
         self._view_mode = "main"
         self._current_speed = self._config.get("motor_speed", 220)
         self._global_speed = self._current_speed
-        self._gimbal_pan = 70
-        self._gimbal_tilt = 85
+        self._gimbal_pan = 85
+        self._gimbal_tilt = 70
         self._display_frame_count = 0
         self._display_fps_last_time = time.time()
         # カメラストリーム接続状態。follow modeトグル時点で既に接続済みなら
@@ -156,6 +156,7 @@ class RoverTeleopApp(QWidget):
         self._detection_mgr.target_found.connect(self._on_target_found)
         self._detection_mgr.aruco_lost.connect(self._on_aruco_lost)
         self._detection_mgr.aruco_found.connect(self._on_aruco_found)
+        self._detection_mgr.target_angle_updated.connect(self._on_target_angle_updated)
         if hasattr(self, '_video_canvas'):
             self._video_canvas.gimbal_changed.connect(self._on_mouse_gimbal)
         # ConnectionManagerのcamera_connected/camera_disconnectedは宣言されているだけで
@@ -208,9 +209,9 @@ class RoverTeleopApp(QWidget):
         
         self._add_log("MODE", "Connecting to REAL ESP32 hardware...")
         
-        self._gimbal_pan = 70
-        self._gimbal_tilt = 85
-        self._send_command("servo:70,85")
+        self._gimbal_pan = 85
+        self._gimbal_tilt = 70
+        self._send_command("servo:85,70")
 
     def _update_video_frame(self):
         frame = self._conn_mgr.take_frame()
@@ -274,6 +275,74 @@ class RoverTeleopApp(QWidget):
         self._video_canvas.set_follow_detections(
             [detection] if detection.get("bbox") else []
         )
+        if hasattr(self, '_distance_display') and detection.get("dist_m") is not None:
+            dist_cm = detection["dist_m"] * 100
+            self._distance_display.setText(f"{dist_cm:.0f} cm")
+            if dist_cm < 30:
+                self._distance_display.setStyleSheet("""
+                    background-color: #1e293b;
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    color: #ef4444;
+                    font-size: 11px;
+                    font-family: 'JetBrains Mono', monospace;
+                """)
+            elif dist_cm < 60:
+                self._distance_display.setStyleSheet("""
+                    background-color: #1e293b;
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    color: #f59e0b;
+                    font-size: 11px;
+                    font-family: 'JetBrains Mono', monospace;
+                """)
+            else:
+                self._distance_display.setStyleSheet("""
+                    background-color: #1e293b;
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    color: #10b981;
+                    font-size: 11px;
+                    font-family: 'JetBrains Mono', monospace;
+                """)
+
+    def _on_target_angle_updated(self, angle):
+        if hasattr(self, '_target_angle_display'):
+            sign = "+" if angle >= 0 else ""
+            self._target_angle_display.setText(f"{sign}{angle:.1f}°")
+            if abs(angle) < 10:
+                self._target_angle_display.setStyleSheet("""
+                    background-color: #1e293b;
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    color: #10b981;
+                    font-size: 11px;
+                    font-family: 'JetBrains Mono', monospace;
+                """)
+            elif abs(angle) < 30:
+                self._target_angle_display.setStyleSheet("""
+                    background-color: #1e293b;
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    color: #f59e0b;
+                    font-size: 11px;
+                    font-family: 'JetBrains Mono', monospace;
+                """)
+            else:
+                self._target_angle_display.setStyleSheet("""
+                    background-color: #1e293b;
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    color: #ef4444;
+                    font-size: 11px;
+                    font-family: 'JetBrains Mono', monospace;
+                """)
 
     def _send_cloud_update(self):
         pass
@@ -295,6 +364,8 @@ class RoverTeleopApp(QWidget):
                 self._settings_btn.setChecked(False)
             if hasattr(self, '_debug_btn'):
                 self._debug_btn.setChecked(False)
+            from views.diagnostics_view import _load_history
+            _load_history(self)
 
     def _toggle_snapshots_view(self):
         if self._view_mode == "snapshots":
@@ -402,11 +473,11 @@ class RoverTeleopApp(QWidget):
     def _on_camera_disconnected(self):
         """Handle camera stream disconnected."""
         self._camera_connected = False
-        self._add_log("CAMERA", "Stream disconnected")
+        self._add_log("CAMERA", "Stream disconnected - reconnecting...")
         if hasattr(self, '_cam_status'):
-            self._cam_status.setText("OFFLINE")
+            self._cam_status.setText("RECONNECTING...")
             self._cam_status.setStyleSheet("""
-                color: #ef4444;
+                color: #f59e0b;
                 font-size: 10px;
                 font-weight: 600;
                 letter-spacing: 1px;
@@ -435,9 +506,9 @@ class RoverTeleopApp(QWidget):
     def _on_rover_disconnected(self):
         """Handle rover WebSocket disconnected."""
         if hasattr(self, '_rover_status'):
-            self._rover_status.setText("OFFLINE")
+            self._rover_status.setText("RECONNECTING...")
             self._rover_status.setStyleSheet("""
-                color: #ef4444;
+                color: #f59e0b;
                 font-size: 10px;
                 font-weight: 600;
                 letter-spacing: 1px;
@@ -574,11 +645,9 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_gimbal_hud'):
             self._gimbal_hud.set_gimbal(int(pan), int(tilt))
         if hasattr(self, '_target_angle_display'):
-            target_angle = int(pan) - 90
-            if target_angle > 0:
-                self._target_angle_display.setText(f"+{target_angle}°")
-            else:
-                self._target_angle_display.setText(f"{target_angle}°")
+            target_angle = int(pan) - 85
+            sign = "+" if target_angle >= 0 else ""
+            self._target_angle_display.setText(f"{sign}{target_angle:.1f}°")
 
     def _on_target_lost(self):
         """Show target lost warning on video canvas."""
@@ -788,11 +857,9 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_gimbal_hud'):
             self._gimbal_hud.set_gimbal(int(pan), int(tilt))
         if hasattr(self, '_target_angle_display'):
-            target_angle = int(pan) - 90
-            if target_angle > 0:
-                self._target_angle_display.setText(f"+{target_angle}°")
-            else:
-                self._target_angle_display.setText(f"{target_angle}°")
+            target_angle = int(pan) - 85
+            sign = "+" if target_angle >= 0 else ""
+            self._target_angle_display.setText(f"{sign}{target_angle:.1f}°")
         self._send_command(f"servo:{int(pan)},{int(tilt)}")
 
     def closeEvent(self, event):

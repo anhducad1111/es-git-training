@@ -6,9 +6,9 @@ from PyQt6.QtWidgets import (
 )
 from widgets.sensor_card import SensorCard
 
-# Gimbal display offset: 70, 85 is the center position displayed as 0, 0
-_GIMBAL_PAN_OFFSET = 70
-_GIMBAL_TILT_OFFSET = 85
+# Gimbal display offset: 85, 70 is the center position displayed as 0, 0
+_GIMBAL_PAN_OFFSET = 85
+_GIMBAL_TILT_OFFSET = 70
 
 def _actual_to_display_pan(actual):
     """Convert actual pan angle to display value (reversed direction)."""
@@ -122,6 +122,116 @@ def create_sidebar(app):
     app._distance_card = SensorCard("Distance", "cm", "D", 0, 200)
     sensors_layout.addWidget(app._distance_card)
 
+    dpad_widget = QWidget()
+    dpad_widget.setFixedHeight(110)
+    dpad_layout = QVBoxLayout()
+    dpad_layout.setContentsMargins(0, 0, 0, 0)
+    dpad_layout.setSpacing(0)
+
+    dpad_base = """
+        QPushButton {
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            color: #475569;
+            font-weight: 700;
+            font-size: 16px;
+        }
+        QPushButton:pressed {
+            background-color: #06b6d4;
+            color: #0a0e1a;
+            border-color: #06b6d4;
+        }
+    """
+
+    dpad_active = """
+        QPushButton {
+            background-color: #06b6d4;
+            color: #0a0e1a;
+            border: 1px solid #06b6d4;
+            font-weight: 700;
+            font-size: 16px;
+        }
+    """
+
+    dpad_center = """
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #64748b;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        QPushButton:pressed {
+            background-color: #ef4444;
+            color: white;
+            border-color: #ef4444;
+        }
+    """
+
+    def _update_dpad_button(btn, active, style_normal, style_active):
+        btn.setStyleSheet(style_active if active else style_normal)
+
+    row_up = QHBoxLayout()
+    row_up.setContentsMargins(50, 0, 50, 0)
+    app._dpad_fwd = QPushButton("▲")
+    app._dpad_fwd.setFixedSize(40, 32)
+    app._dpad_fwd.setStyleSheet(dpad_base)
+    app._dpad_fwd.pressed.connect(lambda: app._send_command("forward"))
+    app._dpad_fwd.released.connect(lambda: app._send_command("stop"))
+    row_up.addWidget(app._dpad_fwd)
+    dpad_layout.addLayout(row_up)
+
+    row_mid = QHBoxLayout()
+    row_mid.setContentsMargins(0, 0, 0, 0)
+    row_mid.setSpacing(0)
+    app._dpad_left = QPushButton("◀")
+    app._dpad_left.setFixedSize(40, 32)
+    app._dpad_left.setStyleSheet(dpad_base)
+    app._dpad_left.pressed.connect(lambda: app._send_command("left"))
+    app._dpad_left.released.connect(lambda: app._send_command("stop"))
+    row_mid.addWidget(app._dpad_left)
+
+    btn_stop = QPushButton("■")
+    btn_stop.setFixedSize(40, 32)
+    btn_stop.setStyleSheet(dpad_center)
+    btn_stop.pressed.connect(lambda: app._send_command("stop"))
+    row_mid.addWidget(btn_stop)
+
+    app._dpad_right = QPushButton("▶")
+    app._dpad_right.setFixedSize(40, 32)
+    app._dpad_right.setStyleSheet(dpad_base)
+    app._dpad_right.pressed.connect(lambda: app._send_command("right"))
+    app._dpad_right.released.connect(lambda: app._send_command("stop"))
+    row_mid.addWidget(app._dpad_right)
+    dpad_layout.addLayout(row_mid)
+
+    row_down = QHBoxLayout()
+    row_down.setContentsMargins(50, 0, 50, 0)
+    app._dpad_rev = QPushButton("▼")
+    app._dpad_rev.setFixedSize(40, 32)
+    app._dpad_rev.setStyleSheet(dpad_base)
+    app._dpad_rev.pressed.connect(lambda: app._send_command("backward"))
+    app._dpad_rev.released.connect(lambda: app._send_command("stop"))
+    row_down.addWidget(app._dpad_rev)
+    dpad_layout.addLayout(row_down)
+
+    def _on_key_state(direction, pressed):
+        mapping = {
+            "forward": app._dpad_fwd,
+            "backward": app._dpad_rev,
+            "left": app._dpad_left,
+            "right": app._dpad_right,
+        }
+        btn = mapping.get(direction)
+        if btn:
+            _update_dpad_button(btn, pressed, dpad_base, dpad_active)
+
+    if hasattr(app, '_input_handler'):
+        app._input_handler.key_state_changed.connect(_on_key_state)
+
+    dpad_widget.setLayout(dpad_layout)
+    sensors_layout.addWidget(dpad_widget)
+
     sensors_layout.addStretch()
     sensors_page.setLayout(sensors_layout)
     app._sidebar_stack.addWidget(sensors_page)
@@ -214,8 +324,9 @@ def create_sidebar(app):
     """)
     app._sidebar_led_btn.clicked.connect(lambda: _toggle_led(app))
     safety_row.addWidget(app._sidebar_led_btn)
-    app._sidebar_pid_btn = QPushButton("PID: OFF")
+    app._sidebar_pid_btn = QPushButton("PID: ON")
     app._sidebar_pid_btn.setCheckable(True)
+    app._sidebar_pid_btn.setChecked(True)
     app._sidebar_pid_btn.setFixedHeight(26)
     app._sidebar_pid_btn.setStyleSheet("""
         QPushButton {
@@ -437,14 +548,15 @@ def _create_controls_group(app):
     center_btn.setStyleSheet("""
         QPushButton {
             background-color: #1e293b;
-            border: 1px solid #334155;
+            border: 1px solid #06b6d4;
             color: #06b6d4;
             font-weight: 700;
-            font-size: 10px;
+            font-size: 12px;
             border-radius: 14px;
         }
         QPushButton:hover {
-            background-color: #334155;
+            background-color: #06b6d4;
+            color: #0a0e1a;
         }
     """)
     center_btn.clicked.connect(app._center_gimbal)
@@ -581,6 +693,8 @@ def _toggle_snapshots(app):
 def _toggle_brake(app):
     checked = app._brake_toggle.isChecked()
     app._brake_toggle.setText("ON" if checked else "OFF")
+    if hasattr(app, '_config'):
+        app._config["auto_brake"] = checked
     if hasattr(app, '_esp32_api'):
         app._esp32_api.set_brake(checked)
     app._add_log("SAFETY", f"Auto-brake {'enabled' if checked else 'disabled'}")
@@ -598,10 +712,15 @@ def _on_led_change(app, value):
 
 
 def _toggle_led(app):
+    if hasattr(app, '_led_debounce_timer') and app._led_debounce_timer.isActive():
+        return
+    app._led_debounce_timer = QTimer()
+    app._led_debounce_timer.setSingleShot(True)
+    app._led_debounce_timer.start(500)
     checked = app._sidebar_led_btn.isChecked()
     app._sidebar_led_btn.setText("LED: ON" if checked else "LED: OFF")
-    if hasattr(app, '_esp32_api'):
-        app._esp32_api.set_led(255 if checked else 0)
+    if hasattr(app, '_apply_led'):
+        app._apply_led(255 if checked else 0)
     app._add_log("LED", f"{'ON' if checked else 'OFF'}")
 
 

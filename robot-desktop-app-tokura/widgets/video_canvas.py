@@ -238,4 +238,4 @@ class VideoCanvas(QLabel):
             self._app._latency_display.move(10, self.height() - 460)
         if hasattr(self, '_app') and hasattr(self._app, '_web_control_banner'):
             banner = self._app._web_control_banner
-            banner.move((self.width() - banner.width()) // 2, 10)
+            banner.move((self.width() - banner.width()) // 2, (self.height() - banner.height()) // 2)

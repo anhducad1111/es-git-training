@@ -4,6 +4,12 @@ from follow_detector import FollowDetector
 from follow_controller import FollowController, FollowConfig
 import time
 
+# Camera horizontal field of view (degrees)
+HORIZONTAL_FOV_DEG = 60.0
+DEFAULT_FRAME_WIDTH = 640.0
+# Standard pan center (0 degrees = straight ahead)
+PAN_CENTER = 85
+
 
 class DetectionManager(QObject):
     """Manages HOG, YOLO, and Follow mode detection."""
@@ -14,6 +20,7 @@ class DetectionManager(QObject):
     target_found = pyqtSignal()
     aruco_lost = pyqtSignal()
     aruco_found = pyqtSignal()
+    target_angle_updated = pyqtSignal(float)
     
     def __init__(self, log_callback, app=None):
         super().__init__()
@@ -29,6 +36,16 @@ class DetectionManager(QObject):
         self._follow_detector = None
         self._follow_controller = None
         self._follow_detections = []
+        
+        self._last_detection_time = None
+        self._target_lost_timeout = 1.0
+        self._target_lost_timer = QTimer()
+        self._target_lost_timer.timeout.connect(self._check_target_lost)
+        self._is_target_lost = False
+        
+        self._last_aruco_time = None
+        self._aruco_lost_timeout = 2.0
+        self._is_aruco_lost = False
 
         # ターゲット/ArUcoロスト警告(_on_follow_detected/_check_target_lost参照)。
         # toggle_follow_mode()の停止分岐でしかリセットされていなかったため、
@@ -209,6 +226,30 @@ class DetectionManager(QObject):
             
         self.follow_detected.emit(detection)
         
+        bbox = detection.get("bbox")
+        if bbox:
+            # bbox format is (x, y, width, height) from pose_inference
+            bx, by, bw, bh = bbox
+            bbox_x_center = bx + bw / 2
+            image_width = detection.get("frame_w", DEFAULT_FRAME_WIDTH)
+            
+            # Camera axis relative angle from bbox center
+            yaw_deg = ((bbox_x_center - (image_width / 2.0)) / image_width) * HORIZONTAL_FOV_DEG
+            
+            # Body-relative target angle (internal calculation for PID control)
+            current_pan_cmd = self._app._gimbal_pan if self._app and hasattr(self._app, '_gimbal_pan') else PAN_CENTER
+            body_target_angle = (current_pan_cmd - PAN_CENTER) + yaw_deg
+            
+            # Debug log
+            print(f"[DEBUG_ANGLE] pan_cmd={current_pan_cmd}, raw_bbox_x={bbox_x_center:.1f}, img_w={image_width}, yaw_deg={yaw_deg:.1f}, body_angle={body_target_angle:.1f}")
+            
+            # UI display signal output
+            # NOTE: Sign is inverted only for UI display to match intuitive screen direction
+            # (left/right) with coordinate system. Do not affect internal PID control or
+            # servo drive calculation logic.
+            display_target_angle = -body_target_angle
+            self.target_angle_updated.emit(display_target_angle)
+        
         if self._follow_controller:
             self._follow_controller.update(detection)
 
@@ -263,11 +304,9 @@ class DetectionManager(QObject):
             if hasattr(self._app, '_gimbal_hud'):
                 self._app._gimbal_hud.set_gimbal(int(pan), int(tilt))
             if hasattr(self._app, '_target_angle_display'):
-                target_angle = int(pan) - 90
-                if target_angle > 0:
-                    self._app._target_angle_display.setText(f"+{target_angle}°")
-                else:
-                    self._app._target_angle_display.setText(f"{target_angle}°")
+                target_angle = int(pan) - PAN_CENTER
+                sign = "+" if target_angle >= 0 else ""
+                self._app._target_angle_display.setText(f"{sign}{target_angle:.1f}°")
             self._app._send_command(f"servo:{int(pan)},{int(tilt)}")
             
     def stop_all(self):

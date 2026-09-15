@@ -59,7 +59,6 @@ def create_main_view(app):
         border-radius: 4px;
     """)
     app._web_control_banner.adjustSize()
-    app._web_control_banner.move((app._video_canvas.width() - app._web_control_banner.width()) // 2, 10)
     app._web_control_banner.hide()
 
     app._obstacle_warning = QLabel("⚠ OBSTACLE DETECTED")

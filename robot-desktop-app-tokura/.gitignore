@@ -1,0 +1,27 @@
+# YOLO model weight files
+*.pt
+*.pth
+*.onnx
+*.weights
+
+# Specific weight directories
+rccar_pose_inference/rccar_pose_model/weights/
+app2/rccar_pose_model/weights/
+car_follow_car/rccar_pose_inference/rccar_pose_model/weights/
+follow-mode/weight/
+follow-mode/last.pt
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

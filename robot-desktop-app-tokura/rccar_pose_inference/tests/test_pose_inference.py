@@ -220,6 +220,7 @@ def _make_gimbal_test_inference():
     inference._gimbal_center_pan_deg = 90.0
     inference._max_plausible_speed_mps = 2.0
     inference._prediction_time_sec = 0.5
+    inference._tilt_curve = None
     inference._confidence = 0.35
     inference._kalman = PoseKalmanFilter()
     inference._last_infer_time = None
@@ -308,6 +309,85 @@ class _StubModelToggle:
         boxes = _FakeBoxes(xyxy=[[10.0, 10.0, 50.0, 50.0]], conf=[0.9])
         keypoints = _FakeKeypoints(xy=[[[1, 1], [2, 2], [3, 3]]])
         return [_FakeResult(boxes=boxes, keypoints=keypoints)]
+
+
+class _RecordingGroundForTiltCurve:
+    """Records the A/v0/fx applied via apply_floor_params() just before each
+    pose() call, so tests can assert the tilt curve was actually evaluated
+    and fed into Ground for that frame's tilt angle."""
+
+    def __init__(self):
+        self.A = self.v0 = self.fx = None
+        self.applied_calls = []
+
+    def apply_floor_params(self, A, v0, fx):
+        self.A, self.v0, self.fx = A, v0, fx
+        self.applied_calls.append((A, v0, fx))
+
+    def pose(self, L, R, F):
+        return {"X": 0.0, "Z": 1.0, "yaw_deg": 0.0, "dist_m": 1.0}
+
+
+_TILT_CURVE = {
+    "fx": 556.06,
+    "v0_coeffs": [-9.085, 777.575],  # v0(tilt) = -9.085*tilt + 777.575
+    "A_coeffs": [-0.236536, 107.31828],
+    "tilt_deg_range": [65.0, 80.0],
+}
+
+
+def _make_tilt_curve_inference(tilt_curve=_TILT_CURVE):
+    inference = _make_gimbal_test_inference()
+    inference._ground = _RecordingGroundForTiltCurve()
+    inference._tilt_curve = tilt_curve
+    return inference
+
+
+def test_infer_applies_tilt_curve_params_to_ground_before_pose():
+    inference = _make_tilt_curve_inference()
+    inference._gimbal_provider = lambda: (90.0, 70.0, True)
+
+    inference.infer(np.zeros((480, 640, 3), dtype=np.uint8))
+
+    expected_v0 = -9.085 * 70.0 + 777.575
+    expected_A = -0.236536 * 70.0 + 107.31828
+    assert inference._ground.applied_calls == [(pytest.approx(expected_A), pytest.approx(expected_v0), 556.06)]
+
+
+def test_infer_uses_different_ground_params_at_different_tilt_angles():
+    inference = _make_tilt_curve_inference()
+
+    inference._gimbal_provider = lambda: (90.0, 65.0, True)
+    inference.infer(np.zeros((480, 640, 3), dtype=np.uint8))
+    v0_at_65 = inference._ground.v0
+
+    inference._gimbal_provider = lambda: (90.0, 80.0, True)
+    inference.infer(np.zeros((480, 640, 3), dtype=np.uint8))
+    v0_at_80 = inference._ground.v0
+
+    assert v0_at_65 != pytest.approx(v0_at_80)
+
+
+def test_infer_trusts_tilt_curve_extrapolation_within_margin():
+    inference = _make_tilt_curve_inference()
+    # 5 degrees past the calibrated range (65-80), within the 10-degree margin.
+    inference._gimbal_provider = lambda: (90.0, 85.0, True)
+
+    result = inference.infer(np.zeros((480, 640, 3), dtype=np.uint8))
+
+    assert result.dist_m is not None
+    assert inference._ground.applied_calls  # curve was still evaluated (clamped)
+
+
+def test_infer_gates_out_pose_when_tilt_outside_tilt_curve_extrapolation_margin():
+    inference = _make_tilt_curve_inference()
+    # 15 degrees past the calibrated range (65-80), beyond the 10-degree margin.
+    inference._gimbal_provider = lambda: (90.0, 95.0, True)
+
+    result = inference.infer(np.zeros((480, 640, 3), dtype=np.uint8))
+
+    assert result.yaw_deg is None
+    assert result.dist_m is None
 
 
 def test_infer_trusts_reacquired_detection_after_occlusion_despite_apparent_speed_jump(monkeypatch):

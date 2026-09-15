@@ -23,10 +23,23 @@ class Ground:
         # When F is a body marking rather than a ground-contact point, its
         # height above the floor shrinks the effective A; A_front captures that.
         self.A_front = g.get("A_front", self.A)
+        # Ratio between A_front and A at calibration time, preserved across
+        # apply_floor_params() calls (tilt_curve only fits A(tilt), not
+        # A_front(tilt) separately -- the front point's height offset is
+        # assumed to scale proportionally with A).
+        self._a_front_ratio = self.A_front / self.A if self.A else 1.0
         # Calibration-fitted blend weight between the two yaw estimates below
         # (e.g. w_front≈0 when the front point isn't reliable enough to use).
         self.w_axle = g.get("w_axle", 0.5)
         self.w_front = g.get("w_front", 0.5)
+
+    def apply_floor_params(self, A: float, v0: float, fx: float) -> None:
+        """Overrides the floor-plane projection constants with tilt-corrected
+        values (see gimbal_transform.ground_params_for_tilt), for the current
+        frame's gimbal tilt angle. A_front is rescaled to keep its
+        calibration-time ratio to A."""
+        self.A, self.v0, self.fx = A, v0, fx
+        self.A_front = A * self._a_front_ratio
 
     def point(self, u: float, v: float, A: float | None = None) -> tuple[float, float] | None:
         t = v - self.v0

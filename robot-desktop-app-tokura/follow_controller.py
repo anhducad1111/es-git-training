@@ -83,8 +83,31 @@ class FollowConfig:
     # pan_priority_burst_sec秒だけ旋回してから、pan_priority_pause_sec秒
     # 完全停止して検出が安定するのを待ち、改めてpan_offsetを確認する
     # (実機で連続旋回が速すぎてカメラがブレ対象を見失ったと報告された)。
-    pan_priority_burst_sec: float = 0.3
+    #
+    # バースト中は_spin_drive_commandを毎tick直接呼んで連続旋回する(高速
+    # パルスとの二重間引きで固まる不具合の修正、下のコメント参照)ため、
+    # 1バーストあたりの回転量は概算body_deg_per_sec_per_pwm×turn_speed×
+    # pan_priority_burst_secになる。0.3秒のままだと0.5×190×0.3≈28.5°と
+    # pan_priority_threshold_deg(15°)の約2倍にもなり、毎回オーバーシュート
+    # して逆方向の補正が入る振動が実機ログで確認された。0.1秒(≈9.5°/バースト、
+    # 閾値の半分程度)に短縮し、複数バーストにわけて滑らかに収束させる。
+    pan_priority_burst_sec: float = 0.1
     pan_priority_pause_sec: float = 0.6
+    # 推論精度が低いと、悪い距離/yaw推定のまま前進/後退し続けて対象を見失う
+    # ことがあるため、直進駆動(FOLLOWING距離PID・APPROACHING_BLIND遠距離追従)
+    # もpan角度優先補正と同じ「短いバースト走行→完全停止して検出が安定する
+    # のを待つ」方式にする。値はpan_priority_burst_sec/pause_secと同じにして
+    # ある(実車調整で見直してよい)。
+    drive_burst_sec: float = 0.3
+    drive_pause_sec: float = 0.6
+    # 遠距離では実機で「動きが細切れで遅すぎる」と報告されたが、その後
+    # 「連続前進のままだと向き・位置がずれていく」とも報告されたため、
+    # 完全連続駆動ではなく、遠距離ではバースト時間を長く(drive_burst_far_sec)
+    # して約1秒ごとに短く止めて追従状況を確認・補正する方式にする。
+    # 近距離(この距離(m)以下)ではdrive_burst_secのまま(頻繁に確認)。
+    # 停止時間(drive_pause_sec)は近距離・遠距離で共通。
+    drive_pulse_near_dist_m: float = 1.0
+    drive_burst_far_sec: float = 1.0
     # 旋回中、車体の回転によってカメラの絶対的な向きがどれだけズレるかを
     # 見越して、ジンバルのpanを先読みで補正する(フィードフォワード)。
     # body_deg_per_sec_per_pwm: PWM1あたり・1秒あたりの推定回転角度(度)。
@@ -720,6 +743,10 @@ class ControlThread(threading.Thread):
         self._pan_priority_burst_start = None
         self._pan_priority_pause_until = 0.0
 
+        # 直進駆動(前進/後退)のバースト→停止確認用の状態(pan優先旋回と同型)。
+        self._drive_burst_start = None
+        self._drive_pause_until = 0.0
+
     def run(self):
         self._running = True
         if self._log:
@@ -779,9 +806,11 @@ class ControlThread(threading.Thread):
         self._last_cmd_t = now
 
         if self.state == FollowState.HEAD_ON_HOLD:
+            self._reset_drive_pulse()
             return self._handle_head_on(yaw_deg_offset, dist_m)
 
         if self.state == FollowState.SEARCHING:
+            self._reset_drive_pulse()
             self._searching_since = self._searching_since or now
             if now - self._searching_since >= self.config.lost_timeout_sec:
                 self.state = FollowState.LOST_TIMEOUT
@@ -789,6 +818,7 @@ class ControlThread(threading.Thread):
             return self._stop_command("探索中(bbox未検出)")
 
         if self.state == FollowState.LOST_TIMEOUT:
+            self._reset_drive_pulse()
             return self._stop_command("ロストタイムアウト")
 
         self._searching_since = None
@@ -800,9 +830,11 @@ class ControlThread(threading.Thread):
             self._err_lin_i = 0.0
             self._prev_err_lin = 0.0
             self._prev_v_cmd = 0
+            self._reset_drive_pulse()
             return self._stop_command("ホールド(32.5-47.5cm帯)")
 
         if confidence < self.config.min_confidence:
+            self._reset_drive_pulse()
             return self._stop_command(f"信頼度不足({confidence:.2f})")
 
         # ジンバルが対象を追って補正中(is_settled()==False)はシャシーを減速して待つ。
@@ -870,6 +902,7 @@ class ControlThread(threading.Thread):
         pan_offset_deg = abs(pan_angle - pan_center)
         if pan_offset_deg > self.config.pan_priority_threshold_deg:
             self._prev_v_cmd = 0
+            self._reset_drive_pulse()  # 旋回優先中は直進駆動のバースト/停止確認を持ち越さない
             now = time.time()
 
             if now < self._pan_priority_pause_until:
@@ -902,7 +935,14 @@ class ControlThread(threading.Thread):
                 }
 
             spin_w = self.config.turn_speed if combined_heading_error <= 0 else -self.config.turn_speed
-            command = self._pulsed_spin_command(spin_w)
+            # ここは_pulsed_spin_commandの高速on/offパルスを使わず、バースト窓
+            # (pan_priority_burst_sec)の間は毎tick連続で旋回する。バースト→
+            # 完全停止のマクロな繰り返し自体が速度を抑える役割を果たしている
+            # ため、その内側でさらに高速パルス(spin_pulse_on/off_sec)を重ねると、
+            # 両者の周期がたまたま噛み合わない場合にバースト窓内で一度もON区間が
+            # 来ず、pan_offsetが何秒も補正されず固まることが実機ログで確認された
+            # (実車で「対象が視野端に流れていくのに補正されない」として報告)。
+            command = self._spin_drive_command(spin_w)
             return {
                 "type": "control",
                 "command": command,
@@ -921,17 +961,21 @@ class ControlThread(threading.Thread):
             # 片輪駆動はトルク不足で車体が動かないことが実機で確認されたため、
             # 両輪駆動に戻し、代わりにパルス駆動(on/off)で平均回転角速度を抑える
             self._prev_v_cmd = 0
+            self._reset_drive_pulse()
             spin_w = self.config.turn_speed if combined_heading_error <= 0 else -self.config.turn_speed
             command = self._pulsed_spin_command(spin_w)
         elif err_lin > self.config.distance_band:
             v = self._ramp_speed_signed(self._distance_proportional_pwm(err_lin))
-            command = self._forward_or_drive_command(v, w)
+            burst_sec = self.config.drive_burst_sec if dist_m <= self.config.drive_pulse_near_dist_m else self.config.drive_burst_far_sec
+            command = self._pulsed_drive_command(v, w, burst_sec=burst_sec)
         elif err_lin < -self.config.distance_band:
             v = self._ramp_speed_signed(-self._distance_proportional_pwm(abs(err_lin)))
-            command = self._forward_or_drive_command(v, w)
+            burst_sec = self.config.drive_burst_sec if dist_m <= self.config.drive_pulse_near_dist_m else self.config.drive_burst_far_sec
+            command = self._pulsed_drive_command(v, w, burst_sec=burst_sec)
         else:
             # 距離帯には収まっているが向きの補正が必要 -> その場で軽く旋回
             self._prev_v_cmd = 0
+            self._reset_drive_pulse()
             spin_w = self.config.turn_speed if combined_heading_error <= 0 else -self.config.turn_speed
             command = self._pulsed_spin_command(spin_w)
 
@@ -942,29 +986,63 @@ class ControlThread(threading.Thread):
             "log": f"heading:{combined_heading_error:+.2f} dist:{err_lin:+.2f}m {command}",
         }
 
-    def _pulsed_spin_command(self, spin_w: int) -> str:
-        """両輪逆回転の超信地旋回(v=0, w=spin_w)を、on/offのパルス駆動にして
-        平均回転角速度を落とす。片輪のみ駆動する緩旋回はトルク不足で車体が
-        動かないことが実機で確認されたため、両輪駆動(turn_speed、min_pwmを
-        満たすのでトルクは足りる)に戻し、代わりに時間軸でON/OFFを繰り返す
-        ことで実効的な旋回速度を抑える。
+    def _reset_drive_pulse(self) -> None:
+        """直進駆動(前進/後退)のバースト→停止確認の状態をリセットする。
+        駆動以外の分岐(旋回・停止系の状態)に移った時に呼び、次に直進駆動へ
+        戻った際は必ず新しいバーストから始まるようにする。"""
+        self._drive_burst_start = None
+        self._drive_pause_until = 0.0
 
-        壁時計時刻を`spin_pulse_on_sec + spin_pulse_off_sec`の周期で割った位置
-        だけで判定するステートレスな実装（呼び出し側で状態を持つ必要がない）。
+    def _pulsed_drive_command(self, v: int, w: int, burst_sec: float | None = None) -> str:
+        """前進/後退の直進駆動を「短いバースト走行→完全停止して検出が安定
+        するのを待つ(既定drive_pause_sec=0.6秒)」の繰り返しにする。推論精度が
+        低い状況で連続走行すると、悪い距離/yaw推定のまま走り続けて対象を
+        見失ったり、車体の向き・位置が少しずつずれていくことがあるため、
+        pan角度優先補正(_pan_priority_burst_start等)と同じ考え方を直進駆動
+        にも適用する。
 
-        ON区間では、旋回によって生じるカメラ絶対方向のズレをジンバルの
-        フィードフォワード補正で打ち消すよう、GimbalThreadにも同時に
-        パン移動を指示する(feedforward_enabled時)。"""
-        cycle = self.config.spin_pulse_on_sec + self.config.spin_pulse_off_sec
-        phase = time.time() % cycle
-        is_on = phase < self.config.spin_pulse_on_sec
+        burst_sec省略時はconfig.drive_burst_sec(既定0.3秒、近距離用)を使う。
+        遠距離(config.drive_pulse_near_dist_mより遠い)では、実機で「頻繁に
+        止まると細切れ過ぎて遅い」と報告される一方、「連続前進のままだと
+        ずれていく」とも報告されたため、呼び出し側がconfig.drive_burst_far_sec
+        (既定1.0秒)を渡し、バースト自体は続けつつ間隔を長くする。
 
+        停止(バースト終了・静止確認中)の間はself._prev_v_cmdも0にリセットし、
+        バースト再開時に0から滑らかにランプアップし直す(急発進を避ける)。"""
+        effective_burst_sec = self.config.drive_burst_sec if burst_sec is None else burst_sec
+        now = time.time()
+        if now < self._drive_pause_until:
+            self._prev_v_cmd = 0
+            return "drive:0,0"
+
+        if self._drive_burst_start is None:
+            self._drive_burst_start = now
+        elif now - self._drive_burst_start >= effective_burst_sec:
+            self._drive_pause_until = now + self.config.drive_pause_sec
+            self._drive_burst_start = None
+            self._prev_v_cmd = 0
+            return "drive:0,0"
+
+        return self._forward_or_drive_command(v, w)
+
+    def _spin_drive_command(self, spin_w: int) -> str:
+        """両輪逆回転の超信地旋回(v=0, w=spin_w)の駆動コマンドを1つ返す
+        (呼び出された分だけ実際に旋回する連続旋回)。旋回によって生じる
+        カメラ絶対方向のズレをジンバルのフィードフォワード補正で打ち消す
+        よう、GimbalThreadにも同時にパン移動を指示する(feedforward_enabled時)。
+
+        速度を抑えたい場合は、呼び出し側でon/off間引き(_pulsed_spin_command)
+        やバースト→停止のマクロな繰り返し(pan角度優先補正)を行うこと。
+        両方を同時に重ねると、周期の噛み合わせによってはON区間が長時間
+        一度も来ず旋回が完全に固まることが実機ログで確認された(pan角度優先
+        補正では1つのバースト窓の中で本メソッドを毎tick直接呼ぶことで、
+        この二重間引きを避けている)。"""
         # chassis_follow_enabledがFalse('v'キー未押下)のときは、この旋回コマンドは
         # CommandThread側で実際にはESP32へ送信されない(計算のみ)。にもかかわらず
         # フィードフォワードだけジンバルに適用すると、実際には動いていない車体の
         # 回転を前提にジンバルが一方的にpanをずらし続け、対象を見失う原因になる
         # (実機で「検出したのに勝手に動いていく」として報告されたバグ)。
-        if is_on and self.config.feedforward_enabled and self._gimbal_thread and self.chassis_follow_enabled:
+        if self.config.feedforward_enabled and self._gimbal_thread and self.chassis_follow_enabled:
             # このON区間で車体が回転するであろう角度を見積もり、ジンバルの
             # パンを先読みで補正する。符号(feedforward_pan_sign)は実機で
             # 未検証のため、逆に補正される場合は設定で反転すること。
@@ -976,8 +1054,24 @@ class ControlThread(threading.Thread):
             if self._log:
                 self._log("FOLLOW", f"[FF] 旋回フィードフォワード: spin_w={spin_w} delta_pan={delta:+.2f}°")
 
+        return f"drive:0,{spin_w}"
+
+    def _pulsed_spin_command(self, spin_w: int) -> str:
+        """両輪逆回転の超信地旋回(v=0, w=spin_w)を、on/offのパルス駆動にして
+        平均回転角速度を落とす。片輪のみ駆動する緩旋回はトルク不足で車体が
+        動かないことが実機で確認されたため、両輪駆動(turn_speed、min_pwmを
+        満たすのでトルクは足りる)に戻し、代わりに時間軸でON/OFFを繰り返す
+        ことで実効的な旋回速度を抑える。
+
+        壁時計時刻を`spin_pulse_on_sec + spin_pulse_off_sec`の周期で割った位置
+        だけで判定するステートレスな実装（呼び出し側で状態を持つ必要がない）。
+        このパルスをさらに外側のバースト機構と重ねると固まることがあるため、
+        _spin_drive_commandのdocstring参照。"""
+        cycle = self.config.spin_pulse_on_sec + self.config.spin_pulse_off_sec
+        phase = time.time() % cycle
+        is_on = phase < self.config.spin_pulse_on_sec
         if is_on:
-            return f"drive:0,{spin_w}"
+            return self._spin_drive_command(spin_w)
         return "drive:0,0"
 
     def _forward_or_drive_command(self, v: int, w: int) -> str:
@@ -1042,11 +1136,14 @@ class ControlThread(threading.Thread):
         w = int(max(-self.config.max_steering_w,
                      min(self.config.max_steering_w, pixel_error_x * self.config.max_steering_w)))
         v = self.config.blind_approach_pwm
+        # yaw/distが取れていない(=推論が弱い)状態での前進のため、他の直進駆動
+        # 同様にバースト→停止確認方式にする(_pulsed_drive_command参照)。
+        command = self._pulsed_drive_command(v, w)
         return {
             "type": "control",
-            "command": f"drive:{v},{w}",
-            "speed": v,
-            "log": f"[遠距離追従] pan誤差:{pixel_error_x:+.2f} drive:{v},{w}",
+            "command": command,
+            "speed": v if command != "drive:0,0" else 0,
+            "log": f"[遠距離追従] pan誤差:{pixel_error_x:+.2f} {command}",
         }
 
     def _stop_command(self, reason: str) -> dict:

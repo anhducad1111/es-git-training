@@ -21,7 +21,7 @@ class FollowDetector(QThread):
     PoseInference側でカメラ座標系から車体本体相対座標系への変換も行う。
     """
 
-    detected = pyqtSignal(dict)  # {yaw_deg, dist_m, confidence, bbox, frame_w, frame_h, bearing_deg, vx_mps, vz_mps, dist_m_predicted}
+    detected = pyqtSignal(dict)  # {yaw_deg, dist_m, confidence, bbox, frame_w, frame_h, bearing_deg, vx_mps, vz_mps, dist_m_predicted, yaw_deg_predicted}
     error = pyqtSignal(str)
 
     def __init__(self, confidence: float = 0.35, gimbal_thread=None):
@@ -113,11 +113,12 @@ class FollowDetector(QThread):
                         # 遠距離等でGround.pose()が失敗したフレームはNone
                         "bearing_deg": result.bearing_deg,
                         # Phase 6(未来位置予測): Kalmanフィルタの速度推定値と、
-                        # それをprediction_time_sec先まで投影した予測距離。
+                        # それをprediction_time_sec先まで投影した予測距離・予測ヨー。
                         # フィルタ初期化前はNone
                         "vx_mps": result.vx_mps,
                         "vz_mps": result.vz_mps,
                         "dist_m_predicted": result.dist_m_predicted,
+                        "yaw_deg_predicted": result.yaw_deg_predicted,
                         "aruco_detected": result.aruco_detected,
                     })
 

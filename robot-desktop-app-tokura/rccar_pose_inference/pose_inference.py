@@ -21,7 +21,7 @@ from typing import Callable
 
 import numpy as np
 
-from .gimbal_transform import is_tilt_within_calibration_range, rotate_pose_to_robot_frame
+from .gimbal_transform import ground_params_for_tilt, is_tilt_within_calibration_range, rotate_pose_to_robot_frame
 from .pose_fusion import fuse_distance
 from .pose_kalman import PoseKalmanFilter
 from .rccar_pose_model.geometry import Aruco as RcCarAruco
@@ -99,6 +99,10 @@ class PoseInference:
         self._tilt_max_deviation_deg = float(config.get("tilt_max_deviation_deg", 10.0))
         self._gimbal_center_pan_deg = float(config.get("gimbal_center_pan_deg", 90.0))
         self._gimbal_provider = gimbal_provider
+        # チルト較正カーブ(captures/rccar_pose/チルト較正手順.md参照)。あれば
+        # 毎フレーム現在のチルト角からGroundのA/v0/fxを補正する。無ければ
+        # 従来通り単一角度較正値のまま(calibration_tilt_degとの差でゲートのみ)。
+        self._tilt_curve = config.get("tilt_curve")
 
         from ultralytics import YOLO
 
@@ -128,6 +132,15 @@ class PoseInference:
             if candidate.shape[0] >= 3 and candidate[:, 0].max() > 0:
                 keypoints = candidate[:3]
 
+        # gimbal_providerは1フレームにつき1回だけ呼ぶ(pan/tilt/is_settledを
+        # ここで確定させ、Ground.pose()の前後両方でこの値を使い回す)。
+        pan_deg = tilt_deg = None
+        is_settled = True
+        tilt_trusted = True
+        if self._gimbal_provider is not None:
+            pan_deg, tilt_deg, is_settled = self._gimbal_provider()
+            tilt_trusted = self._update_ground_for_tilt(tilt_deg)
+
         pose = None
         if keypoints is not None and self._ground is not None:
             pose = self._ground.pose(keypoints[0], keypoints[1], keypoints[2])
@@ -138,7 +151,7 @@ class PoseInference:
         # 回転してしまうので、その前に控えておく。
         bearing_deg = math.degrees(math.atan2(pose["X"], pose["Z"])) if pose is not None else None
 
-        pose, position_confidence = self._apply_gimbal_compensation(pose)
+        pose, position_confidence = self._apply_gimbal_compensation(pose, pan_deg, is_settled, tilt_trusted)
 
         dist_aruco = None
         aruco_detected = False
@@ -204,13 +217,35 @@ class PoseInference:
         pred_z = state["Z"] + state["vz_mps"] * self._prediction_time_sec
         return math.hypot(pred_x, pred_z)
 
-    def _apply_gimbal_compensation(self, pose: dict | None) -> tuple[dict | None, float]:
+    def _update_ground_for_tilt(self, tilt_deg: float) -> bool:
+        """Corrects self._ground's floor-plane constants (A, v0, fx) for the
+        current gimbal tilt angle, if a tilt_curve calibration is available.
+
+        Returns whether this frame's tilt is trustworthy at all: with a
+        tilt_curve, False only when tilt_deg is too far outside the
+        calibrated tilt_deg_range to extrapolate (config.json's
+        tilt_max_deviation_deg doubles as the extrapolation margin here).
+        Without a tilt_curve, falls back to the old single-angle gate
+        (is_tilt_within_calibration_range against calibration_tilt_deg)."""
+        if self._ground is None:
+            return True
+        if self._tilt_curve is not None:
+            params = ground_params_for_tilt(self._tilt_curve, tilt_deg, self._tilt_max_deviation_deg)
+            if params is None:
+                return False
+            self._ground.apply_floor_params(**params)
+            return True
+        return is_tilt_within_calibration_range(tilt_deg, self._calibration_tilt_deg, self._tilt_max_deviation_deg)
+
+    def _apply_gimbal_compensation(self, pose: dict | None, pan_deg: float | None, is_settled: bool,
+                                    tilt_trusted: bool) -> tuple[dict | None, float]:
         """Returns (pose_in_robot_frame_or_None, position_confidence).
 
-        pose_in_robot_frame_or_None is None when the current tilt is too far
-        from the calibration angle to trust Ground's floor-plane projection
-        at all this frame (falls through to coasting on the Kalman filter's
-        prediction, same as a missed detection).
+        pose_in_robot_frame_or_None is None when tilt_trusted is False (the
+        current tilt is too far from calibration to trust Ground's
+        floor-plane projection at all this frame -- falls through to
+        coasting on the Kalman filter's prediction, same as a missed
+        detection).
 
         position_confidence is 1.0 normally, or a small value while the
         gimbal hasn't settled after a pan/tilt move -- see
@@ -218,8 +253,7 @@ class PoseInference:
         """
         if pose is None or self._gimbal_provider is None:
             return pose, 1.0
-        pan_deg, tilt_deg, is_settled = self._gimbal_provider()
-        if not is_tilt_within_calibration_range(tilt_deg, self._calibration_tilt_deg, self._tilt_max_deviation_deg):
+        if not tilt_trusted:
             return None, 1.0
         camera_left_rotation_deg = pan_deg - self._gimbal_center_pan_deg
         rotated = rotate_pose_to_robot_frame(pose["X"], pose["Z"], pose["yaw_deg"], camera_left_rotation_deg)

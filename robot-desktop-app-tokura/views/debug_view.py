@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 )
 
 from calibration import CalibrationLogger, GyroYawIntegrator
+from cloud_worker import CloudWorker
 from follow_controller import FollowConfig
 
 TABLE_STYLE = """
@@ -46,6 +47,7 @@ def create_debug_view(app):
     tabs = QTabWidget()
     tabs.addTab(_create_calibration_tab(app), "CALIBRATION")
     tabs.addTab(_create_follow_tuning_tab(app), "FOLLOW TUNING")
+    tabs.addTab(_create_gyro_pid_tab(app), "GYRO PID")
     return tabs
 
 
@@ -103,6 +105,13 @@ def _create_spin_test_panel(app):
     manual_row.addWidget(app._debug_spin_manual_input)
     form.addLayout(manual_row)
 
+    note_row = QHBoxLayout()
+    note_row.addWidget(QLabel("note(任意):"))
+    app._debug_spin_note_input = QLineEdit("")
+    app._debug_spin_note_input.setPlaceholderText("例: kd=0.4 bias=10")
+    note_row.addWidget(app._debug_spin_note_input)
+    form.addLayout(note_row)
+
     save_btn = QPushButton("SAVE")
     save_btn.clicked.connect(lambda: _save_spin_result(app))
     form.addWidget(save_btn)
@@ -137,6 +146,13 @@ def _create_forward_test_panel(app):
     app._debug_forward_distance_input.setPlaceholderText("m")
     dist_row.addWidget(app._debug_forward_distance_input)
     form.addLayout(dist_row)
+
+    note_row = QHBoxLayout()
+    note_row.addWidget(QLabel("note(任意):"))
+    app._debug_forward_note_input = QLineEdit("")
+    app._debug_forward_note_input.setPlaceholderText("例: 横ズレ0.10m右, kd=0.4 bias=10")
+    note_row.addWidget(app._debug_forward_note_input)
+    form.addLayout(note_row)
 
     save_btn = QPushButton("SAVE")
     save_btn.clicked.connect(lambda: _save_forward_result(app))
@@ -232,11 +248,13 @@ def _save_spin_result(app):
         app._add_log("DEBUG", "旋回結果保存中止: w/実行時間の入力値が不正")
         return
 
-    app._calibration_logger.append("spin", w, duration_s, value, "deg", source)
-    app._add_log("DEBUG", f"旋回結果を保存: w={w} duration={duration_s}s value={value}deg source={source}")
+    note = app._debug_spin_note_input.text().strip()
+    app._calibration_logger.append("spin", w, duration_s, value, "deg", source, note)
+    app._add_log("DEBUG", f"旋回結果を保存: w={w} duration={duration_s}s value={value}deg source={source} note={note}")
 
     app._debug_spin_gyro_label.setText("-")
     app._debug_spin_manual_input.setText("")
+    app._debug_spin_note_input.setText("")
     _reload_history_table(app)
 
 
@@ -275,10 +293,12 @@ def _save_forward_result(app):
         app._add_log("DEBUG", "前進結果保存中止: 入力値が不正")
         return
 
-    app._calibration_logger.append("forward", pwm, duration_s, distance_m, "m", "manual")
-    app._add_log("DEBUG", f"前進結果を保存: pwm={pwm} duration={duration_s}s distance={distance_m}m")
+    note = app._debug_forward_note_input.text().strip()
+    app._calibration_logger.append("forward", pwm, duration_s, distance_m, "m", "manual", note)
+    app._add_log("DEBUG", f"前進結果を保存: pwm={pwm} duration={duration_s}s distance={distance_m}m note={note}")
 
     app._debug_forward_distance_input.setText("")
+    app._debug_forward_note_input.setText("")
     _reload_history_table(app)
 
 
@@ -369,3 +389,159 @@ def _on_follow_tuning_change(app, attr: str, slider_value: int, scale: int, deci
         setattr(app._detection_mgr._follow_controller.config, attr,
                 value if decimals else int(value))
         app._add_log("DEBUG", f"follow config更新: {attr}={value}")
+
+
+# --- GYRO PID タブ ---
+# ESP32側のジャイロ直進PID(/api/pid、views/settings_view.pyの既存スライダーと
+# 同じ対象)を、文字が潰れて見づらいSETTINGSタブとは別に、大きく見やすい
+# フィールドと明示的なAPPLY/REFRESHボタンで操作できるようにしたもの。
+# SETTINGSタブの既存コントロールは変更せずそのまま残す(どちらからでも操作可)。
+
+_PID_FIELD_STYLE = """
+    QLineEdit {
+        background-color: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        padding: 10px 12px;
+        color: #e2e8f0;
+        font-size: 16px;
+        font-family: 'JetBrains Mono', monospace;
+    }
+"""
+
+_PID_LABEL_STYLE = "color: #e2e8f0; font-size: 14px; font-weight: 600;"
+
+
+def _create_gyro_pid_tab(app):
+    widget = QWidget()
+    layout = QVBoxLayout()
+    layout.setContentsMargins(16, 16, 16, 16)
+    layout.setSpacing(16)
+
+    title = QLabel("GYRO STRAIGHT-LINE PID (ESP32 /api/pid)")
+    title.setStyleSheet("color: #22d3ee; font-size: 13px; font-weight: 700; letter-spacing: 2px;")
+    layout.addWidget(title)
+
+    note = QLabel(
+        "SETTINGSタブと同じ値を操作します(どちらで変えても両方に反映されるわけ"
+        "ではないので、最後に押した方が有効です)。REFRESHでESP32の現在値を取得、"
+        "APPLYで入力欄の値を送信します。"
+    )
+    note.setWordWrap(True)
+    note.setStyleSheet("color: #64748b; font-size: 10px;")
+    layout.addWidget(note)
+
+    box = QGroupBox("PID Parameters")
+    form = QVBoxLayout()
+    form.setSpacing(14)
+
+    app._debug_pid_enabled_btn = QPushButton("ENABLED: UNKNOWN")
+    app._debug_pid_enabled_btn.setCheckable(True)
+    app._debug_pid_enabled_btn.setFixedHeight(40)
+    app._debug_pid_enabled_btn.clicked.connect(lambda: _on_pid_enabled_toggle(app))
+    form.addWidget(app._debug_pid_enabled_btn)
+
+    app._debug_pid_inputs = {}
+    for key, label_text in [("kp", "kp"), ("ki", "ki"), ("kd", "kd"),
+                             ("bias", "bias"), ("turn", "turn (意味未確認、要検証)")]:
+        row = QHBoxLayout()
+        label = QLabel(label_text)
+        label.setFixedWidth(220)
+        label.setStyleSheet(_PID_LABEL_STYLE)
+        row.addWidget(label)
+
+        field = QLineEdit()
+        field.setStyleSheet(_PID_FIELD_STYLE)
+        row.addWidget(field, 1)
+
+        app._debug_pid_inputs[key] = field
+        form.addLayout(row)
+
+    btn_row = QHBoxLayout()
+    refresh_btn = QPushButton("REFRESH (現在値を取得)")
+    refresh_btn.setFixedHeight(40)
+    refresh_btn.clicked.connect(lambda: _refresh_pid_status(app))
+    btn_row.addWidget(refresh_btn)
+
+    apply_btn = QPushButton("APPLY (送信)")
+    apply_btn.setFixedHeight(40)
+    apply_btn.setStyleSheet("QPushButton { background-color: #06b6d4; color: #0a0e1a; font-weight: 700; }")
+    apply_btn.clicked.connect(lambda: _apply_pid_from_debug_tab(app))
+    btn_row.addWidget(apply_btn)
+    form.addLayout(btn_row)
+
+    app._debug_pid_status_label = QLabel("")
+    app._debug_pid_status_label.setWordWrap(True)
+    app._debug_pid_status_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+    form.addWidget(app._debug_pid_status_label)
+
+    box.setLayout(form)
+    layout.addWidget(box)
+    layout.addStretch()
+
+    widget.setLayout(layout)
+    return widget
+
+
+def _on_pid_enabled_toggle(app):
+    checked = app._debug_pid_enabled_btn.isChecked()
+    app._debug_pid_enabled_btn.setText(f"ENABLED: {'ON' if checked else 'OFF'}")
+
+
+def _pid_base_url(app) -> str:
+    return f"http://{app._config['car_ip']}/api/pid"
+
+
+def _refresh_pid_status(app):
+    worker = CloudWorker("GET", _pid_base_url(app))
+
+    def _on_result(data):
+        for key in ("kp", "ki", "kd", "bias", "turn"):
+            if key in data:
+                app._debug_pid_inputs[key].setText(str(data[key]))
+        enabled = bool(data.get("enabled"))
+        app._debug_pid_enabled_btn.setChecked(enabled)
+        app._debug_pid_enabled_btn.setText(f"ENABLED: {'ON' if enabled else 'OFF'}")
+        app._debug_pid_status_label.setText(f"取得成功: {data}")
+        app._add_log("DEBUG", f"[PID] 現在値を取得: {data}")
+
+    def _on_error(e):
+        app._debug_pid_status_label.setText(f"取得失敗: {e}")
+        app._add_log("DEBUG", f"[PID] 取得失敗: {e}")
+
+    worker.result.connect(_on_result)
+    worker.error.connect(_on_error)
+    app._debug_pid_workers = getattr(app, "_debug_pid_workers", [])
+    app._debug_pid_workers.append(worker)
+    worker.finished.connect(lambda: app._debug_pid_workers.remove(worker) if worker in app._debug_pid_workers else None)
+    worker.start()
+
+
+def _apply_pid_from_debug_tab(app):
+    try:
+        params = {key: float(field.text().strip()) for key, field in app._debug_pid_inputs.items()
+                  if field.text().strip()}
+    except ValueError:
+        app._debug_pid_status_label.setText("送信中止: 数値の入力が不正です")
+        return
+
+    params["enabled"] = 1 if app._debug_pid_enabled_btn.isChecked() else 0
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    url = f"{_pid_base_url(app)}?{query}"
+
+    worker = CloudWorker("GET", url)
+
+    def _on_result(data):
+        app._debug_pid_status_label.setText(f"適用成功: {data}")
+        app._add_log("DEBUG", f"[PID] 適用: {data}")
+
+    def _on_error(e):
+        app._debug_pid_status_label.setText(f"適用失敗: {e}")
+        app._add_log("DEBUG", f"[PID] 適用失敗: {e}")
+
+    worker.result.connect(_on_result)
+    worker.error.connect(_on_error)
+    app._debug_pid_workers = getattr(app, "_debug_pid_workers", [])
+    app._debug_pid_workers.append(worker)
+    worker.finished.connect(lambda: app._debug_pid_workers.remove(worker) if worker in app._debug_pid_workers else None)
+    worker.start()

@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QApplication, QProgressDialog
 from follow_detector import FollowDetector
 from follow_controller import FollowController, FollowConfig
@@ -29,6 +29,20 @@ class DetectionManager(QObject):
         self._follow_detector = None
         self._follow_controller = None
         self._follow_detections = []
+
+        # ターゲット/ArUcoロスト警告(_on_follow_detected/_check_target_lost参照)。
+        # toggle_follow_mode()の停止分岐でしかリセットされていなかったため、
+        # アプリ起動後に一度もfollow modeを停止せず開始すると、_on_follow_detected
+        # 内の参照でAttributeErrorになっていた(実機で報告されたバグ)。__init__で
+        # 初期化しておく。
+        self._last_detection_time = None
+        self._is_target_lost = False
+        self._target_lost_timeout = 2.0
+        self._last_aruco_time = None
+        self._is_aruco_lost = False
+        self._aruco_lost_timeout = 2.0
+        self._target_lost_timer = QTimer()
+        self._target_lost_timer.timeout.connect(self._check_target_lost)
 
     def _show_loading_dialog(self, message: str):
         """推論モデルの読み込み(YOLO/PoseInference)は数百ms〜数秒かかる同期処理で、
@@ -115,6 +129,15 @@ class DetectionManager(QObject):
                 """)
         else:
             self._follow_mode_active = True
+
+            # follow mode開始時に、SETTINGSタブのジャイロ直進PID(kp/ki/kd/bias/
+            # enabled)スライダーの現在値を必ずESP32へ送り直す。スライダー操作時は
+            # 400msデバウンスされるため、「スライダーを動かした後に送信される前に
+            # follow modeを開始してしまい、古い/未確定の値のまま走り出す」ことを
+            # 防ぐ(実機で「PIDが本当に効いているか分からない」と報告されたため)。
+            if self._app and hasattr(self._app, '_apply_pid_params'):
+                self._app._apply_pid_params()
+
             self._follow_detector = FollowDetector(confidence=0.35)
             self._follow_detector.detected.connect(self._on_follow_detected)
             self._follow_detector.error.connect(lambda e: self._log("FOLLOW", f"Error: {e}"))

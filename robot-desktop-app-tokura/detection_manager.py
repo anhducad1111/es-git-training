@@ -1,4 +1,5 @@
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer
+from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtWidgets import QApplication, QProgressDialog
 from follow_detector import FollowDetector
 from follow_controller import FollowController, FollowConfig
 import time
@@ -28,17 +29,23 @@ class DetectionManager(QObject):
         self._follow_detector = None
         self._follow_controller = None
         self._follow_detections = []
-        
-        self._last_detection_time = None
-        self._target_lost_timeout = 1.0
-        self._target_lost_timer = QTimer()
-        self._target_lost_timer.timeout.connect(self._check_target_lost)
-        self._is_target_lost = False
-        
-        self._last_aruco_time = None
-        self._aruco_lost_timeout = 2.0
-        self._is_aruco_lost = False
-        
+
+    def _show_loading_dialog(self, message: str):
+        """推論モデルの読み込み(YOLO/PoseInference)は数百ms〜数秒かかる同期処理で、
+        呼び出し元がGUIスレッド(ボタンクリックハンドラ)のためその間UIがフリーズする。
+        せめて読み込み中であることが分かるよう、ブロッキング呼び出しの直前に
+        ビジー表示のダイアログを出し、processEvents()で強制的に描画させる。"""
+        parent = self._app if self._app else None
+        dialog = QProgressDialog(message, None, 0, 0, parent)
+        dialog.setWindowTitle("読み込み中")
+        dialog.setCancelButton(None)
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.show()
+        QApplication.processEvents()
+        return dialog
+
     def toggle_detection(self):
         """Toggle HOG or YOLO detection."""
         if self._detection_method == "HOG":
@@ -64,7 +71,11 @@ class DetectionManager(QObject):
                 self._yolo_detector.detected.connect(self._on_hog_detected)
                 self._yolo_detector.error.connect(lambda e: self._log("YOLO", f"Error: {e}"))
                 self._yolo_detector.status.connect(lambda e: self._log("YOLO", e))
-                self._yolo_detector.start_detection()
+                loading_dialog = self._show_loading_dialog("YOLOモデルを読み込み中...")
+                try:
+                    self._yolo_detector.start_detection()
+                finally:
+                    loading_dialog.close()
                 self._log("YOLO", "Object detection started")
                 
     def _on_hog_detected(self, detections):
@@ -107,7 +118,11 @@ class DetectionManager(QObject):
             self._follow_detector = FollowDetector(confidence=0.35)
             self._follow_detector.detected.connect(self._on_follow_detected)
             self._follow_detector.error.connect(lambda e: self._log("FOLLOW", f"Error: {e}"))
-            self._follow_detector.start_detection()
+            loading_dialog = self._show_loading_dialog("追従用モデルを読み込み中...")
+            try:
+                self._follow_detector.start_detection()
+            finally:
+                loading_dialog.close()
             self._follow_detector.start()
             
             config = FollowConfig()

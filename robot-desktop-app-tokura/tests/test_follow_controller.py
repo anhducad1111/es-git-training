@@ -4,6 +4,7 @@ from queue import Queue
 import pytest
 
 from follow_controller import (
+    CommandThread,
     ControlThread,
     FollowConfig,
     FollowState,
@@ -33,7 +34,7 @@ def test_follow_config_defaults_for_distance_band():
     config = FollowConfig()
     assert config.follow_distance == 0.4
     assert config.distance_band == 0.075
-    assert config.min_pwm == 150
+    assert config.min_pwm == 180
     assert config.blind_approach_pwm == 150
     assert config.head_on_threshold == 20.0
     assert config.state_hysteresis_frames == 3
@@ -216,14 +217,17 @@ def test_gimbal_unsettled_decelerates_smoothly_instead_of_hard_stop():
 
 
 def test_following_moves_chassis_once_gimbal_settled():
+    """回帰テスト: ヘディング補正がほぼ不要(|w|<=straight_command_w_threshold)
+    なため、ESP32のジャイロ直進PIDが効くforward/backward経路が使われることを
+    確認する(drive:v,wはPIDを経由しないため実機で直進が不安定だった)。"""
     thread = _make_control_thread()
     thread._gimbal_thread = _StubGimbal(settled=True)
     detection = {"yaw_deg": 5.0, "dist_m": 1.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
                  "frame_w": 640, "frame_h": 480}
     result = thread._compute_command(detection)
     assert thread.state == FollowState.FOLLOWING
-    assert result["command"] != "drive:0,0"
-    assert result["command"].startswith("drive:")
+    assert result["command"] == "forward"
+    assert result["speed"] > 0
 
 
 def test_following_prioritizes_turning_when_pan_offset_large_even_if_far():
@@ -245,9 +249,66 @@ def test_following_prioritizes_turning_when_pan_offset_large_even_if_far():
     assert "pan角度優先補正" in result["log"]
 
 
+def test_pan_priority_correction_stops_after_burst_then_pauses(monkeypatch):
+    """回帰テスト: pan角度優先補正はturn_speedを150未満に下げられないため、
+    代わりに「短いバースト旋回(既定0.3秒)→完全停止して静止確認(既定0.6秒)」
+    を繰り返す方式にした(実機で旋回が速すぎてカメラがブレ、対象を見失ったと
+    報告されたため)。バースト時間が経過した直後の呼び出しでは、パルスのON/OFF
+    に関わらず必ず完全停止(drive:0,0)が返ることを確認する。"""
+    thread = _make_control_thread()
+    thread._gimbal_thread = _StubGimbal(settled=True, current_pan=55.0, gimbal_center_pan=85.0)
+    detection = {"yaw_deg": 0.0, "dist_m": 2.0, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+
+    monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)  # phase=0 -> パルスON区間の先頭
+    thread._last_cmd_t = -1.0  # レートリミット(0.08秒)をバイパス
+    first = thread._compute_command(detection)
+    v_str, _w_str = first["command"].removeprefix("drive:").split(",")
+    assert v_str == "0"
+    assert first["command"] != "drive:0,0"  # バースト開始直後はONのはず
+
+    burst_sec = thread.config.pan_priority_burst_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    second = thread._compute_command(detection)
+    assert second["command"] == "drive:0,0"  # バースト終了 -> 静止確認へ
+
+    # 静止確認中(pause_sec未満)はまだ完全停止のまま
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + 0.05)
+    thread._last_cmd_t = 0.0
+    third = thread._compute_command(detection)
+    assert third["command"] == "drive:0,0"
+
+
+def test_pan_priority_correction_resumes_spin_after_pause_elapses(monkeypatch):
+    thread = _make_control_thread()
+    thread._gimbal_thread = _StubGimbal(settled=True, current_pan=55.0, gimbal_center_pan=85.0)
+    detection = {"yaw_deg": 0.0, "dist_m": 2.0, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+
+    monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)
+    thread._last_cmd_t = -1.0  # レートリミット(0.08秒)をバイパス
+    thread._compute_command(detection)  # バースト開始
+    burst_sec = thread.config.pan_priority_burst_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    thread._compute_command(detection)  # 停止 -> 静止確認開始
+
+    pause_sec = thread.config.pan_priority_pause_sec
+    # +0.01はパルス駆動のON区間(既定on_sec=0.08, off_sec=0.2, 周期0.28秒)に
+    # 確実に入るよう選んだオフセット(OFF区間に当たると、静止確認明けでも
+    # 見かけ上drive:0,0になってしまいテストが意図と無関係な理由で揺れるため)
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + pause_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    result = thread._compute_command(detection)
+    v_str, _w_str = result["command"].removeprefix("drive:").split(",")
+    assert v_str == "0"
+    assert result["command"] != "drive:0,0"  # 静止確認終了 -> 次のバーストが始まる
+
+
 def test_following_forward_command_is_clamped_to_min_pwm():
     """ランプアップが完了(_distance_proportional_pwmの目標に到達)した後は、
-    speedがmin_pwm(150)を下回らないことを確認する(motion中の底上げ)。"""
+    speedがmin_pwm(180)を下回らないことを確認する(motion中の底上げ)。"""
     thread = _make_control_thread()
     detection = {"yaw_deg": 5.0, "dist_m": 1.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
                  "frame_w": 640, "frame_h": 480}
@@ -256,8 +317,9 @@ def test_following_forward_command_is_clamped_to_min_pwm():
         thread._last_cmd_t = 0.0
         result = thread._compute_command(detection)
     assert thread.state == FollowState.FOLLOWING
-    if result["command"].startswith("drive:"):
-        assert result["speed"] >= 150
+    # yaw_deg=5.0でforward経路になる(straight_command_w_threshold参照)が、
+    # speedフィールドはdrive:のときと同じくmin_pwmで底上げされる
+    assert result["speed"] >= 180
 
 
 def test_pulsed_spin_command_is_on_during_on_phase(monkeypatch):
@@ -316,7 +378,7 @@ def test_pulsed_spin_command_skips_feedforward_when_chassis_disabled(monkeypatch
 
 def test_following_forward_speed_never_exceeds_max_follow_pwm():
     """回帰テスト: 実機で「速すぎて衝突した」ため、遠距離でも255ではなく
-    max_follow_pwm(既定190)を超えないことを確認する。"""
+    max_follow_pwm(既定200)を超えないことを確認する。"""
     thread = _make_control_thread()
     # 距離帯(35-50cm)から遠く離れている(1.5m)ケースを何度も評価してランプアップさせる
     detection = {"yaw_deg": 0.0, "dist_m": 1.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
@@ -326,7 +388,73 @@ def test_following_forward_speed_never_exceeds_max_follow_pwm():
         thread._last_cmd_t = 0.0
         result = thread._compute_command(detection)
         speeds.append(result["speed"])
-    assert max(speeds) <= 190
+    assert max(speeds) <= 200
+
+
+def test_following_uses_drive_when_heading_error_exceeds_straight_threshold():
+    """API_DOCUMENTATION.md 2.1/2.6: forward/backwardはESP32のジャイロ直進PIDを
+    経由するがdrive:v,wは経由しない。ヘディング補正が閾値を超えて実際に操舵が
+    必要なときは、直進PID頼みではなくdrive:v,wの差動制御にフォールバックする
+    ことを確認する。"""
+    thread = _make_control_thread()
+    thread._gimbal_thread = _StubGimbal(settled=True)  # pan center -> pan_error=0
+    # error_x = 60/45 = 1.333 -> combined_heading_error = 0.15*1.333 = 0.2
+    # -> w = int(-0.2*80) = -16 (straight_command_w_threshold=10を超える)
+    detection = {"yaw_deg": 60.0, "dist_m": 1.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+    result = thread._compute_command(detection)
+    assert thread.state == FollowState.FOLLOWING
+    assert result["command"].startswith("drive:")
+
+
+def test_command_thread_sets_speed_before_forward_command(monkeypatch):
+    """回帰テスト: forward/backwardではESP32へ速度を先に反映してから移動コマンドを
+    送る(逆順だと1tick古い速度でforward/backwardが実行されてしまう)。"""
+    calls = []
+    thread = CommandThread(
+        Queue(),
+        send_command=lambda cmd: calls.append(("send", cmd)),
+        set_speed=lambda spd: calls.append(("speed", spd)),
+        log_callback=None,
+    )
+    thread._execute_command({"command": "forward", "speed": 200, "chassis_enabled": True})
+    assert calls == [("speed", 200), ("send", "forward")]
+
+
+def test_command_thread_skips_set_speed_for_drive_command():
+    """drive:v,wはvに速度を含むため、別途set_speedを呼んではいけない
+    (二重に送ると後続のforward等にまで意図しない速度が残ってしまう)。"""
+    calls = []
+    thread = CommandThread(
+        Queue(),
+        send_command=lambda cmd: calls.append(("send", cmd)),
+        set_speed=lambda spd: calls.append(("speed", spd)),
+        log_callback=None,
+    )
+    thread._execute_command({"command": "drive:180,0", "speed": 180, "chassis_enabled": True})
+    assert calls == [("send", "drive:180,0")]
+
+
+def test_command_thread_resends_speed_only_on_startup_and_on_change():
+    """起動直後の1回は必ずspeed:Nを送り、以降は値が変わった時だけ送る
+    (同じ速度のforwardが連続しても毎tick再送しない)。"""
+    calls = []
+    thread = CommandThread(
+        Queue(),
+        send_command=lambda cmd: calls.append(("send", cmd)),
+        set_speed=lambda spd: calls.append(("speed", spd)),
+        log_callback=None,
+    )
+    thread._execute_command({"command": "forward", "speed": 200, "chassis_enabled": True})
+    thread._execute_command({"command": "forward", "speed": 200, "chassis_enabled": True})
+    thread._execute_command({"command": "forward", "speed": 200, "chassis_enabled": True})
+    thread._execute_command({"command": "forward", "speed": 220, "chassis_enabled": True})
+    assert calls == [
+        ("speed", 200), ("send", "forward"),
+        ("send", "forward"),
+        ("send", "forward"),
+        ("speed", 220), ("send", "forward"),
+    ]
 
 
 def test_following_forward_speed_ramps_up_gradually_not_instantly():
@@ -338,7 +466,9 @@ def test_following_forward_speed_ramps_up_gradually_not_instantly():
                  "frame_w": 640, "frame_h": 480}
     thread._last_cmd_t = 0.0
     first = thread._compute_command(detection)
-    assert first["command"].startswith("drive:")
+    # yaw_deg=0.0でヘディング補正がほぼ不要なため、ジャイロ直進PIDが効く
+    # forward経路が使われる(straight_command_w_threshold参照)
+    assert first["command"] == "forward"
     assert first["speed"] == thread._max_v_step  # 初回は0から_max_v_step分しか立ち上がらない
     thread._last_cmd_t = 0.0
     second = thread._compute_command(detection)
@@ -414,7 +544,8 @@ def test_run_never_enqueues_none_when_rate_limited():
         thread.input_queue.put(detection)
         first = thread.output_queue.get(timeout=1.0)
         assert first is not None
-        assert first["command"].startswith("drive:")
+        # yaw_deg=5.0でヘディング補正がほぼ不要なため、forward経路が使われる
+        assert first["command"] == "forward"
         # 2件目がNoneのまま積まれていないことを確認(積まれていればここで取得できてしまう)
         try:
             second = thread.output_queue.get(timeout=0.2)
@@ -446,3 +577,19 @@ def test_scenario_far_then_lost_then_recovered():
     r3 = thread._compute_command({"yaw_deg": 8.0, "dist_m": 1.2, "confidence": 0.9,
                                    "bbox": (300, 200, 20, 20), "frame_w": 640, "frame_h": 480})
     assert thread.state == FollowState.FOLLOWING
+
+
+# _mirror_drive_w: 実機で「対象を右に置いたのに逆方向へ旋回した」ことが確認された
+# ため、CommandThreadが実際に送信する直前でdrive:v,wのwを反転させるようにした
+# (ControlThread側の操舵計算自体はAPI仕様書通りの符号のまま変更していない)。
+
+
+def test_mirror_drive_w_negates_w_component():
+    assert CommandThread._mirror_drive_w("drive:60,-3") == "drive:60,3"
+    assert CommandThread._mirror_drive_w("drive:0,190") == "drive:0,-190"
+    assert CommandThread._mirror_drive_w("drive:0,0") == "drive:0,0"
+
+
+def test_mirror_drive_w_leaves_non_drive_commands_unchanged():
+    assert CommandThread._mirror_drive_w("stop") == "stop"
+    assert CommandThread._mirror_drive_w("servo:90,70") == "servo:90,70"

@@ -44,6 +44,18 @@ Streams the binary with `Content-Type`/`Content-Length` from the stored record.
 ## DELETE /rovers/{device_uid}/media/{id}
 204, removes the row and the underlying file together.
 
+## POST /firmware
+`multipart/form-data`, fields `version` (required, unique) and `file`; `release_notes` optional. 201 with metadata (id, version, file_size_bytes, mime_type, file_hash, release_notes, created_at). SHA-256 hash computed server-side. 422 if `version` is missing, 409 if it already exists.
+
+## GET /firmware
+List of all uploaded firmware releases, newest first. Omits `file_path` (a gateway filesystem detail).
+
+## GET /firmware/latest
+Metadata for the most recently uploaded firmware release. 404 if none has been uploaded yet.
+
+## GET /firmware/{id}/download
+Streams the binary with `Content-Type`/`Content-Length`/`Content-Disposition: attachment` from the stored record.
+
 ## GET /health
 `{status, database, api, uptime_seconds}`. 200 normally, 503 if the database is unreachable.
 
@@ -59,7 +71,7 @@ Sampled host metrics over time from `gateway_metrics` (one row per minute, writt
 {"error": {"code": "OUT_OF_RANGE", "message": "...", "request_id": "..."}}
 ```
 
-Codes: `MISSING_FIELD`, `OUT_OF_RANGE`, `MALFORMED_PAYLOAD`, `INVALID_PARAMETER`, `NOT_FOUND`, `SERVICE_UNAVAILABLE`, `INTERNAL_ERROR`.
+Codes: `MISSING_FIELD`, `OUT_OF_RANGE`, `MALFORMED_PAYLOAD`, `INVALID_PARAMETER`, `NOT_FOUND`, `ALREADY_EXISTS`, `SERVICE_UNAVAILABLE`, `INTERNAL_ERROR`.
 
 ## Out of scope (explicit)
 
@@ -69,6 +81,8 @@ Rover control/teleoperation and dashboard UI implementation are not part of this
 
 Each endpoint is implemented as its own controller class (one file per endpoint), e.g. `RoverListController`, `RoverLatestController`, `RoverReadingsController`, `MediaUploadController`, `SensorLimitsGetController`/`SensorLimitsPutController`. Shared formatting logic lives in `RoverTelemetry\Support\ReadingFormatter`.
 
+Firmware releases are fleet-wide (not per-rover): `FirmwareUploadController`, `FirmwareListController`, `FirmwareLatestController`, `FirmwareServeController`, stored via `FirmwareRepository`/`firmware_releases` — mirrors the `media_files` upload/serve pattern.
+
 ## Deployment note
 
-On the Pi 5: run behind php-fpm with a warm process pool and persistent PDO connections (spec §8.2 — this is what the 30 ms `GET /latest` budget assumes, not raw query cost). Point `MEDIA_STORAGE_PATH` at `/var/rover-media` (dev uses a project-relative `storage/media`). Schedule `bin/aggregate.php` (every minute) and `bin/retention.php` (nightly) via cron.
+On the Pi 5: run behind php-fpm with a warm process pool and persistent PDO connections (spec §8.2 — this is what the 30 ms `GET /latest` budget assumes, not raw query cost). Point `MEDIA_STORAGE_PATH` at `/var/rover-media` and `FIRMWARE_STORAGE_PATH` at `/var/rover-firmware` (dev uses project-relative `storage/media` / `storage/firmware`). Schedule `bin/aggregate.php` (every minute) and `bin/retention.php` (nightly) via cron.

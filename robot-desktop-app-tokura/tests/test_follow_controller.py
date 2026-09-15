@@ -280,6 +280,28 @@ def test_pan_priority_correction_stops_after_burst_then_pauses(monkeypatch):
     assert third["command"] == "drive:0,0"
 
 
+def test_pan_priority_correction_spins_every_tick_within_burst_regardless_of_spin_pulse_phase(monkeypatch):
+    """回帰テスト: 実機ログで、pan_priority_burst_sec(0.3秒)のバースト窓と
+    spin_pulse_on/off_sec(0.08秒/0.2秒、周期0.28秒)の高速パルスの周期が
+    たまたま噛み合わず、バースト窓内で一度も高速パルスのON区間が来ずに
+    pan_offsetが何秒も補正されず固まる不具合が確認された。修正後はバースト
+    窓の間、_pulsed_spin_commandの高速パルスを経由せず毎tick連続で旋回する
+    ため、高速パルスなら旧実装でOFFになっていたはずの位相(spin_pulse_on_sec
+    より後)でも、バースト時間(pan_priority_burst_sec)以内であれば旋回する。"""
+    thread = _make_control_thread()
+    thread._gimbal_thread = _StubGimbal(settled=True, current_pan=55.0, gimbal_center_pan=85.0)
+    detection = {"yaw_deg": 0.0, "dist_m": 2.0, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+
+    # spin_pulse_on_sec(既定0.08秒)より後、spin_pulse周期のOFF区間に相当する
+    # 時刻だが、pan_priority_burst_sec(既定0.3秒)にはまだ余裕がある。
+    off_phase_but_within_burst = thread.config.spin_pulse_on_sec + 0.01
+    monkeypatch.setattr("follow_controller.time.time", lambda: off_phase_but_within_burst)
+    thread._last_cmd_t = -1.0
+    result = thread._compute_command(detection)
+    assert result["command"] != "drive:0,0"  # 高速パルスならOFFのはずの位相でも旋回する
+
+
 def test_pan_priority_correction_resumes_spin_after_pause_elapses(monkeypatch):
     thread = _make_control_thread()
     thread._gimbal_thread = _StubGimbal(settled=True, current_pan=55.0, gimbal_center_pan=85.0)
@@ -320,6 +342,110 @@ def test_following_forward_command_is_clamped_to_min_pwm():
     # yaw_deg=5.0でforward経路になる(straight_command_w_threshold参照)が、
     # speedフィールドはdrive:のときと同じくmin_pwmで底上げされる
     assert result["speed"] >= 180
+
+
+def test_following_drive_stops_after_burst_then_pauses(monkeypatch):
+    """推論精度が低いと、悪い距離推定のまま前進し続けて対象を見失うことが
+    あるため、FOLLOWING時の直進駆動もpan角度優先補正と同じ「短いバースト
+    走行(既定0.3秒)→完全停止して静止確認(既定0.6秒)」方式にした。
+    バースト時間が経過した直後の呼び出しでは必ずdrive:0,0が返ることを確認する。
+    ただしこれはdrive_pulse_near_dist_m(既定1.0m)以内の近距離限定の挙動
+    (実機で「遠距離では細切れ過ぎて遅い」と報告されたため)なので、
+    dist_m=0.8mで確認する。"""
+    thread = _make_control_thread()
+    detection = {"yaw_deg": 5.0, "dist_m": 0.8, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+
+    monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)
+    thread._last_cmd_t = -1.0  # レートリミット(0.08秒)をバイパス
+    first = thread._compute_command(detection)
+    assert thread.state == FollowState.FOLLOWING
+    assert first["command"] != "drive:0,0"  # バースト開始直後は走行しているはず
+
+    burst_sec = thread.config.drive_burst_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    second = thread._compute_command(detection)
+    assert second["command"] == "drive:0,0"  # バースト終了 -> 静止確認へ
+    assert second["speed"] == 0
+
+    # 静止確認中(pause_sec未満)はまだ完全停止のまま
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + 0.05)
+    thread._last_cmd_t = 0.0
+    third = thread._compute_command(detection)
+    assert third["command"] == "drive:0,0"
+
+
+def test_following_drive_resumes_after_pause_elapses(monkeypatch):
+    thread = _make_control_thread()
+    detection = {"yaw_deg": 5.0, "dist_m": 0.8, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+
+    monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)
+    thread._last_cmd_t = -1.0
+    thread._compute_command(detection)  # バースト開始
+
+    burst_sec = thread.config.drive_burst_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    thread._compute_command(detection)  # 停止 -> 静止確認開始
+
+    pause_sec = thread.config.drive_pause_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + pause_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    result = thread._compute_command(detection)
+    assert result["command"] != "drive:0,0"  # 静止確認終了 -> 次のバーストが始まる
+
+
+def test_following_drive_uses_longer_burst_beyond_pulse_near_dist(monkeypatch):
+    """実機で「遠距離では動きが細切れ過ぎて遅い」と報告される一方、
+    「連続前進のままだと向き・位置がずれていく」とも報告されたため、
+    drive_pulse_near_dist_m(既定1.0m)より遠い場合は完全連続駆動にはせず、
+    バースト時間をdrive_burst_far_sec(既定1.0秒)に延ばして約1秒ごとに
+    確認・補正の小停止をする。近距離用のdrive_burst_sec(既定0.3秒)経過
+    時点ではまだ止まらないが、drive_burst_far_sec経過後は止まることを確認する。"""
+    thread = _make_control_thread()
+    detection = {"yaw_deg": 5.0, "dist_m": 1.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+
+    monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)
+    thread._last_cmd_t = -1.0
+    first = thread._compute_command(detection)
+    assert first["command"] != "drive:0,0"
+
+    near_burst_sec = thread.config.drive_burst_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: near_burst_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    second = thread._compute_command(detection)
+    assert second["command"] != "drive:0,0"  # 近距離用のバースト時間を過ぎてもまだ止まらない
+
+    far_burst_sec = thread.config.drive_burst_far_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: far_burst_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    third = thread._compute_command(detection)
+    assert third["command"] == "drive:0,0"  # 遠距離用のバースト時間を過ぎたら止まる
+
+
+def test_approaching_blind_drive_stops_after_burst_then_pauses(monkeypatch):
+    """APPROACHING_BLIND(yaw/dist欠落=推論が弱い状態)での前進も、同じ
+    バースト→停止確認方式が使われることを確認する。"""
+    thread = _make_control_thread()
+    detection = {"yaw_deg": None, "dist_m": 1.2, "confidence": 0.9, "bbox": (400, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+
+    monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)
+    thread._last_cmd_t = -1.0
+    first = thread._compute_command(detection)
+    assert thread.state == FollowState.APPROACHING_BLIND
+    assert first["command"].startswith("drive:150,")
+    assert first["speed"] == 150
+
+    burst_sec = thread.config.drive_burst_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: burst_sec + 0.01)
+    thread._last_cmd_t = 0.0
+    second = thread._compute_command(detection)
+    assert second["command"] == "drive:0,0"
+    assert second["speed"] == 0
 
 
 def test_pulsed_spin_command_is_on_during_on_phase(monkeypatch):

@@ -766,7 +766,8 @@ def _toggle_pid(app):
     checked = app._pid_toggle.isChecked()
     app._pid_toggle.setText("ON" if checked else "OFF")
     app._pid_toggle.setStyleSheet(TOGGLE_ON_STYLE if checked else TOGGLE_OFF_STYLE)
-    # Sync sidebar button
+    # サイドバーの常時表示PIDボタン(_sidebar_pid_btn)と表示を同期させる
+    # (どちらから操作しても両方が同じ状態を示すようにする)
     if hasattr(app, '_sidebar_pid_btn'):
         app._sidebar_pid_btn.setChecked(checked)
         app._sidebar_pid_btn.setText("PID: ON" if checked else "PID: OFF")

@@ -725,16 +725,22 @@ def _toggle_led(app):
 
 
 def _toggle_pid(app):
+    """実機で「PIDのkpが勝手に2になる」と報告されたバグの原因: このボタンは
+    以前 esp32_api.set_pid(enabled=checked) を直接呼んでおり、enabledだけを
+    送ってkp/ki/kd/biasを一切含めていなかった。ESP32側がkp/ki/kd未指定を
+    「ファームウェアのデフォルトへリセット」として扱っていたため、このボタンを
+    押すたびにSETTINGSタブ・DEBUGタブで調整した値が消えていた。
+    SETTINGSタブの_pid_toggle/_apply_pid_params()と同じ経路(kp/ki/kd/biasの
+    現在値を必ず一緒に送る)に統一する。"""
     checked = app._sidebar_pid_btn.isChecked()
     app._sidebar_pid_btn.setText("PID: ON" if checked else "PID: OFF")
-    # Sync settings button
     if hasattr(app, '_pid_toggle'):
         app._pid_toggle.setChecked(checked)
         app._pid_toggle.setText("ON" if checked else "OFF")
         from views.settings_view import TOGGLE_ON_STYLE, TOGGLE_OFF_STYLE
         app._pid_toggle.setStyleSheet(TOGGLE_ON_STYLE if checked else TOGGLE_OFF_STYLE)
-    if hasattr(app, '_esp32_api'):
-        app._esp32_api.set_pid(enabled=checked)
+    if hasattr(app, '_apply_pid_params'):
+        app._apply_pid_params()
     app._add_log("PID", f"PID straight {'enabled' if checked else 'disabled'}")
 
 

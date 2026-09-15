@@ -85,11 +85,11 @@ class InputHandler(QObject):
             
     def center_gimbal(self):
         """Center the gimbal."""
-        self._gimbal_pan = 90
-        self._gimbal_tilt = 90
-        self._send_command("servo:90,90")
+        self._gimbal_pan = 70
+        self._gimbal_tilt = 85
+        self._send_command("servo:70,85")
         if self._on_gimbal_update:
-            self._on_gimbal_update(90, 90)
+            self._on_gimbal_update(70, 85)
         
     def _update_gimbal(self):
         """Send gimbal update command."""

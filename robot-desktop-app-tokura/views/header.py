@@ -150,6 +150,52 @@ def create_header(app):
     """)
     layout.addWidget(app._cam_status)
 
+    separator_dist = QLabel()
+    separator_dist.setFixedWidth(1)
+    separator_dist.setFixedHeight(20)
+    separator_dist.setStyleSheet("background-color: #1e293b;")
+    layout.addWidget(separator_dist)
+
+    dist_label = QLabel("DIST")
+    dist_label.setStyleSheet("color: #475569; font-size: 10px; letter-spacing: 1px;")
+    layout.addWidget(dist_label)
+
+    app._distance_display = QLabel("-- cm")
+    app._distance_display.setFixedWidth(70)
+    app._distance_display.setStyleSheet("""
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 4px;
+        padding: 4px 8px;
+        color: #10b981;
+        font-size: 11px;
+        font-family: 'JetBrains Mono', monospace;
+    """)
+    layout.addWidget(app._distance_display)
+
+    separator_angle = QLabel()
+    separator_angle.setFixedWidth(1)
+    separator_angle.setFixedHeight(20)
+    separator_angle.setStyleSheet("background-color: #1e293b;")
+    layout.addWidget(separator_angle)
+
+    angle_label = QLabel("TARGET")
+    angle_label.setStyleSheet("color: #475569; font-size: 10px; letter-spacing: 1px;")
+    layout.addWidget(angle_label)
+
+    app._target_angle_display = QLabel("0°")
+    app._target_angle_display.setFixedWidth(60)
+    app._target_angle_display.setStyleSheet("""
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 4px;
+        padding: 4px 8px;
+        color: #a78bfa;
+        font-size: 11px;
+        font-family: 'JetBrains Mono', monospace;
+    """)
+    layout.addWidget(app._target_angle_display)
+
     header.setLayout(layout)
     return header
 

@@ -60,6 +60,8 @@ class DetectionResult:
     # up. None whenever velocity isn't available yet (same conditions as
     # vx_mps/vz_mps above).
     dist_m_predicted: float | None = None
+    # True if ArUco marker was detected in this frame
+    aruco_detected: bool = False
 
 
 class PoseInference:
@@ -139,10 +141,12 @@ class PoseInference:
         pose, position_confidence = self._apply_gimbal_compensation(pose)
 
         dist_aruco = None
+        aruco_detected = False
         if self._use_aruco_dist:
             marker = self._aruco(frame)
             if marker is not None:
                 dist_aruco = marker["dist_m"]
+                aruco_detected = True
 
         if pose is not None:
             dist_fused = fuse_distance(pose["dist_m"], dist_aruco, self._sigma_ground, self._sigma_aruco)
@@ -187,6 +191,7 @@ class PoseInference:
                     bbox=bbox, frame_w=w, frame_h=h, timestamp=now, bearing_deg=bearing_deg,
                     vx_mps=state["vx_mps"], vz_mps=state["vz_mps"],
                     dist_m_predicted=self._predict_dist_m(state),
+                    aruco_detected=aruco_detected,
                 )
 
         return self._coast_or_empty(dt, w, h, now, bbox=bbox, score=score)

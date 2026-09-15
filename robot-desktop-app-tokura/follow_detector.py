@@ -118,6 +118,7 @@ class FollowDetector(QThread):
                         "vx_mps": result.vx_mps,
                         "vz_mps": result.vz_mps,
                         "dist_m_predicted": result.dist_m_predicted,
+                        "aruco_detected": result.aruco_detected,
                     })
 
                 except Exception as e:

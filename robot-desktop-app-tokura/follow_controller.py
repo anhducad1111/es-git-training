@@ -7,6 +7,26 @@ from enum import Enum
 from queue import Queue
 from typing import Optional, Callable
 
+# Unified angle calculation constants
+# Vehicle front (12 o'clock) = 0 degrees
+# Right (3 o'clock) = +90 degrees
+# Left (9 o'clock) = -90 degrees
+PAN_CENTER = 85  # Servo center position = 0 degrees
+PAN_RANGE_HALF = 85  # Half of servo range (0-170)
+PHYSICAL_RANGE_HALF = 90.0  # Half of physical angle range (-90 to +90)
+HORIZONTAL_FOV_DEG = 60.0  # Camera horizontal field of view
+DEFAULT_FRAME_WIDTH = 640.0
+
+
+def pan_cmd_to_deg(pan_cmd: int) -> float:
+    """Convert servo command to physical angle (degrees).
+    
+    pan_cmd = 85 -> 0 degrees (vehicle front)
+    pan_cmd = 170 -> +90 degrees (right)
+    pan_cmd = 0 -> -90 degrees (left)
+    """
+    return (pan_cmd - PAN_CENTER) * (PHYSICAL_RANGE_HALF / PAN_RANGE_HALF)
+
 
 class FollowState(Enum):
     FOLLOWING = "following"
@@ -788,12 +808,29 @@ class ControlThread(threading.Thread):
         dist_m_predicted = detection.get("dist_m_predicted")
         bbox = detection.get("bbox")
         confidence = detection.get("confidence", 0.0)
+        frame_w = detection.get("frame_w", DEFAULT_FRAME_WIDTH)
 
-        # yaw_degはPoseInference.infer()（rccar_pose_inference）が返した時点で
-        # 既にジンバルのpan/tilt状態を使って車体本体相対に変換済みのため、ここで
-        # camera_yaw_offset相当の再補正は行わない（二重補正になるため削除済み。
-        # 旧: yaw_deg + GimbalThread.get_camera_yaw_offset()）。
-        yaw_deg_offset = yaw_deg
+        # Body-relative target angle (vehicle front = 0 degrees)
+        # pan_deg: gimbal servo angle in physical degrees
+        if self._gimbal_thread:
+            current_pan_cmd = self._gimbal_thread._current_pan
+        else:
+            current_pan_cmd = PAN_CENTER
+        pan_deg = pan_cmd_to_deg(current_pan_cmd)
+
+        # cam_yaw_deg: target offset from camera center
+        if bbox:
+            bx, by, bw, bh = bbox
+            bbox_x_center = bx + bw / 2
+            cam_yaw_deg = ((bbox_x_center - (frame_w / 2.0)) / frame_w) * HORIZONTAL_FOV_DEG
+        else:
+            cam_yaw_deg = 0.0
+
+        # body_target_angle: combined angle from vehicle front
+        body_target_angle = pan_deg + cam_yaw_deg
+
+        # Use body_target_angle for state resolution and heading control
+        yaw_deg_offset = body_target_angle
 
         candidate_state = resolve_follow_state(yaw_deg_offset, dist_m, bbox, self.config)
         self.state = self._hysteresis.update(candidate_state)
@@ -880,15 +917,8 @@ class ControlThread(threading.Thread):
         lin_v = (self.config.kp_lin * err_lin + self.config.ki_lin * self._err_lin_i
                  + self.config.kd_lin * d_err_lin)
 
-        error_x = yaw_deg_offset / self.config.yaw_max
-        if self._gimbal_thread:
-            pan_angle = self._gimbal_thread._current_pan
-            pan_center = self._gimbal_thread._gimbal_center_pan
-        else:
-            pan_angle = self.config.gimbal_center_pan_deg
-            pan_center = self.config.gimbal_center_pan_deg
-        pan_error = (pan_center - pan_angle) / pan_center
-        combined_heading_error = 0.15 * error_x + 0.85 * pan_error
+        # Unified heading error using body_target_angle (vehicle front = 0 degrees)
+        combined_heading_error = yaw_deg_offset / self.config.yaw_max
 
         # API_DOCUMENTATION.md 2.2: GET /drive?v=&w= (Left_PWM=v+w, Right_PWM=v-w)。
         # w: 負=左旋回、正=右旋回。combined_heading_error>0は「左に曲がる必要がある」
@@ -899,7 +929,7 @@ class ControlThread(threading.Thread):
         # ジンバルのpanが車体正面から大きくずれている場合(=車体自体は対象の方を
         # 向いていない)は、距離が離れていても接近より先に旋回してpan角度を
         # 正面(pan_center)へ戻すことを優先する。
-        pan_offset_deg = abs(pan_angle - pan_center)
+        pan_offset_deg = abs(body_target_angle)
         if pan_offset_deg > self.config.pan_priority_threshold_deg:
             self._prev_v_cmd = 0
             self._reset_drive_pulse()  # 旋回優先中は直進駆動のバースト/停止確認を持ち越さない

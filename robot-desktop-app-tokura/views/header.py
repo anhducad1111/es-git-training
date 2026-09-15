@@ -36,6 +36,107 @@ def create_header(app):
     """)
     layout.addWidget(version_label)
 
+    tab_separator = QLabel()
+    tab_separator.setFixedWidth(1)
+    tab_separator.setFixedHeight(20)
+    tab_separator.setStyleSheet("background-color: #1e293b;")
+    layout.addWidget(tab_separator)
+
+    tab_style = """
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-bottom: 2px solid transparent;
+            color: #94a3b8;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+            padding: 4px 12px;
+        }
+        QPushButton:hover {
+            background-color: #263548;
+            color: #cbd5e1;
+        }
+        QPushButton:checked {
+            background-color: #263548;
+            color: #e2e8f0;
+            border-bottom: 2px solid #06b6d4;
+        }
+    """
+
+    main_tab_style = """
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-bottom: 2px solid transparent;
+            color: #94a3b8;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+            padding: 4px 12px;
+        }
+        QPushButton:hover {
+            background-color: #263548;
+            color: #cbd5e1;
+        }
+        QPushButton:checked {
+            background-color: #263548;
+            color: #e2e8f0;
+            border-bottom: 2px solid #10b981;
+        }
+    """
+    app._main_tab_btn = QPushButton("MAIN")
+    app._main_tab_btn.setCheckable(True)
+    app._main_tab_btn.setChecked(True)
+    app._main_tab_btn.setStyleSheet(main_tab_style)
+    app._main_tab_btn.clicked.connect(app._toggle_main_view)
+    layout.addWidget(app._main_tab_btn)
+
+    app._settings_btn = QPushButton("SETTINGS")
+    app._settings_btn.setCheckable(True)
+    app._settings_btn.setStyleSheet(tab_style)
+    app._settings_btn.clicked.connect(app._toggle_settings)
+    layout.addWidget(app._settings_btn)
+
+    app._diag_btn = QPushButton("DIAGNOSTICS")
+    app._diag_btn.setCheckable(True)
+    app._diag_btn.setStyleSheet(tab_style)
+    app._diag_btn.clicked.connect(app._toggle_view)
+    layout.addWidget(app._diag_btn)
+
+    app._snapshot_btn = QPushButton("SNAPSHOTS")
+    app._snapshot_btn.setCheckable(True)
+    app._snapshot_btn.setStyleSheet(tab_style)
+    app._snapshot_btn.clicked.connect(app._toggle_snapshots_view)
+    layout.addWidget(app._snapshot_btn)
+
+    debug_tab_style = """
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-bottom: 2px solid transparent;
+            color: #94a3b8;
+            font-weight: 600;
+            font-size: 10px;
+            letter-spacing: 1px;
+            padding: 4px 12px;
+        }
+        QPushButton:hover {
+            background-color: #263548;
+            color: #cbd5e1;
+        }
+        QPushButton:checked {
+            background-color: #263548;
+            color: #e2e8f0;
+            border-bottom: 2px solid #ef4444;
+        }
+    """
+    app._debug_tab_btn = QPushButton("DEBUG")
+    app._debug_tab_btn.setCheckable(True)
+    app._debug_tab_btn.setStyleSheet(debug_tab_style)
+    app._debug_tab_btn.clicked.connect(app._toggle_debug_view)
+    layout.addWidget(app._debug_tab_btn)
+
     layout.addStretch()
 
     rover_label = QLabel("ROVER")
@@ -155,10 +256,12 @@ def create_header(app):
     separator_dist.setFixedHeight(20)
     separator_dist.setStyleSheet("background-color: #1e293b;")
     layout.addWidget(separator_dist)
+    app._separator_dist = separator_dist
 
     dist_label = QLabel("DIST")
     dist_label.setStyleSheet("color: #475569; font-size: 10px; letter-spacing: 1px;")
     layout.addWidget(dist_label)
+    app._dist_label = dist_label
 
     app._distance_display = QLabel("-- cm")
     app._distance_display.setFixedWidth(70)
@@ -178,10 +281,12 @@ def create_header(app):
     separator_angle.setFixedHeight(20)
     separator_angle.setStyleSheet("background-color: #1e293b;")
     layout.addWidget(separator_angle)
+    app._separator_angle = separator_angle
 
     angle_label = QLabel("TARGET")
     angle_label.setStyleSheet("color: #475569; font-size: 10px; letter-spacing: 1px;")
     layout.addWidget(angle_label)
+    app._target_angle_label = angle_label
 
     app._target_angle_display = QLabel("0°")
     app._target_angle_display.setFixedWidth(60)
@@ -195,6 +300,13 @@ def create_header(app):
         font-family: 'JetBrains Mono', monospace;
     """)
     layout.addWidget(app._target_angle_display)
+
+    app._separator_dist.hide()
+    app._dist_label.hide()
+    app._distance_display.hide()
+    app._separator_angle.hide()
+    app._target_angle_label.hide()
+    app._target_angle_display.hide()
 
     header.setLayout(layout)
     return header

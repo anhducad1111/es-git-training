@@ -99,7 +99,7 @@ class RoverTeleopApp(QWidget):
         self._conn_mgr = ConnectionManager(self._config, self.log_message.emit)
         self._video_mgr = VideoManager(None, self.log_message.emit)
         self._detection_mgr = DetectionManager(self.log_message.emit, app=self)
-        self._input_handler = InputHandler(self._send_command, self.log_message.emit, on_emergency_stop=self._emergency_stop, on_chassis_follow_toggle=self._toggle_chassis_follow, on_gimbal_update=self._on_gimbal_update)
+        self._input_handler = InputHandler(self._send_command, self.log_message.emit, on_emergency_stop=self._emergency_stop, on_chassis_follow_toggle=self._toggle_chassis_follow, on_gimbal_update=self._on_gimbal_update, on_snapshot=self._take_snapshot, on_toggle_recording=self._toggle_recording)
         self._cloud_mgr = CloudManager(self._config, self.log_message.emit)
         self._latest_telemetry = {}
         self._allow_remote_control = False
@@ -217,13 +217,24 @@ class RoverTeleopApp(QWidget):
         frame = self._conn_mgr.take_frame()
         if frame:
             if isinstance(frame, tuple):
-                image, frame_time = frame
+                if len(frame) == 3:
+                    image, frame_time, raw_jpeg = frame
+                else:
+                    image, frame_time = frame
+                    raw_jpeg = None
             else:
                 image, frame_time = frame, None
+                raw_jpeg = None
 
             if isinstance(image, QImage):
                 if self._video_mgr.is_recording:
-                    self._video_mgr.save_frame(image)
+                    # Pass raw JPEG data for efficient recording (no re-encoding needed)
+                    bbox = None
+                    detection = None
+                    if self._detection_mgr._follow_mode_active and self._detection_mgr._follow_detections:
+                        detection = self._detection_mgr._follow_detections[0]
+                        bbox = detection.get("bbox")
+                    self._video_mgr.save_frame(raw_jpeg, bbox, detection)
                 self._video_canvas.update_frame_jpeg(image)
 
                 # FPS/latency measured at the point of actual display, not
@@ -278,6 +289,8 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_distance_display') and detection.get("dist_m") is not None:
             dist_cm = detection["dist_m"] * 100
             self._distance_display.setText(f"{dist_cm:.0f} cm")
+            if hasattr(self, '_follow_overlay') and self._follow_overlay.isVisible():
+                self._follow_overlay.update_distance(dist_cm)
             if dist_cm < 30:
                 self._distance_display.setStyleSheet("""
                     background-color: #1e293b;
@@ -310,6 +323,8 @@ class RoverTeleopApp(QWidget):
                 """)
 
     def _on_target_angle_updated(self, angle):
+        if hasattr(self, '_follow_overlay') and self._follow_overlay.isVisible():
+            self._follow_overlay.update_target_angle(angle)
         if hasattr(self, '_target_angle_display'):
             sign = "+" if angle >= 0 else ""
             self._target_angle_display.setText(f"{sign}{angle:.1f}°")
@@ -353,6 +368,8 @@ class RoverTeleopApp(QWidget):
             self._view_mode = "main"
             if hasattr(self, '_diag_btn'):
                 self._diag_btn.setChecked(False)
+            if hasattr(self, '_main_tab_btn'):
+                self._main_tab_btn.setChecked(True)
         else:
             self._center_stack.setCurrentIndex(1)
             self._view_mode = "diagnostics"
@@ -362,8 +379,10 @@ class RoverTeleopApp(QWidget):
                 self._snapshot_btn.setChecked(False)
             if hasattr(self, '_settings_btn'):
                 self._settings_btn.setChecked(False)
-            if hasattr(self, '_debug_btn'):
-                self._debug_btn.setChecked(False)
+            if hasattr(self, '_debug_tab_btn'):
+                self._debug_tab_btn.setChecked(False)
+            if hasattr(self, '_main_tab_btn'):
+                self._main_tab_btn.setChecked(False)
             from views.diagnostics_view import _load_history
             _load_history(self)
 
@@ -373,6 +392,8 @@ class RoverTeleopApp(QWidget):
             self._view_mode = "main"
             if hasattr(self, '_snapshot_btn'):
                 self._snapshot_btn.setChecked(False)
+            if hasattr(self, '_main_tab_btn'):
+                self._main_tab_btn.setChecked(True)
         else:
             self._center_stack.setCurrentIndex(2)
             self._view_mode = "snapshots"
@@ -382,10 +403,28 @@ class RoverTeleopApp(QWidget):
                 self._diag_btn.setChecked(False)
             if hasattr(self, '_settings_btn'):
                 self._settings_btn.setChecked(False)
-            if hasattr(self, '_debug_btn'):
-                self._debug_btn.setChecked(False)
+            if hasattr(self, '_debug_tab_btn'):
+                self._debug_tab_btn.setChecked(False)
+            if hasattr(self, '_main_tab_btn'):
+                self._main_tab_btn.setChecked(False)
             from views.snapshots_view import _load_snapshots
             _load_snapshots(self)
+
+    def _toggle_main_view(self):
+        if hasattr(self, '_main_tab_btn'):
+            self._main_tab_btn.setChecked(True)
+        if self._view_mode == "main":
+            return
+        self._center_stack.setCurrentIndex(0)
+        self._view_mode = "main"
+        if hasattr(self, '_settings_btn'):
+            self._settings_btn.setChecked(False)
+        if hasattr(self, '_diag_btn'):
+            self._diag_btn.setChecked(False)
+        if hasattr(self, '_snapshot_btn'):
+            self._snapshot_btn.setChecked(False)
+        if hasattr(self, '_debug_tab_btn'):
+            self._debug_tab_btn.setChecked(False)
 
     def _toggle_settings(self):
         if self._view_mode == "settings":
@@ -393,6 +432,8 @@ class RoverTeleopApp(QWidget):
             self._view_mode = "main"
             if hasattr(self, '_settings_btn'):
                 self._settings_btn.setChecked(False)
+            if hasattr(self, '_main_tab_btn'):
+                self._main_tab_btn.setChecked(True)
         else:
             self._center_stack.setCurrentIndex(3)
             self._view_mode = "settings"
@@ -402,28 +443,34 @@ class RoverTeleopApp(QWidget):
                 self._diag_btn.setChecked(False)
             if hasattr(self, '_snapshot_btn'):
                 self._snapshot_btn.setChecked(False)
-            if hasattr(self, '_debug_btn'):
-                self._debug_btn.setChecked(False)
+            if hasattr(self, '_debug_tab_btn'):
+                self._debug_tab_btn.setChecked(False)
+            if hasattr(self, '_main_tab_btn'):
+                self._main_tab_btn.setChecked(False)
 
     def _toggle_debug_view(self):
         """開発用デバッグ/キャリブレーションタブの表示切替。
-        不要になったらこのメソッドとsidebarの_debug_btn配線を削除すればよい。"""
+        不要になったらこのメソッドとsidebarの_debug_tab_btn配線を削除すればよい。"""
         if self._view_mode == "debug":
             self._center_stack.setCurrentIndex(0)
             self._view_mode = "main"
-            if hasattr(self, '_debug_btn'):
-                self._debug_btn.setChecked(False)
+            if hasattr(self, '_debug_tab_btn'):
+                self._debug_tab_btn.setChecked(False)
+            if hasattr(self, '_main_tab_btn'):
+                self._main_tab_btn.setChecked(True)
         else:
             self._center_stack.setCurrentIndex(4)
             self._view_mode = "debug"
-            if hasattr(self, '_debug_btn'):
-                self._debug_btn.setChecked(True)
+            if hasattr(self, '_debug_tab_btn'):
+                self._debug_tab_btn.setChecked(True)
             if hasattr(self, '_diag_btn'):
                 self._diag_btn.setChecked(False)
             if hasattr(self, '_snapshot_btn'):
                 self._snapshot_btn.setChecked(False)
             if hasattr(self, '_settings_btn'):
                 self._settings_btn.setChecked(False)
+            if hasattr(self, '_main_tab_btn'):
+                self._main_tab_btn.setChecked(False)
 
     def _toggle_follow_mode(self):
         self._detection_mgr.toggle_follow_mode()
@@ -451,6 +498,16 @@ class RoverTeleopApp(QWidget):
 
     def _stop_recording(self):
         self._video_mgr.stop_recording()
+
+    def _toggle_recording(self):
+        if self._video_mgr.is_recording:
+            self._stop_recording()
+            if hasattr(self, '_rec_btn'):
+                self._rec_btn.setChecked(False)
+        else:
+            self._start_recording()
+            if hasattr(self, '_rec_btn'):
+                self._rec_btn.setChecked(True)
 
     def _on_camera_connected(self):
         """Handle camera stream connected."""
@@ -537,6 +594,8 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_distance_display') and "distance" in data:
             distance = data["distance"]
             self._distance_display.setText(f"{distance:.0f} cm")
+            if hasattr(self, '_follow_overlay') and self._follow_overlay.isVisible():
+                self._follow_overlay.update_distance(distance)
             if distance < 30:
                 self._distance_display.setStyleSheet("""
                     background-color: #1e293b;
@@ -603,16 +662,12 @@ class RoverTeleopApp(QWidget):
                     self._send_command(f"speed:{limited}")
                     if hasattr(self, '_speed_label'):
                         self._speed_label.setText(f"{limited}")
-                    if hasattr(self, '_speed_meter'):
-                        self._speed_meter.set_speed(limited)
             elif self._speed_limit_active:
                 self._speed_limit_active = False
                 self._current_speed = self._global_speed
                 self._send_command(f"speed:{self._global_speed}")
                 if hasattr(self, '_speed_label'):
                     self._speed_label.setText(f"{self._global_speed}")
-                if hasattr(self, '_speed_meter'):
-                    self._speed_meter.set_speed(self._global_speed)
         
         # Update diagnostics sensor cards
         if hasattr(self, '_temp_card') and "temperature" in data:
@@ -636,6 +691,7 @@ class RoverTeleopApp(QWidget):
     def _on_gimbal_update(self, pan, tilt):
         """Update gimbal UI when manually controlled."""
         from views.sidebar import _actual_to_display_pan, _actual_to_display_tilt
+        from follow_controller import pan_cmd_to_deg
         self._gimbal_pan = int(pan)
         self._gimbal_tilt = int(tilt)
         if hasattr(self, '_gimbal_pan_input'):
@@ -645,7 +701,7 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_gimbal_hud'):
             self._gimbal_hud.set_gimbal(int(pan), int(tilt))
         if hasattr(self, '_target_angle_display'):
-            target_angle = int(pan) - 85
+            target_angle = pan_cmd_to_deg(int(pan))
             sign = "+" if target_angle >= 0 else ""
             self._target_angle_display.setText(f"{sign}{target_angle:.1f}°")
 
@@ -678,8 +734,42 @@ class RoverTeleopApp(QWidget):
             self._aruco_lost_warning.hide()
 
     def _take_snapshot(self):
+        # Flash effect on SNAP button
+        if hasattr(self, '_snapshot_action_btn'):
+            btn = self._snapshot_action_btn
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3b82f6;
+                    border: 1px solid #3b82f6;
+                    color: white;
+                    font-weight: 600;
+                    font-size: 10px;
+                    letter-spacing: 1px;
+                }
+            """)
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(200, lambda: btn.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(59, 130, 246, 0.15);
+                    border: 1px solid rgba(59, 130, 246, 0.3);
+                    color: #3b82f6;
+                    font-weight: 600;
+                    font-size: 10px;
+                    letter-spacing: 1px;
+                }
+                QPushButton:hover {
+                    background-color: rgba(59, 130, 246, 0.25);
+                }
+            """))
+
         pixmap = self._video_canvas.pixmap() if hasattr(self, '_video_canvas') else None
-        self._video_mgr.take_snapshot(pixmap)
+        # Pass bounding box and detection info to snapshot when follow mode is active
+        bbox = None
+        detection = None
+        if self._detection_mgr._follow_mode_active and self._detection_mgr._follow_detections:
+            detection = self._detection_mgr._follow_detections[0]
+            bbox = detection.get("bbox")
+        self._video_mgr.take_snapshot(pixmap, bbox=bbox, detection=detection)
 
     def _emergency_stop(self):
         self._send_command("stop")
@@ -726,8 +816,6 @@ class RoverTeleopApp(QWidget):
         self._add_log("CMD", command)
         self._conn_mgr.send_command(command)
         if command == "stop":
-            if hasattr(self, '_speed_meter'):
-                self._speed_meter.reset_speed()
             if hasattr(self, '_speed_label'):
                 self._speed_label.setText("0")
 
@@ -846,6 +934,7 @@ class RoverTeleopApp(QWidget):
 
     def _on_mouse_gimbal(self, pan, tilt):
         from views.sidebar import _actual_to_display_pan, _actual_to_display_tilt
+        from follow_controller import pan_cmd_to_deg
         self._input_handler._gimbal_pan = int(pan)
         self._input_handler._gimbal_tilt = int(tilt)
         self._gimbal_pan = int(pan)
@@ -857,7 +946,7 @@ class RoverTeleopApp(QWidget):
         if hasattr(self, '_gimbal_hud'):
             self._gimbal_hud.set_gimbal(int(pan), int(tilt))
         if hasattr(self, '_target_angle_display'):
-            target_angle = int(pan) - 85
+            target_angle = pan_cmd_to_deg(int(pan))
             sign = "+" if target_angle >= 0 else ""
             self._target_angle_display.setText(f"{sign}{target_angle:.1f}°")
         self._send_command(f"servo:{int(pan)},{int(tilt)}")

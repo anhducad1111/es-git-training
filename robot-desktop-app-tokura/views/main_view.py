@@ -41,22 +41,16 @@ def create_main_view(app):
     app._latency_display.setParent(app._video_canvas)
     app._latency_display.move(10, app._video_canvas.height() - 460)
 
-    from widgets.speed_meter import SpeedMeter
-    app._speed_meter = SpeedMeter()
-    app._speed_meter.setParent(app._video_canvas)
-    app._speed_meter.move(10, app._video_canvas.height() - 330)
-    app._speed_meter.set_speed(app._current_speed)
-
     app._web_control_banner = QLabel("WEB CONTROLLED")
     app._web_control_banner.setParent(app._video_canvas)
     app._web_control_banner.setStyleSheet("""
-        background-color: rgba(239, 68, 68, 0.9);
+        background-color: rgba(239, 68, 68, 0.5);
         color: white;
         font-weight: 700;
-        font-size: 11px;
-        letter-spacing: 2px;
-        padding: 5px 14px;
-        border-radius: 4px;
+        font-size: 14px;
+        letter-spacing: 3px;
+        padding: 8px 20px;
+        border-radius: 6px;
     """)
     app._web_control_banner.adjustSize()
     app._web_control_banner.hide()
@@ -108,6 +102,10 @@ def create_main_view(app):
     app._aruco_lost_warning.adjustSize()
     app._aruco_lost_warning.move((app._video_canvas.width() - app._aruco_lost_warning.width()) // 2, 10)
     app._aruco_lost_warning.hide()
+
+    from widgets.follow_overlay import FollowModeOverlay
+    app._follow_overlay = FollowModeOverlay(app._video_canvas)
+    app._follow_overlay.move(app._video_canvas.width() - app._follow_overlay.width() - 10, 10)
 
     resolution_widget = QWidget()
     resolution_widget.setFixedHeight(32)

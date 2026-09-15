@@ -3,6 +3,27 @@ matplotlib.use('QtAgg')
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
+SENSOR_COLORS = {
+    "temperature": "#ef4444",
+    "humidity": "#3b82f6",
+    "gas": "#10b981",
+    "distance": "#f59e0b",
+}
+
+SENSOR_LABELS = {
+    "temperature": "Temp (°C)",
+    "humidity": "Humidity (%)",
+    "gas": "Gas (ppm)",
+    "distance": "Distance (cm)",
+}
+
+SENSOR_KEYS = {
+    "temperature": "temperature_c",
+    "humidity": "humidity_pct",
+    "gas": "gas_ppm",
+    "distance": "distance_cm",
+}
+
 
 class SensorChart(FigureCanvasQTAgg):
     def __init__(self, parent=None):
@@ -13,9 +34,8 @@ class SensorChart(FigureCanvasQTAgg):
         self._setup_axes()
 
         self._readings = []
-        self._times = []
-        self._temps = []
-        self._hums = []
+        self._custom_groups = None
+        self._normalize = {}
         self._hover_idx = None
 
         self.mpl_connect('motion_notify_event', self._on_mouse_move)
@@ -29,6 +49,14 @@ class SensorChart(FigureCanvasQTAgg):
         self.ax.spines['left'].set_color('#1e293b')
         self.ax.spines['right'].set_color('#1e293b')
         self.ax.grid(True, color='#1e293b', linestyle='--', alpha=0.5)
+
+    def rebuild_charts(self, custom_groups, normalize_flags=None):
+        self._custom_groups = custom_groups
+        self._normalize = normalize_flags or {}
+
+    def clear_custom_charts(self):
+        self._custom_groups = None
+        self._normalize = {}
 
     def update_chart(self, readings):
         self._readings = readings
@@ -44,28 +72,58 @@ class SensorChart(FigureCanvasQTAgg):
             self.draw()
             return
 
-        self._times = [r.get('recorded_at', '')[:16] for r in self._readings]
-        self._temps = [r.get('temperature_c', 0) for r in self._readings]
-        self._hums = [r.get('humidity_pct', 0) for r in self._readings]
+        if self._custom_groups:
+            self._draw_custom_charts()
+        else:
+            self._draw_default_charts()
 
-        x = range(len(self._times))
+    def _draw_default_charts(self):
+        times = [r.get('recorded_at', '')[:16] for r in self._readings]
+        temps = [r.get('temperature_c', 0) for r in self._readings]
+        hums = [r.get('humidity_pct', 0) for r in self._readings]
 
-        self.ax.plot(x, self._temps, color='#ef4444', linewidth=1.5, label='Temp (°C)', marker='o', markersize=3)
-        self.ax.plot(x, self._hums, color='#3b82f6', linewidth=1.5, label='Humidity (%)', marker='s', markersize=3)
+        x = range(len(times))
+        self.ax.plot(x, temps, color='#ef4444', linewidth=1.5, label='Temp (°C)', marker='o', markersize=3)
+        self.ax.plot(x, hums, color='#3b82f6', linewidth=1.5, label='Humidity (%)', marker='s', markersize=3)
 
+        self._finalize_axes(times, x)
+
+    def _draw_custom_charts(self):
+        times = [r.get('recorded_at', '')[:16] for r in self._readings]
+        x = range(len(times))
+
+        for title, sensors in self._custom_groups.items():
+            for sensor in sensors:
+                key = SENSOR_KEYS.get(sensor)
+                color = SENSOR_COLORS.get(sensor, '#94a3b8')
+                label = SENSOR_LABELS.get(sensor, sensor)
+                values = [r.get(key, 0) for r in self._readings]
+
+                if self._normalize.get(title, False):
+                    min_val = min(values) if values else 0
+                    max_val = max(values) if values else 1
+                    rng = max_val - min_val if max_val != min_val else 1
+                    values = [(v - min_val) / rng for v in values]
+
+                self.ax.plot(x, values, color=color, linewidth=1.5, label=f"{title}: {label}",
+                           marker='o', markersize=3)
+
+        self._finalize_axes(times, x)
+
+    def _finalize_axes(self, times, x):
         self.ax.set_ylabel('Value', color='#94a3b8', fontsize=9)
         self.ax.legend(loc='upper left', fontsize=8, facecolor='#0f172a', edgecolor='#1e293b',
                       labelcolor='#94a3b8')
 
-        if len(self._times) > 10:
-            step = len(self._times) // 10
+        if len(times) > 10:
+            step = len(times) // 10
             self.ax.set_xticks(x[::step])
-            self.ax.set_xticklabels(self._times[::step], rotation=45, ha='right', fontsize=7)
+            self.ax.set_xticklabels(times[::step], rotation=45, ha='right', fontsize=7)
         else:
             self.ax.set_xticks(x)
-            self.ax.set_xticklabels(self._times, rotation=45, ha='right', fontsize=7)
+            self.ax.set_xticklabels(times, rotation=45, ha='right', fontsize=7)
 
-        self.ax.set_xlim(-0.5, len(self._times) - 0.5)
+        self.ax.set_xlim(-0.5, len(times) - 0.5)
 
         if self._hover_idx is not None and 0 <= self._hover_idx < len(self._readings):
             self._draw_cursor(self._hover_idx)
@@ -74,8 +132,9 @@ class SensorChart(FigureCanvasQTAgg):
         self.draw()
 
     def _draw_cursor(self, idx):
-        temp = self._temps[idx]
-        hum = self._hums[idx]
+        r = self._readings[idx]
+        temp = r.get('temperature_c', 0)
+        hum = r.get('humidity_pct', 0)
 
         self.ax.axvline(x=idx, color='#475569', linestyle='--', linewidth=1, alpha=0.8)
 

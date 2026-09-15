@@ -484,14 +484,28 @@ def _load_snapshots(app):
         app._add_log("SNAPSHOT", "Cloud API not initialized")
         return
 
-    app._add_log("SNAPSHOT", "Loading snapshots from cloud...")
+    from PyQt6.QtWidgets import QProgressDialog, QApplication
 
-    result = app._cloud_api.get_media()
-    if isinstance(result, dict) and "error" in result:
-        app._add_log("SNAPSHOT", f"Error: {result['error']}")
-        return
+    loading_dialog = QProgressDialog("Loading snapshots...", None, 0, 0, app)
+    loading_dialog.setWindowTitle("Loading")
+    loading_dialog.setCancelButton(None)
+    loading_dialog.setMinimumDuration(0)
+    loading_dialog.setAutoClose(False)
+    loading_dialog.setAutoReset(False)
+    loading_dialog.show()
+    QApplication.processEvents()
 
-    _on_snapshots_loaded(app, result)
+    try:
+        app._add_log("SNAPSHOT", "Loading snapshots from cloud...")
+
+        result = app._cloud_api.get_media()
+        if isinstance(result, dict) and "error" in result:
+            app._add_log("SNAPSHOT", f"Error: {result['error']}")
+            return
+
+        _on_snapshots_loaded(app, result)
+    finally:
+        loading_dialog.close()
 
 
 def _on_snapshots_loaded(app, data):

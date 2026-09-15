@@ -1,8 +1,10 @@
-from PyQt6.QtCore import Qt, QTimer, QObject
+from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal
 
 
 class InputHandler(QObject):
     """Handles keyboard input and gimbal control."""
+    
+    key_state_changed = pyqtSignal(str, bool)
     
     def __init__(self, send_command_callback, log_callback, on_emergency_stop=None, on_chassis_follow_toggle=None, on_gimbal_update=None):
         super().__init__()
@@ -12,8 +14,8 @@ class InputHandler(QObject):
         self._on_chassis_follow_toggle = on_chassis_follow_toggle
         self._on_gimbal_update = on_gimbal_update
         
-        self._gimbal_pan = 90
-        self._gimbal_tilt = 90
+        self._gimbal_pan = 85
+        self._gimbal_tilt = 70
         self._global_speed = 220
         self._speed_delta = 0
         self._driving_forward = True
@@ -32,13 +34,17 @@ class InputHandler(QObject):
         if key == Qt.Key.Key_W:
             self._driving_forward = True
             self._send_command("forward")
+            self.key_state_changed.emit("forward", True)
         elif key == Qt.Key.Key_S:
             self._driving_forward = False
             self._send_command("backward")
+            self.key_state_changed.emit("backward", True)
         elif key == Qt.Key.Key_A:
             self._send_command("left")
+            self.key_state_changed.emit("left", True)
         elif key == Qt.Key.Key_D:
             self._send_command("right")
+            self.key_state_changed.emit("right", True)
         elif key == Qt.Key.Key_Space:
             self._send_command("stop")
             self._log("STOP", "Emergency stop activated")
@@ -77,19 +83,29 @@ class InputHandler(QObject):
             
         key = event.key()
         
-        if key in (Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D):
+        if key == Qt.Key.Key_W:
             self._send_command("stop")
+            self.key_state_changed.emit("forward", False)
+        elif key == Qt.Key.Key_S:
+            self._send_command("stop")
+            self.key_state_changed.emit("backward", False)
+        elif key == Qt.Key.Key_A:
+            self._send_command("stop")
+            self.key_state_changed.emit("left", False)
+        elif key == Qt.Key.Key_D:
+            self._send_command("stop")
+            self.key_state_changed.emit("right", False)
         elif key in (Qt.Key.Key_Shift, Qt.Key.Key_Control):
             self._speed_delta = 0
             self._speed_timer.stop()
             
     def center_gimbal(self):
         """Center the gimbal."""
-        self._gimbal_pan = 70
-        self._gimbal_tilt = 85
-        self._send_command("servo:70,85")
+        self._gimbal_pan = 85
+        self._gimbal_tilt = 70
+        self._send_command("servo:85,70")
         if self._on_gimbal_update:
-            self._on_gimbal_update(70, 85)
+            self._on_gimbal_update(85, 70)
         
     def _update_gimbal(self):
         """Send gimbal update command."""

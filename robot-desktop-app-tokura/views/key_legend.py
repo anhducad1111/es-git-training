@@ -2,14 +2,14 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 KEY_HINTS = [
-    ("W/S/A/D", "前進/後退/左/右"),
-    ("Space", "緊急停止"),
-    ("V", "追従モード切替"),
-    ("I/K", "首振り上下"),
-    ("J/L", "首振り左右"),
-    ("C", "首振り中央"),
-    ("Shift", "加速"),
-    ("Ctrl", "減速"),
+    ("W/S/A/D", "Forward/Back/Left/Right"),
+    ("Space", "Emergency Stop"),
+    ("V", "Toggle Follow Mode"),
+    ("I/K", "Gimbal Up/Down"),
+    ("J/L", "Gimbal Left/Right"),
+    ("C", "Center Gimbal"),
+    ("Shift", "Speed Up"),
+    ("Ctrl", "Slow Down"),
 ]
 
 

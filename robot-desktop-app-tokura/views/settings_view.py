@@ -253,12 +253,14 @@ PURPLE_VALUE_STYLE = """
 """
 
 LABEL_STYLE = """
-    color: #e2e8f0;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 1px;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0px;
     background-color: transparent;
     border: none;
+    padding: 0px;
+    margin: 0px;
 """
 
 PROGRESS_STYLE = """
@@ -374,10 +376,11 @@ def _create_pid_group(app):
     layout.setSpacing(10)
 
     toggle_row = QHBoxLayout()
-    app._pid_toggle = QPushButton("OFF")
+    app._pid_toggle = QPushButton("ON")
     app._pid_toggle.setCheckable(True)
+    app._pid_toggle.setChecked(True)
     app._pid_toggle.setFixedHeight(28)
-    app._pid_toggle.setStyleSheet(TOGGLE_OFF_STYLE)
+    app._pid_toggle.setStyleSheet(TOGGLE_ON_STYLE)
     app._pid_toggle.clicked.connect(lambda: _toggle_pid(app))
     toggle_row.addWidget(app._pid_toggle)
     toggle_row.addStretch()
@@ -386,7 +389,7 @@ def _create_pid_group(app):
     kp_row = QHBoxLayout()
     kp_row.setSpacing(10)
     kp_label = QLabel("Kp")
-    kp_label.setFixedWidth(36)
+    kp_label.setFixedWidth(80)
     kp_label.setStyleSheet(LABEL_STYLE)
     kp_row.addWidget(kp_label)
     app._kp_slider = QSlider(Qt.Orientation.Horizontal)
@@ -397,7 +400,7 @@ def _create_pid_group(app):
     kp_row.addWidget(app._kp_slider, 1)
     app._kp_label = QLabel("20")
     app._kp_label.setStyleSheet(VALUE_LABEL_STYLE)
-    app._kp_label.setFixedWidth(40)
+    app._kp_label.setFixedWidth(50)
     app._kp_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     kp_row.addWidget(app._kp_label)
     layout.addLayout(kp_row)
@@ -405,7 +408,7 @@ def _create_pid_group(app):
     ki_row = QHBoxLayout()
     ki_row.setSpacing(10)
     ki_label = QLabel("Ki")
-    ki_label.setFixedWidth(36)
+    ki_label.setFixedWidth(80)
     ki_label.setStyleSheet(LABEL_STYLE)
     ki_row.addWidget(ki_label)
     app._ki_slider = QSlider(Qt.Orientation.Horizontal)
@@ -416,7 +419,7 @@ def _create_pid_group(app):
     ki_row.addWidget(app._ki_slider, 1)
     app._ki_label = QLabel("5")
     app._ki_label.setStyleSheet(VALUE_LABEL_STYLE)
-    app._ki_label.setFixedWidth(40)
+    app._ki_label.setFixedWidth(60)
     app._ki_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     ki_row.addWidget(app._ki_label)
     layout.addLayout(ki_row)
@@ -424,7 +427,7 @@ def _create_pid_group(app):
     kd_row = QHBoxLayout()
     kd_row.setSpacing(10)
     kd_label = QLabel("Kd")
-    kd_label.setFixedWidth(36)
+    kd_label.setFixedWidth(80)
     kd_label.setStyleSheet(LABEL_STYLE)
     kd_row.addWidget(kd_label)
     app._kd_slider = QSlider(Qt.Orientation.Horizontal)
@@ -435,7 +438,7 @@ def _create_pid_group(app):
     kd_row.addWidget(app._kd_slider, 1)
     app._kd_label = QLabel("10")
     app._kd_label.setStyleSheet(VALUE_LABEL_STYLE)
-    app._kd_label.setFixedWidth(40)
+    app._kd_label.setFixedWidth(60)
     app._kd_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     kd_row.addWidget(app._kd_label)
     layout.addLayout(kd_row)
@@ -443,7 +446,7 @@ def _create_pid_group(app):
     bias_row = QHBoxLayout()
     bias_row.setSpacing(10)
     bias_label = QLabel("Bias")
-    bias_label.setFixedWidth(36)
+    bias_label.setFixedWidth(80)
     bias_label.setStyleSheet(LABEL_STYLE)
     bias_row.addWidget(bias_label)
     app._pid_bias_slider = QSlider(Qt.Orientation.Horizontal)
@@ -454,7 +457,7 @@ def _create_pid_group(app):
     bias_row.addWidget(app._pid_bias_slider, 1)
     app._pid_bias_label = QLabel("0")
     app._pid_bias_label.setStyleSheet(VALUE_LABEL_STYLE)
-    app._pid_bias_label.setFixedWidth(40)
+    app._pid_bias_label.setFixedWidth(60)
     app._pid_bias_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     bias_row.addWidget(app._pid_bias_label)
     layout.addLayout(bias_row)
@@ -473,7 +476,7 @@ def _create_camera_group(app):
     led_row = QHBoxLayout()
     led_row.setSpacing(10)
     led_label = QLabel("LED")
-    led_label.setFixedWidth(36)
+    led_label.setFixedWidth(60)
     led_label.setStyleSheet(LABEL_STYLE)
     led_row.addWidget(led_label)
 
@@ -494,7 +497,7 @@ def _create_camera_group(app):
         background-color: transparent;
         border: none;
     """)
-    app._led_label.setFixedWidth(40)
+    app._led_label.setFixedWidth(60)
     app._led_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     led_row.addWidget(app._led_label)
 
@@ -587,7 +590,7 @@ def _create_follow_group(app):
     kp_row = QHBoxLayout()
     kp_row.setSpacing(10)
     kp_label = QLabel("kp")
-    kp_label.setFixedWidth(36)
+    kp_label.setFixedWidth(60)
     kp_label.setStyleSheet(LABEL_STYLE)
     kp_row.addWidget(kp_label)
     app._follow_kp_slider = QSlider(Qt.Orientation.Horizontal)
@@ -598,7 +601,7 @@ def _create_follow_group(app):
     kp_row.addWidget(app._follow_kp_slider, 1)
     app._follow_kp_label = QLabel("70.0")
     app._follow_kp_label.setStyleSheet(PURPLE_VALUE_STYLE)
-    app._follow_kp_label.setFixedWidth(40)
+    app._follow_kp_label.setFixedWidth(60)
     app._follow_kp_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     kp_row.addWidget(app._follow_kp_label)
     layout.addLayout(kp_row)
@@ -606,7 +609,7 @@ def _create_follow_group(app):
     ki_row = QHBoxLayout()
     ki_row.setSpacing(10)
     ki_label = QLabel("ki")
-    ki_label.setFixedWidth(36)
+    ki_label.setFixedWidth(60)
     ki_label.setStyleSheet(LABEL_STYLE)
     ki_row.addWidget(ki_label)
     app._follow_ki_slider = QSlider(Qt.Orientation.Horizontal)
@@ -617,7 +620,7 @@ def _create_follow_group(app):
     ki_row.addWidget(app._follow_ki_slider, 1)
     app._follow_ki_label = QLabel("0.4")
     app._follow_ki_label.setStyleSheet(PURPLE_VALUE_STYLE)
-    app._follow_ki_label.setFixedWidth(40)
+    app._follow_ki_label.setFixedWidth(60)
     app._follow_ki_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     ki_row.addWidget(app._follow_ki_label)
     layout.addLayout(ki_row)
@@ -625,7 +628,7 @@ def _create_follow_group(app):
     kd_row = QHBoxLayout()
     kd_row.setSpacing(10)
     kd_label = QLabel("kd")
-    kd_label.setFixedWidth(36)
+    kd_label.setFixedWidth(60)
     kd_label.setStyleSheet(LABEL_STYLE)
     kd_row.addWidget(kd_label)
     app._follow_kd_slider = QSlider(Qt.Orientation.Horizontal)
@@ -636,7 +639,7 @@ def _create_follow_group(app):
     kd_row.addWidget(app._follow_kd_slider, 1)
     app._follow_kd_label = QLabel("10.0")
     app._follow_kd_label.setStyleSheet(PURPLE_VALUE_STYLE)
-    app._follow_kd_label.setFixedWidth(40)
+    app._follow_kd_label.setFixedWidth(60)
     app._follow_kd_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     kd_row.addWidget(app._follow_kd_label)
     layout.addLayout(kd_row)
@@ -644,7 +647,7 @@ def _create_follow_group(app):
     cam_offset_row = QHBoxLayout()
     cam_offset_row.setSpacing(10)
     cam_offset_label = QLabel("CAM")
-    cam_offset_label.setFixedWidth(36)
+    cam_offset_label.setFixedWidth(60)
     cam_offset_label.setStyleSheet(LABEL_STYLE)
     cam_offset_row.addWidget(cam_offset_label)
     app._follow_cam_offset_slider = QSlider(Qt.Orientation.Horizontal)
@@ -655,7 +658,7 @@ def _create_follow_group(app):
     cam_offset_row.addWidget(app._follow_cam_offset_slider, 1)
     app._follow_cam_offset_label = QLabel("0")
     app._follow_cam_offset_label.setStyleSheet(PURPLE_VALUE_STYLE)
-    app._follow_cam_offset_label.setFixedWidth(40)
+    app._follow_cam_offset_label.setFixedWidth(60)
     app._follow_cam_offset_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     cam_offset_row.addWidget(app._follow_cam_offset_label)
     layout.addLayout(cam_offset_row)
@@ -707,7 +710,7 @@ def _create_ota_group(app):
     ver_row = QHBoxLayout()
     ver_row.setSpacing(10)
     ver_label = QLabel("VER")
-    ver_label.setFixedWidth(36)
+    ver_label.setFixedWidth(60)
     ver_label.setStyleSheet(LABEL_STYLE)
     ver_row.addWidget(ver_label)
     app._ota_ver_input = QLineEdit()
@@ -719,7 +722,7 @@ def _create_ota_group(app):
     info_row = QHBoxLayout()
     info_row.setSpacing(10)
     info_label = QLabel("INFO")
-    info_label.setFixedWidth(36)
+    info_label.setFixedWidth(60)
     info_label.setStyleSheet(LABEL_STYLE)
     info_row.addWidget(info_label)
     app._ota_info_input = QLineEdit()
@@ -731,7 +734,7 @@ def _create_ota_group(app):
     url_row = QHBoxLayout()
     url_row.setSpacing(10)
     url_label = QLabel("URL")
-    url_label.setFixedWidth(36)
+    url_label.setFixedWidth(60)
     url_label.setStyleSheet(LABEL_STYLE)
     url_row.addWidget(url_label)
     app._ota_url_input = QLineEdit()
@@ -763,6 +766,10 @@ def _toggle_pid(app):
     checked = app._pid_toggle.isChecked()
     app._pid_toggle.setText("ON" if checked else "OFF")
     app._pid_toggle.setStyleSheet(TOGGLE_ON_STYLE if checked else TOGGLE_OFF_STYLE)
+    # Sync sidebar button
+    if hasattr(app, '_sidebar_pid_btn'):
+        app._sidebar_pid_btn.setChecked(checked)
+        app._sidebar_pid_btn.setText("PID: ON" if checked else "PID: OFF")
     app._add_log("PID", f"PID straight {'enabled' if checked else 'disabled'}")
     app._schedule_pid_apply()
 

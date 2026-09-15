@@ -1,6 +1,7 @@
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 from follow_detector import FollowDetector
 from follow_controller import FollowController, FollowConfig
+import time
 
 
 class DetectionManager(QObject):
@@ -8,6 +9,10 @@ class DetectionManager(QObject):
     
     detections_updated = pyqtSignal(list)
     follow_detected = pyqtSignal(dict)
+    target_lost = pyqtSignal()
+    target_found = pyqtSignal()
+    aruco_lost = pyqtSignal()
+    aruco_found = pyqtSignal()
     
     def __init__(self, log_callback, app=None):
         super().__init__()
@@ -23,6 +28,16 @@ class DetectionManager(QObject):
         self._follow_detector = None
         self._follow_controller = None
         self._follow_detections = []
+        
+        self._last_detection_time = None
+        self._target_lost_timeout = 1.0
+        self._target_lost_timer = QTimer()
+        self._target_lost_timer.timeout.connect(self._check_target_lost)
+        self._is_target_lost = False
+        
+        self._last_aruco_time = None
+        self._aruco_lost_timeout = 2.0
+        self._is_aruco_lost = False
         
     def toggle_detection(self):
         """Toggle HOG or YOLO detection."""
@@ -70,6 +85,11 @@ class DetectionManager(QObject):
             self._follow_detections = []
             if self._app and hasattr(self._app, '_video_canvas'):
                 self._app._video_canvas.set_follow_detections([])
+            self._target_lost_timer.stop()
+            self._last_detection_time = None
+            self._is_target_lost = False
+            self._last_aruco_time = None
+            self._is_aruco_lost = False
             self._log("FOLLOW", "Follow mode stopped")
             # Update button state
             if self._app and hasattr(self._app, '_follow_btn'):
@@ -153,6 +173,39 @@ class DetectionManager(QObject):
         
         if self._follow_controller:
             self._follow_controller.update(detection)
+
+        if detection.get("bbox") and detection.get("confidence", 0) > 0.3:
+            self._last_detection_time = time.time()
+            if self._is_target_lost:
+                self._is_target_lost = False
+                self.target_found.emit()
+                self._log("FOLLOW", "Target found")
+        
+        if detection.get("aruco_detected"):
+            self._last_aruco_time = time.time()
+            if self._is_aruco_lost:
+                self._is_aruco_lost = False
+                self.aruco_found.emit()
+                self._log("FOLLOW", "ArUco marker found")
+        
+        if not self._target_lost_timer.isActive():
+            self._target_lost_timer.start(500)
+
+    def _check_target_lost(self):
+        """Check if target has been lost."""
+        if self._last_detection_time is not None:
+            elapsed = time.time() - self._last_detection_time
+            if elapsed > self._target_lost_timeout and not self._is_target_lost:
+                self._is_target_lost = True
+                self.target_lost.emit()
+                self._log("FOLLOW", "Target lost")
+        
+        if self._last_aruco_time is not None:
+            elapsed_aruco = time.time() - self._last_aruco_time
+            if elapsed_aruco > self._aruco_lost_timeout and not self._is_aruco_lost:
+                self._is_aruco_lost = True
+                self.aruco_lost.emit()
+                self._log("FOLLOW", "ArUco marker lost")
             
     def set_frame(self, bgr):
         """Set frame for detection."""
@@ -161,15 +214,22 @@ class DetectionManager(QObject):
     
     def _set_gimbal_with_ui(self, pan, tilt):
         """Send gimbal command and update UI labels."""
+        from views.sidebar import _actual_to_display_pan, _actual_to_display_tilt
         if self._app:
             self._app._gimbal_pan = int(pan)
             self._app._gimbal_tilt = int(tilt)
             if hasattr(self._app, '_gimbal_pan_input'):
-                self._app._gimbal_pan_input.setText(str(int(pan)))
+                self._app._gimbal_pan_input.setText(str(_actual_to_display_pan(int(pan))))
             if hasattr(self._app, '_gimbal_tilt_input'):
-                self._app._gimbal_tilt_input.setText(str(int(tilt)))
+                self._app._gimbal_tilt_input.setText(str(_actual_to_display_tilt(int(tilt))))
             if hasattr(self._app, '_gimbal_hud'):
                 self._app._gimbal_hud.set_gimbal(int(pan), int(tilt))
+            if hasattr(self._app, '_target_angle_display'):
+                target_angle = int(pan) - 90
+                if target_angle > 0:
+                    self._app._target_angle_display.setText(f"+{target_angle}°")
+                else:
+                    self._app._target_angle_display.setText(f"{target_angle}°")
             self._app._send_command(f"servo:{int(pan)},{int(tilt)}")
             
     def stop_all(self):

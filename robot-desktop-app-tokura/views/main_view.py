@@ -78,6 +78,38 @@ def create_main_view(app):
     app._obstacle_warning.move((app._video_canvas.width() - app._obstacle_warning.width()) // 2, 10)
     app._obstacle_warning.hide()
 
+    app._target_lost_warning = QLabel("⚠ TARGET NOT DETECTED")
+    app._target_lost_warning.setParent(app._video_canvas)
+    app._target_lost_warning.setStyleSheet("""
+        background-color: rgba(239, 68, 68, 0.95);
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 2px;
+        padding: 6px 16px;
+        border-radius: 4px;
+        border: 1px solid rgba(239, 68, 68, 0.5);
+    """)
+    app._target_lost_warning.adjustSize()
+    app._target_lost_warning.move((app._video_canvas.width() - app._target_lost_warning.width()) // 2, 10)
+    app._target_lost_warning.hide()
+
+    app._aruco_lost_warning = QLabel("⚠ ARUCO NOT DETECTED")
+    app._aruco_lost_warning.setParent(app._video_canvas)
+    app._aruco_lost_warning.setStyleSheet("""
+        background-color: rgba(245, 158, 11, 0.95);
+        color: #0a0e1a;
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 2px;
+        padding: 6px 16px;
+        border-radius: 4px;
+        border: 1px solid rgba(245, 158, 11, 0.5);
+    """)
+    app._aruco_lost_warning.adjustSize()
+    app._aruco_lost_warning.move((app._video_canvas.width() - app._aruco_lost_warning.width()) // 2, 10)
+    app._aruco_lost_warning.hide()
+
     resolution_widget = QWidget()
     resolution_widget.setFixedHeight(32)
     resolution_widget.setStyleSheet("background-color: #131b2e; border-top: 1px solid #334155;")

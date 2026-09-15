@@ -6,6 +6,26 @@ from PyQt6.QtWidgets import (
 )
 from widgets.sensor_card import SensorCard
 
+# Gimbal display offset: 70, 85 is the center position displayed as 0, 0
+_GIMBAL_PAN_OFFSET = 70
+_GIMBAL_TILT_OFFSET = 85
+
+def _actual_to_display_pan(actual):
+    """Convert actual pan angle to display value (reversed direction)."""
+    return _GIMBAL_PAN_OFFSET - actual
+
+def _actual_to_display_tilt(actual):
+    """Convert actual tilt angle to display value (reversed direction)."""
+    return _GIMBAL_TILT_OFFSET - actual
+
+def _display_to_actual_pan(display):
+    """Convert display value to actual pan angle (reversed direction)."""
+    return _GIMBAL_PAN_OFFSET - display
+
+def _display_to_actual_tilt(display):
+    """Convert display value to actual tilt angle (reversed direction)."""
+    return _GIMBAL_TILT_OFFSET - display
+
 
 def create_sidebar(app):
     sidebar = QWidget()
@@ -130,6 +150,9 @@ def create_sidebar(app):
 
     main_layout.addWidget(app._sidebar_stack, 1)
 
+    nav_grid = QHBoxLayout()
+    nav_grid.setSpacing(6)
+
     settings_btn = QPushButton("SETTINGS")
     settings_btn.setCheckable(True)
     settings_btn.setStyleSheet("""
@@ -148,7 +171,7 @@ def create_sidebar(app):
     """)
     settings_btn.clicked.connect(app._toggle_settings)
     app._settings_btn = settings_btn
-    main_layout.addWidget(settings_btn)
+    nav_grid.addWidget(settings_btn)
 
     diag_btn = QPushButton("DIAGNOSTICS")
     diag_btn.setCheckable(True)
@@ -168,20 +191,51 @@ def create_sidebar(app):
     """)
     diag_btn.clicked.connect(app._toggle_view)
     app._diag_btn = diag_btn
-    main_layout.addWidget(diag_btn)
+    nav_grid.addWidget(diag_btn)
+    main_layout.addLayout(nav_grid)
 
-    follow_btn = QPushButton("FOLLOW MODE")
-    follow_btn.setStyleSheet("""
-        background-color: #1e293b;
-        border: 1px solid #7c3aed;
-        color: #7c3aed;
-        font-weight: 600;
-        font-size: 10px;
-        letter-spacing: 1px;
+    safety_row = QHBoxLayout()
+    safety_row.setSpacing(6)
+    app._sidebar_led_btn = QPushButton("LED: OFF")
+    app._sidebar_led_btn.setCheckable(True)
+    app._sidebar_led_btn.setFixedHeight(26)
+    app._sidebar_led_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #f59e0b;
+            color: #f59e0b;
+            font-weight: 600;
+            font-size: 10px;
+        }
+        QPushButton:checked {
+            background-color: #f59e0b;
+            color: #0a0e1a;
+        }
     """)
-    follow_btn.clicked.connect(app._toggle_follow_mode)
-    app._follow_btn = follow_btn
-    main_layout.addWidget(follow_btn)
+    app._sidebar_led_btn.clicked.connect(lambda: _toggle_led(app))
+    safety_row.addWidget(app._sidebar_led_btn)
+    app._sidebar_pid_btn = QPushButton("PID: OFF")
+    app._sidebar_pid_btn.setCheckable(True)
+    app._sidebar_pid_btn.setFixedHeight(26)
+    app._sidebar_pid_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1e293b;
+            border: 1px solid #10b981;
+            color: #10b981;
+            font-weight: 600;
+            font-size: 10px;
+        }
+        QPushButton:checked {
+            background-color: #10b981;
+            color: #0a0e1a;
+        }
+    """)
+    app._sidebar_pid_btn.clicked.connect(lambda: _toggle_pid(app))
+    safety_row.addWidget(app._sidebar_pid_btn)
+    main_layout.addLayout(safety_row)
+
+    actions_grid = QHBoxLayout()
+    actions_grid.setSpacing(6)
 
     snapshot_btn = QPushButton("SNAPSHOTS")
     snapshot_btn.setCheckable(True)
@@ -201,7 +255,7 @@ def create_sidebar(app):
     """)
     snapshot_btn.clicked.connect(app._toggle_snapshots_view)
     app._snapshot_btn = snapshot_btn
-    main_layout.addWidget(snapshot_btn)
+    actions_grid.addWidget(snapshot_btn)
 
     app._web_control_btn = QPushButton("WEB CONTROL: OFF")
     app._web_control_btn.setCheckable(True)
@@ -221,7 +275,23 @@ def create_sidebar(app):
         }
     """)
     app._web_control_btn.clicked.connect(app._toggle_web_control)
-    main_layout.addWidget(app._web_control_btn)
+    actions_grid.addWidget(app._web_control_btn)
+    main_layout.addLayout(actions_grid)
+
+    main_layout.addStretch()
+
+    follow_btn = QPushButton("FOLLOW MODE")
+    follow_btn.setStyleSheet("""
+        background-color: #1e293b;
+        border: 1px solid #7c3aed;
+        color: #7c3aed;
+        font-weight: 600;
+        font-size: 10px;
+        letter-spacing: 1px;
+    """)
+    follow_btn.clicked.connect(app._toggle_follow_mode)
+    app._follow_btn = follow_btn
+    main_layout.addWidget(follow_btn)
 
     sidebar.setLayout(main_layout)
     return sidebar
@@ -308,7 +378,7 @@ def _create_controls_group(app):
     pan_label = QLabel("PAN")
     pan_label.setStyleSheet("color: #475569; font-size: 8px; letter-spacing: 1px;")
     gimbal_row.addWidget(pan_label)
-    app._gimbal_pan_input = QLineEdit(str(app._gimbal_pan))
+    app._gimbal_pan_input = QLineEdit(str(_actual_to_display_pan(app._gimbal_pan)))
     app._gimbal_pan_input.setFixedWidth(36)
     app._gimbal_pan_input.setFixedHeight(22)
     app._gimbal_pan_input.setStyleSheet("""
@@ -325,7 +395,7 @@ def _create_controls_group(app):
     tilt_label = QLabel("TILT")
     tilt_label.setStyleSheet("color: #475569; font-size: 8px; letter-spacing: 1px;")
     gimbal_row.addWidget(tilt_label)
-    app._gimbal_tilt_input = QLineEdit(str(app._gimbal_tilt))
+    app._gimbal_tilt_input = QLineEdit(str(_actual_to_display_tilt(app._gimbal_tilt)))
     app._gimbal_tilt_input.setFixedWidth(36)
     app._gimbal_tilt_input.setFixedHeight(22)
     app._gimbal_tilt_input.setStyleSheet("""
@@ -454,13 +524,16 @@ def _on_gimbal_input(app, axis):
     else:
         text = app._gimbal_tilt_input.text().strip()
     try:
-        angle = max(0, min(180, int(text)))
+        display_value = int(text)
     except ValueError:
         return
+    # Convert display value to actual angle
     if axis == 'pan':
-        app._gimbal_pan = angle
+        actual_angle = max(0, min(180, _display_to_actual_pan(display_value)))
+        app._gimbal_pan = actual_angle
     else:
-        app._gimbal_tilt = angle
+        actual_angle = max(0, min(180, _display_to_actual_tilt(display_value)))
+        app._gimbal_tilt = actual_angle
     app._send_command(f"servo:{app._gimbal_pan},{app._gimbal_tilt}")
     if hasattr(app, '_gimbal_hud'):
         app._gimbal_hud.set_gimbal(app._gimbal_pan, app._gimbal_tilt)
@@ -489,6 +562,33 @@ def _toggle_brake(app):
     if hasattr(app, '_esp32_api'):
         app._esp32_api.set_brake(checked)
     app._add_log("SAFETY", f"Auto-brake {'enabled' if checked else 'disabled'}")
+
+
+def _on_led_change(app, value):
+    if hasattr(app, '_sidebar_led_label'):
+        app._sidebar_led_label.setText(str(value))
+    if hasattr(app, '_sidebar_led_toggle'):
+        app._sidebar_led_toggle.setChecked(value > 0)
+        app._sidebar_led_toggle.setText("ON" if value > 0 else "OFF")
+    if hasattr(app, '_esp32_api'):
+        app._esp32_api.set_led(value)
+    app._add_log("LED", f"Brightness: {value}")
+
+
+def _toggle_led(app):
+    checked = app._sidebar_led_btn.isChecked()
+    app._sidebar_led_btn.setText("LED: ON" if checked else "LED: OFF")
+    if hasattr(app, '_esp32_api'):
+        app._esp32_api.set_led(255 if checked else 0)
+    app._add_log("LED", f"{'ON' if checked else 'OFF'}")
+
+
+def _toggle_pid(app):
+    checked = app._sidebar_pid_btn.isChecked()
+    app._sidebar_pid_btn.setText("PID: ON" if checked else "PID: OFF")
+    if hasattr(app, '_esp32_api'):
+        app._esp32_api.set_pid(enabled=checked)
+    app._add_log("PID", f"PID straight {'enabled' if checked else 'disabled'}")
 
 
 def _load_snapshots(app):

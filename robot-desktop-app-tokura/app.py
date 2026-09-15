@@ -38,8 +38,8 @@ class RoverTeleopApp(QWidget):
         self._view_mode = "main"
         self._current_speed = self._config.get("motor_speed", 220)
         self._global_speed = self._current_speed
-        self._gimbal_pan = 90
-        self._gimbal_tilt = 90
+        self._gimbal_pan = 70
+        self._gimbal_tilt = 85
         self._display_frame_count = 0
         self._display_fps_last_time = time.time()
         # カメラストリーム接続状態。follow modeトグル時点で既に接続済みなら
@@ -141,6 +141,10 @@ class RoverTeleopApp(QWidget):
         self.log_message.connect(self._add_log)
         self._detection_mgr.detections_updated.connect(self._on_detections_updated)
         self._detection_mgr.follow_detected.connect(self._on_follow_detected)
+        self._detection_mgr.target_lost.connect(self._on_target_lost)
+        self._detection_mgr.target_found.connect(self._on_target_found)
+        self._detection_mgr.aruco_lost.connect(self._on_aruco_lost)
+        self._detection_mgr.aruco_found.connect(self._on_aruco_found)
         if hasattr(self, '_video_canvas'):
             self._video_canvas.gimbal_changed.connect(self._on_mouse_gimbal)
         # ConnectionManagerのcamera_connected/camera_disconnectedは宣言されているだけで
@@ -193,9 +197,9 @@ class RoverTeleopApp(QWidget):
         
         self._add_log("MODE", "Connecting to REAL ESP32 hardware...")
         
-        self._gimbal_pan = 90
-        self._gimbal_tilt = 90
-        self._send_command("servo:90,90")
+        self._gimbal_pan = 70
+        self._gimbal_tilt = 85
+        self._send_command("servo:70,85")
 
     def _update_video_frame(self):
         frame = self._conn_mgr.take_frame()
@@ -421,6 +425,41 @@ class RoverTeleopApp(QWidget):
             distance = data["distance"]
             self._distance_card.update_value(f"{distance:.1f} cm", distance / 2)
         
+        # Update header distance display
+        if hasattr(self, '_distance_display') and "distance" in data:
+            distance = data["distance"]
+            self._distance_display.setText(f"{distance:.0f} cm")
+            if distance < 30:
+                self._distance_display.setStyleSheet("""
+                    background-color: #1e293b;
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    color: #ef4444;
+                    font-size: 11px;
+                    font-family: 'JetBrains Mono', monospace;
+                """)
+            elif distance < 60:
+                self._distance_display.setStyleSheet("""
+                    background-color: #1e293b;
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    color: #f59e0b;
+                    font-size: 11px;
+                    font-family: 'JetBrains Mono', monospace;
+                """)
+            else:
+                self._distance_display.setStyleSheet("""
+                    background-color: #1e293b;
+                    border: 1px solid #334155;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    color: #10b981;
+                    font-size: 11px;
+                    font-family: 'JetBrains Mono', monospace;
+                """)
+        
         # Obstacle warning + auto-brake + speed limit
         if hasattr(self, '_obstacle_warning') and "distance" in data:
             distance = data["distance"]
@@ -488,14 +527,49 @@ class RoverTeleopApp(QWidget):
 
     def _on_gimbal_update(self, pan, tilt):
         """Update gimbal UI when manually controlled."""
+        from views.sidebar import _actual_to_display_pan, _actual_to_display_tilt
         self._gimbal_pan = int(pan)
         self._gimbal_tilt = int(tilt)
         if hasattr(self, '_gimbal_pan_input'):
-            self._gimbal_pan_input.setText(str(int(pan)))
+            self._gimbal_pan_input.setText(str(_actual_to_display_pan(int(pan))))
         if hasattr(self, '_gimbal_tilt_input'):
-            self._gimbal_tilt_input.setText(str(int(tilt)))
+            self._gimbal_tilt_input.setText(str(_actual_to_display_tilt(int(tilt))))
         if hasattr(self, '_gimbal_hud'):
             self._gimbal_hud.set_gimbal(int(pan), int(tilt))
+        if hasattr(self, '_target_angle_display'):
+            target_angle = int(pan) - 90
+            if target_angle > 0:
+                self._target_angle_display.setText(f"+{target_angle}°")
+            else:
+                self._target_angle_display.setText(f"{target_angle}°")
+
+    def _on_target_lost(self):
+        """Show target lost warning on video canvas."""
+        if hasattr(self, '_target_lost_warning'):
+            self._target_lost_warning.adjustSize()
+            self._target_lost_warning.move(
+                (self._video_canvas.width() - self._target_lost_warning.width()) // 2, 10
+            )
+            self._target_lost_warning.show()
+
+    def _on_target_found(self):
+        """Hide target lost warning."""
+        if hasattr(self, '_target_lost_warning'):
+            self._target_lost_warning.hide()
+
+    def _on_aruco_lost(self):
+        """Show ArUco lost warning on video canvas."""
+        if hasattr(self, '_aruco_lost_warning'):
+            self._aruco_lost_warning.adjustSize()
+            self._aruco_lost_warning.move(
+                (self._video_canvas.width() - self._aruco_lost_warning.width()) // 2, 10
+            )
+            self._aruco_lost_warning.show()
+
+    def _on_aruco_found(self):
+        """Hide ArUco lost warning."""
+        if hasattr(self, '_aruco_lost_warning'):
+            self._aruco_lost_warning.hide()
 
     def _take_snapshot(self):
         pixmap = self._video_canvas.pixmap() if hasattr(self, '_video_canvas') else None
@@ -657,16 +731,23 @@ class RoverTeleopApp(QWidget):
         self._input_handler.handle_key_release(event)
 
     def _on_mouse_gimbal(self, pan, tilt):
+        from views.sidebar import _actual_to_display_pan, _actual_to_display_tilt
         self._input_handler._gimbal_pan = int(pan)
         self._input_handler._gimbal_tilt = int(tilt)
         self._gimbal_pan = int(pan)
         self._gimbal_tilt = int(tilt)
         if hasattr(self, '_gimbal_pan_input'):
-            self._gimbal_pan_input.setText(str(int(pan)))
+            self._gimbal_pan_input.setText(str(_actual_to_display_pan(int(pan))))
         if hasattr(self, '_gimbal_tilt_input'):
-            self._gimbal_tilt_input.setText(str(int(tilt)))
+            self._gimbal_tilt_input.setText(str(_actual_to_display_tilt(int(tilt))))
         if hasattr(self, '_gimbal_hud'):
             self._gimbal_hud.set_gimbal(int(pan), int(tilt))
+        if hasattr(self, '_target_angle_display'):
+            target_angle = int(pan) - 90
+            if target_angle > 0:
+                self._target_angle_display.setText(f"+{target_angle}°")
+            else:
+                self._target_angle_display.setText(f"{target_angle}°")
         self._send_command(f"servo:{int(pan)},{int(tilt)}")
 
     def closeEvent(self, event):

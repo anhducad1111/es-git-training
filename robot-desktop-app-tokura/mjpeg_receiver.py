@@ -185,11 +185,8 @@ class DecodeThread(QThread):
                 image = QImage()
                 image.loadFromData(raw, "JPEG")
                 if not image.isNull():
-                    # Tag with the decode time so the display side can
-                    # compute latency (time from decode to actually being
-                    # shown on screen), matching esp32_mjpeg_detector's
-                    # FramePacket.timestamp approach.
-                    self.display_slot.publish((image, time.time()))
+                    # Pass both QImage and raw JPEG bytes for efficient recording
+                    self.display_slot.publish((image, time.time(), raw))
 
     def stop(self):
         self._running = False

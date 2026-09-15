@@ -123,10 +123,10 @@ def create_sidebar(app):
     sensors_layout.addWidget(app._distance_card)
 
     dpad_widget = QWidget()
-    dpad_widget.setFixedHeight(110)
+    dpad_widget.setFixedHeight(140)
     dpad_layout = QVBoxLayout()
     dpad_layout.setContentsMargins(0, 0, 0, 0)
-    dpad_layout.setSpacing(0)
+    dpad_layout.setSpacing(4)
 
     dpad_base = """
         QPushButton {
@@ -134,7 +134,7 @@ def create_sidebar(app):
             border: 1px solid #1e293b;
             color: #475569;
             font-weight: 700;
-            font-size: 16px;
+            font-size: 18px;
         }
         QPushButton:pressed {
             background-color: #06b6d4;
@@ -149,7 +149,7 @@ def create_sidebar(app):
             color: #0a0e1a;
             border: 1px solid #06b6d4;
             font-weight: 700;
-            font-size: 16px;
+            font-size: 18px;
         }
     """
 
@@ -159,7 +159,7 @@ def create_sidebar(app):
             border: 1px solid #334155;
             color: #64748b;
             font-weight: 700;
-            font-size: 14px;
+            font-size: 16px;
         }
         QPushButton:pressed {
             background-color: #ef4444;
@@ -172,9 +172,9 @@ def create_sidebar(app):
         btn.setStyleSheet(style_active if active else style_normal)
 
     row_up = QHBoxLayout()
-    row_up.setContentsMargins(50, 0, 50, 0)
+    row_up.setContentsMargins(60, 0, 60, 0)
     app._dpad_fwd = QPushButton("▲")
-    app._dpad_fwd.setFixedSize(40, 32)
+    app._dpad_fwd.setFixedSize(50, 40)
     app._dpad_fwd.setStyleSheet(dpad_base)
     app._dpad_fwd.pressed.connect(lambda: app._send_command("forward"))
     app._dpad_fwd.released.connect(lambda: app._send_command("stop"))
@@ -183,22 +183,22 @@ def create_sidebar(app):
 
     row_mid = QHBoxLayout()
     row_mid.setContentsMargins(0, 0, 0, 0)
-    row_mid.setSpacing(0)
+    row_mid.setSpacing(4)
     app._dpad_left = QPushButton("◀")
-    app._dpad_left.setFixedSize(40, 32)
+    app._dpad_left.setFixedSize(50, 40)
     app._dpad_left.setStyleSheet(dpad_base)
     app._dpad_left.pressed.connect(lambda: app._send_command("left"))
     app._dpad_left.released.connect(lambda: app._send_command("stop"))
     row_mid.addWidget(app._dpad_left)
 
     btn_stop = QPushButton("■")
-    btn_stop.setFixedSize(40, 32)
+    btn_stop.setFixedSize(50, 40)
     btn_stop.setStyleSheet(dpad_center)
     btn_stop.pressed.connect(lambda: app._send_command("stop"))
     row_mid.addWidget(btn_stop)
 
     app._dpad_right = QPushButton("▶")
-    app._dpad_right.setFixedSize(40, 32)
+    app._dpad_right.setFixedSize(50, 40)
     app._dpad_right.setStyleSheet(dpad_base)
     app._dpad_right.pressed.connect(lambda: app._send_command("right"))
     app._dpad_right.released.connect(lambda: app._send_command("stop"))
@@ -206,9 +206,9 @@ def create_sidebar(app):
     dpad_layout.addLayout(row_mid)
 
     row_down = QHBoxLayout()
-    row_down.setContentsMargins(50, 0, 50, 0)
+    row_down.setContentsMargins(60, 0, 60, 0)
     app._dpad_rev = QPushButton("▼")
-    app._dpad_rev.setFixedSize(40, 32)
+    app._dpad_rev.setFixedSize(50, 40)
     app._dpad_rev.setStyleSheet(dpad_base)
     app._dpad_rev.pressed.connect(lambda: app._send_command("backward"))
     app._dpad_rev.released.connect(lambda: app._send_command("stop"))
@@ -260,167 +260,148 @@ def create_sidebar(app):
 
     main_layout.addWidget(app._sidebar_stack, 1)
 
-    nav_grid = QHBoxLayout()
-    nav_grid.setSpacing(6)
+    safety_grid = QHBoxLayout()
+    safety_grid.setSpacing(6)
 
-    settings_btn = QPushButton("SETTINGS")
-    settings_btn.setCheckable(True)
-    settings_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            color: #64748b;
-            font-weight: 600;
-            font-size: 10px;
-            letter-spacing: 1px;
-        }
-        QPushButton:checked {
-            background-color: #06b6d4;
-            color: #0a0e1a;
-        }
-    """)
-    settings_btn.clicked.connect(app._toggle_settings)
-    app._settings_btn = settings_btn
-    nav_grid.addWidget(settings_btn)
-
-    diag_btn = QPushButton("DIAGNOSTICS")
-    diag_btn.setCheckable(True)
-    diag_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            color: #64748b;
-            font-weight: 600;
-            font-size: 10px;
-            letter-spacing: 1px;
-        }
-        QPushButton:checked {
-            background-color: #f59e0b;
-            color: #0a0e1a;
-        }
-    """)
-    diag_btn.clicked.connect(app._toggle_view)
-    app._diag_btn = diag_btn
-    nav_grid.addWidget(diag_btn)
-    main_layout.addLayout(nav_grid)
-
-    safety_row = QHBoxLayout()
-    safety_row.setSpacing(6)
+    safety_left = QVBoxLayout()
+    safety_left.setSpacing(4)
     app._sidebar_led_btn = QPushButton("LED: OFF")
     app._sidebar_led_btn.setCheckable(True)
-    app._sidebar_led_btn.setFixedHeight(26)
+    app._sidebar_led_btn.setFixedHeight(28)
     app._sidebar_led_btn.setStyleSheet("""
         QPushButton {
-            background-color: #1e293b;
-            border: 1px solid #f59e0b;
+            background-color: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.25);
             color: #f59e0b;
-            font-weight: 600;
-            font-size: 10px;
+            font-weight: 700;
+            font-size: 11px;
+            letter-spacing: 1px;
+            padding: 0 8px;
+        }
+        QPushButton:hover {
+            background-color: rgba(245, 158, 11, 0.2);
         }
         QPushButton:checked {
-            background-color: #f59e0b;
-            color: #0a0e1a;
+            background-color: rgba(245, 158, 11, 0.3);
+            color: #fbbf24;
         }
     """)
     app._sidebar_led_btn.clicked.connect(lambda: _toggle_led(app))
-    safety_row.addWidget(app._sidebar_led_btn)
+    safety_left.addWidget(app._sidebar_led_btn)
+    snapshot_action_btn = QPushButton("📷 SNAP")
+    snapshot_action_btn.setFixedHeight(28)
+    snapshot_action_btn.setStyleSheet("""
+        QPushButton {
+            background-color: rgba(6, 182, 212, 0.12);
+            border: 1px solid rgba(6, 182, 212, 0.25);
+            color: #06b6d4;
+            font-weight: 700;
+            font-size: 11px;
+            letter-spacing: 1px;
+            padding: 0 8px;
+        }
+        QPushButton:hover {
+            background-color: rgba(6, 182, 212, 0.25);
+        }
+        QPushButton:pressed {
+            background-color: rgba(6, 182, 212, 0.4);
+        }
+    """)
+    snapshot_action_btn.clicked.connect(lambda: app._take_snapshot())
+    safety_left.addWidget(snapshot_action_btn)
+    safety_grid.addLayout(safety_left)
+
+    safety_right = QVBoxLayout()
+    safety_right.setSpacing(4)
     app._sidebar_pid_btn = QPushButton("PID: ON")
     app._sidebar_pid_btn.setCheckable(True)
     app._sidebar_pid_btn.setChecked(True)
-    app._sidebar_pid_btn.setFixedHeight(26)
+    app._sidebar_pid_btn.setFixedHeight(28)
     app._sidebar_pid_btn.setStyleSheet("""
         QPushButton {
-            background-color: #1e293b;
-            border: 1px solid #10b981;
+            background-color: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.25);
             color: #10b981;
-            font-weight: 600;
-            font-size: 10px;
+            font-weight: 700;
+            font-size: 11px;
+            letter-spacing: 1px;
+            padding: 0 8px;
+        }
+        QPushButton:hover {
+            background-color: rgba(16, 185, 129, 0.2);
         }
         QPushButton:checked {
-            background-color: #10b981;
-            color: #0a0e1a;
+            background-color: rgba(16, 185, 129, 0.3);
+            color: #34d399;
         }
     """)
     app._sidebar_pid_btn.clicked.connect(lambda: _toggle_pid(app))
-    safety_row.addWidget(app._sidebar_pid_btn)
-    main_layout.addLayout(safety_row)
-
-    actions_grid = QHBoxLayout()
-    actions_grid.setSpacing(6)
-
-    snapshot_btn = QPushButton("SNAPSHOTS")
-    snapshot_btn.setCheckable(True)
-    snapshot_btn.setStyleSheet("""
+    safety_right.addWidget(app._sidebar_pid_btn)
+    app._rec_btn = QPushButton("🎬 REC")
+    app._rec_btn.setFixedHeight(28)
+    app._rec_btn.setCheckable(True)
+    app._rec_btn.setStyleSheet("""
         QPushButton {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            color: #06b6d4;
-            font-weight: 600;
-            font-size: 10px;
+            background-color: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.25);
+            color: #ef4444;
+            font-weight: 700;
+            font-size: 11px;
             letter-spacing: 1px;
+            padding: 0 8px;
+        }
+        QPushButton:hover {
+            background-color: rgba(239, 68, 68, 0.25);
         }
         QPushButton:checked {
-            background-color: #06b6d4;
-            color: #0a0e1a;
+            background-color: rgba(239, 68, 68, 0.35);
+            color: #f87171;
+            border-color: rgba(239, 68, 68, 0.5);
         }
     """)
-    snapshot_btn.clicked.connect(app._toggle_snapshots_view)
-    app._snapshot_btn = snapshot_btn
-    actions_grid.addWidget(snapshot_btn)
+    app._rec_btn.clicked.connect(lambda: app._toggle_recording())
+    safety_right.addWidget(app._rec_btn)
+    safety_grid.addLayout(safety_right)
 
-    # 開発用デバッグ/キャリブレーションタブ。不要になったらこのブロックと
-    # app._toggle_debug_view/views/debug_view.py/calibration.pyを削除すればよい。
-    debug_btn = QPushButton("DEBUG")
-    debug_btn.setCheckable(True)
-    debug_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            color: #64748b;
-            font-weight: 600;
-            font-size: 10px;
-            letter-spacing: 1px;
-        }
-        QPushButton:checked {
-            background-color: #ef4444;
-            color: #0a0e1a;
-        }
-    """)
-    debug_btn.clicked.connect(app._toggle_debug_view)
-    app._debug_btn = debug_btn
-    main_layout.addWidget(debug_btn)
+    main_layout.addLayout(safety_grid)
 
     app._web_control_btn = QPushButton("WEB CONTROL: OFF")
     app._web_control_btn.setCheckable(True)
     app._web_control_btn.setStyleSheet("""
         QPushButton {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            color: #64748b;
-            font-weight: 600;
-            font-size: 10px;
+            background-color: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            color: #3b82f6;
+            font-weight: 700;
+            font-size: 11px;
             letter-spacing: 1px;
         }
+        QPushButton:hover {
+            background-color: rgba(59, 130, 246, 0.2);
+        }
         QPushButton:checked {
-            background-color: #10b981;
-            color: #0a0e1a;
-            border-color: #10b981;
+            background-color: rgba(59, 130, 246, 0.3);
+            color: #60a5fa;
         }
     """)
     app._web_control_btn.clicked.connect(app._toggle_web_control)
-    actions_grid.addWidget(app._web_control_btn)
-    main_layout.addLayout(actions_grid)
+    main_layout.addWidget(app._web_control_btn)
 
     main_layout.addStretch()
 
     follow_btn = QPushButton("FOLLOW MODE")
     follow_btn.setStyleSheet("""
-        background-color: #1e293b;
-        border: 1px solid #7c3aed;
-        color: #7c3aed;
-        font-weight: 600;
-        font-size: 10px;
-        letter-spacing: 1px;
+        QPushButton {
+            background-color: rgba(124, 58, 237, 0.12);
+            border: 1px solid rgba(124, 58, 237, 0.25);
+            color: #7c3aed;
+            font-weight: 700;
+            font-size: 11px;
+            letter-spacing: 1px;
+        }
+        QPushButton:hover {
+            background-color: rgba(124, 58, 237, 0.2);
+        }
     """)
     follow_btn.clicked.connect(app._toggle_follow_mode)
     app._follow_btn = follow_btn
@@ -584,51 +565,6 @@ def _create_controls_group(app):
     app._mouse_gimbal_btn.clicked.connect(lambda: _toggle_mouse_gimbal(app))
     layout.addWidget(app._mouse_gimbal_btn)
 
-    actions_row = QHBoxLayout()
-    actions_row.setSpacing(6)
-
-    snapshot_btn = QPushButton("SNAP")
-    snapshot_btn.setFixedHeight(28)
-    snapshot_btn.setStyleSheet("""
-        QPushButton {
-            background-color: rgba(59, 130, 246, 0.15);
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            color: #3b82f6;
-            font-weight: 600;
-            font-size: 10px;
-            letter-spacing: 1px;
-        }
-        QPushButton:hover {
-            background-color: rgba(59, 130, 246, 0.25);
-        }
-    """)
-    snapshot_btn.clicked.connect(app._take_snapshot)
-    actions_row.addWidget(snapshot_btn, 1)
-
-    app._rec_btn = QPushButton("REC")
-    app._rec_btn.setFixedHeight(28)
-    app._rec_btn.setCheckable(True)
-    app._rec_btn.setStyleSheet("""
-        QPushButton {
-            background-color: rgba(239, 68, 68, 0.15);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: #ef4444;
-            font-weight: 600;
-            font-size: 10px;
-            letter-spacing: 1px;
-        }
-        QPushButton:checked {
-            background-color: #ef4444;
-            color: white;
-        }
-        QPushButton:hover {
-            background-color: rgba(239, 68, 68, 0.25);
-        }
-    """)
-    app._rec_btn.clicked.connect(lambda: _toggle_recording(app))
-    actions_row.addWidget(app._rec_btn, 1)
-    layout.addLayout(actions_row)
-
     app._super_res_check = QCheckBox("Super Resolution")
     app._super_res_check.setStyleSheet("color: #64748b; font-size: 10px;")
     layout.addWidget(app._super_res_check)
@@ -640,8 +576,6 @@ def _create_controls_group(app):
 def _on_speed_change(app, value):
     app._global_speed = value
     app._speed_label.setText(f"{value}")
-    if hasattr(app, '_speed_meter'):
-        app._speed_meter.set_speed(value)
     app._schedule_speed_apply()
 
 

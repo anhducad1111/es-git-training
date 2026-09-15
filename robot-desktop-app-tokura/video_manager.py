@@ -1,8 +1,9 @@
 import os
 import queue
 import threading
+import time
 from datetime import datetime, timezone, timedelta
-from PyQt6.QtCore import QBuffer, QIODevice
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QImage
 
 
@@ -14,13 +15,9 @@ class VideoManager:
         self._log = log_callback
         self._recording = False
         self._rec_path = None
-        # 録画の実処理(JPEG再エンコード -> cv2デコード -> VideoWriter.write)は
-        # 専用スレッドで行う。以前はsave_frame()がGUIスレッド(app._update_video_frame,
-        # 33ms周期)から直接この3段階を同期実行しており、録画中は毎フレーム
-        # GUIスレッドをブロックして映像・操作全体がラグる原因になっていた
-        # (esp32_mjpeg_detectorがネットワーク受信/デコード/推論を全て専用スレッドに
-        # 分離し、GUIスレッドを描画専任にしているのと同じ考え方に合わせる)。
-        self._rec_queue = queue.Queue(maxsize=4)
+        # 録画の実実処理は専用スレッドで行う。
+        # キューサイズを大きくすることで、GUIスレッドのブロックを防ぐ。
+        self._rec_queue = queue.Queue(maxsize=30)
         self._rec_thread = None
         self._rec_thread_running = False
 
@@ -47,27 +44,37 @@ class VideoManager:
             self._rec_thread.join(timeout=5)
             self._rec_thread = None
 
+        import time
+        time.sleep(0.5)
+
         if os.path.exists(self._rec_path):
             size = os.path.getsize(self._rec_path)
             self._log("REC", f"Recording saved: {self._rec_path} ({size} bytes)")
-            self._upload_recording(self._rec_path)
+            if size > 0:
+                self._upload_recording(self._rec_path)
+            else:
+                self._log("REC", "File is empty, skipping upload")
         else:
             self._log("REC", f"Recording file not found: {self._rec_path}")
 
-    def save_frame(self, image):
+    def save_frame(self, jpeg_data, bbox=None, detection=None):
         """Queue a frame for the background recording thread.
 
         Non-blocking: if the encoder thread is behind, drop this frame
-        rather than stall the caller (which runs on the GUI thread)."""
-        if not self._recording:
+        rather than stall the caller (which runs on the GUI thread).
+        jpeg_data: raw JPEG bytes from camera stream (no re-encoding needed).
+        bbox: optional (x, y, w, h) tuple to draw bounding box on frame.
+        detection: optional detection dict with yaw_deg, dist_m, confidence."""
+        if not self._recording or jpeg_data is None:
             return
         try:
-            self._rec_queue.put_nowait(image)
+            self._rec_queue.put_nowait((jpeg_data, bbox, detection))
         except queue.Full:
+            # Drop frame if queue is full to prevent GUI lag
             pass
 
     def _recording_worker(self):
-        """Runs on its own thread: JPEG re-encode -> cv2 decode -> VideoWriter.write."""
+        """Runs on its own thread: JPEG decode -> draw bbox -> VideoWriter.write."""
         import cv2
         import numpy as np
 
@@ -76,34 +83,79 @@ class VideoManager:
             os.makedirs(rec_dir, exist_ok=True)
 
         writer = None
+        frame_count = 0
+        last_frame_time = time.time()
+        fps_history = []
         try:
             while self._rec_thread_running or not self._rec_queue.empty():
                 try:
-                    image = self._rec_queue.get(timeout=0.2)
+                    item = self._rec_queue.get(timeout=0.1)
                 except queue.Empty:
                     continue
-                if image is None:
+                if item is None:
                     break
 
-                try:
-                    buffer = QBuffer()
-                    buffer.open(QIODevice.OpenModeFlag.ReadWrite)
-                    image.save(buffer, "JPEG")
-                    jpeg_data = buffer.data().data()
-                    buffer.close()
+                # Handle tuple format (jpeg_data, bbox, detection)
+                if isinstance(item, tuple):
+                    jpeg_data, bbox, detection = item
+                else:
+                    jpeg_data, bbox, detection = item, None, None
 
+                try:
+                    if jpeg_data is None:
+                        continue
+
+                    # Decode JPEG directly (no QImage re-encoding needed)
                     nparr = np.frombuffer(jpeg_data, np.uint8)
                     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
                     if img is not None:
+                        # Draw bounding box with label if provided (scale to actual frame size)
+                        if bbox is not None:
+                            bx, by, bw, bh = bbox
+                            yaw = detection.get("yaw_deg") if detection else None
+                            dist = detection.get("dist_m") if detection else None
+                            conf = detection.get("confidence", 0.0) if detection else 0.0
+
+                            h_img, w_img = img.shape[:2]
+                            orig_w, orig_h = 640, 480
+                            scale_x = w_img / orig_w
+                            scale_y = h_img / orig_h
+                            x1 = int(bx * scale_x)
+                            y1 = int(by * scale_y)
+                            x2 = int((bx + bw) * scale_x)
+                            y2 = int((by + bh) * scale_y)
+                            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 165, 255), 2)
+
+                            # Draw label
+                            label_parts = ["TARGET"]
+                            if yaw is not None:
+                                label_parts.append(f"yaw{yaw:+.0f}deg")
+                            if dist is not None:
+                                label_parts.append(f"{dist:.2f}m")
+                            label_parts.append(f"{conf:.0%}")
+                            label = " ".join(label_parts)
+                            cv2.putText(img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
+
                         if writer is None:
                             h, w = img.shape[:2]
-                            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                            fourcc = cv2.VideoWriter_fourcc(*'avc1')
+                            # Use 20fps as default (camera typically sends 15-30fps)
                             writer = cv2.VideoWriter(
-                                self._rec_path, fourcc, 10.0, (w, h)
+                                self._rec_path, fourcc, 20.0, (w, h)
                             )
-                            self._log("REC", f"VideoWriter: {w}x{h}")
+                            self._log("REC", f"VideoWriter: {w}x{h} @20fps")
                         writer.write(img)
+                        frame_count += 1
+                        
+                        # Track actual FPS
+                        current_time = time.time()
+                        if last_frame_time:
+                            fps = 1.0 / (current_time - last_frame_time)
+                            fps_history.append(fps)
+                            if len(fps_history) > 30:
+                                fps_history.pop(0)
+                        last_frame_time = current_time
                     else:
                         self._log("REC", "Frame decode failed")
                 except Exception as e:
@@ -111,6 +163,8 @@ class VideoManager:
         finally:
             if writer:
                 writer.release()
+            avg_fps = sum(fps_history) / len(fps_history) if fps_history else 0
+            self._log("REC", f"Recording saved: {frame_count} frames, avg {avg_fps:.1f}fps")
             
     def _upload_recording(self, filepath):
         """Upload recording to cloud."""
@@ -135,20 +189,50 @@ class VideoManager:
         except Exception as e:
             self._log("REC", f"Upload error: {str(e)[:60]}")
             
-    def take_snapshot(self, pixmap, telemetry=None):
-        """Take a snapshot with optional telemetry overlay."""
+    def take_snapshot(self, pixmap, telemetry=None, bbox=None, detection=None):
+        """Take a snapshot with optional telemetry overlay and bounding box."""
         if pixmap is None or pixmap.isNull():
             self._log("SNAPSHOT", "No frame to capture")
             return None
             
         overlay = pixmap.copy()
         
+        from PyQt6.QtGui import QPainter, QFont, QColor, QPen
+        
+        painter = QPainter(overlay)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw bounding box with label if provided
+        if bbox is not None:
+            bx, by, bw, bh = bbox
+            orig_w, orig_h = 640, 480
+            scale_x = overlay.width() / orig_w
+            scale_y = overlay.height() / orig_h
+            x1 = int(bx * scale_x)
+            y1 = int(by * scale_y)
+            w = int(bw * scale_x)
+            h = int(bh * scale_y)
+            painter.setPen(QPen(QColor(255, 165, 0), 2))  # Orange
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(x1, y1, w, h)
+
+            # Draw label
+            yaw = detection.get("yaw_deg") if detection else None
+            dist = detection.get("dist_m") if detection else None
+            conf = detection.get("confidence", 0.0) if detection else 0.0
+
+            label_parts = ["TARGET"]
+            if yaw is not None:
+                label_parts.append(f"yaw{yaw:+.0f}°")
+            if dist is not None:
+                label_parts.append(f"{dist:.2f}m")
+            label_parts.append(f"{conf:.0%}")
+            label = " ".join(label_parts)
+            painter.setFont(QFont("JetBrains Mono", 8))
+            painter.setPen(QPen(QColor(255, 165, 0), 1))
+            painter.drawText(x1, y1 - 5, label)
+        
         if telemetry:
-            from PyQt6.QtGui import QPainter, QFont, QColor, QPen
-            
-            painter = QPainter(overlay)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            
             temp = telemetry.get("temperature", 0)
             humidity = telemetry.get("humidity", 0)
             gas = telemetry.get("gas", 0)
@@ -166,8 +250,8 @@ class VideoManager:
             painter.drawText(panel_x, panel_y + line_h, f"H: {humidity}%")
             painter.drawText(panel_x, panel_y + line_h * 2, f"G: {int(gas)} PPM")
             painter.drawText(panel_x, panel_y + line_h * 3, vn_time)
-            
-            painter.end()
+        
+        painter.end()
             
         snapshot_dir = os.path.join(os.path.dirname(__file__), "snapshot")
         os.makedirs(snapshot_dir, exist_ok=True)

@@ -6,13 +6,15 @@ class InputHandler(QObject):
     
     key_state_changed = pyqtSignal(str, bool)
     
-    def __init__(self, send_command_callback, log_callback, on_emergency_stop=None, on_chassis_follow_toggle=None, on_gimbal_update=None):
+    def __init__(self, send_command_callback, log_callback, on_emergency_stop=None, on_chassis_follow_toggle=None, on_gimbal_update=None, on_snapshot=None, on_toggle_recording=None):
         super().__init__()
         self._send_command = send_command_callback
         self._log = log_callback
         self._on_emergency_stop = on_emergency_stop
         self._on_chassis_follow_toggle = on_chassis_follow_toggle
         self._on_gimbal_update = on_gimbal_update
+        self._on_snapshot = on_snapshot
+        self._on_toggle_recording = on_toggle_recording
         
         self._gimbal_pan = 85
         self._gimbal_tilt = 70
@@ -75,6 +77,14 @@ class InputHandler(QObject):
             self._speed_delta = -1
             if not self._speed_timer.isActive():
                 self._speed_timer.start()
+        elif key == Qt.Key.Key_P:
+            # Take photo (snapshot)
+            if self._on_snapshot:
+                self._on_snapshot()
+        elif key == Qt.Key.Key_R:
+            # Toggle recording
+            if self._on_toggle_recording:
+                self._on_toggle_recording()
                 
     def handle_key_release(self, event):
         """Handle key release event."""

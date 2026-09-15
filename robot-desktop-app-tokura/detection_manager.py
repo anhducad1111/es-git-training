@@ -1,14 +1,8 @@
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QApplication, QProgressDialog
 from follow_detector import FollowDetector
-from follow_controller import FollowController, FollowConfig
+from follow_controller import FollowController, FollowConfig, pan_cmd_to_deg, PAN_CENTER, HORIZONTAL_FOV_DEG, DEFAULT_FRAME_WIDTH
 import time
-
-# Camera horizontal field of view (degrees)
-HORIZONTAL_FOV_DEG = 60.0
-DEFAULT_FRAME_WIDTH = 640.0
-# Standard pan center (0 degrees = straight ahead)
-PAN_CENTER = 85
 
 
 class DetectionManager(QObject):
@@ -133,6 +127,9 @@ class DetectionManager(QObject):
             self._last_aruco_time = None
             self._is_aruco_lost = False
             self._log("FOLLOW", "Follow mode stopped")
+            # Hide follow overlay
+            if self._app and hasattr(self._app, '_follow_overlay'):
+                self._app._follow_overlay.hide()
             # Update button state
             if self._app and hasattr(self._app, '_follow_btn'):
                 self._app._follow_btn.setText("FOLLOW MODE")
@@ -180,6 +177,10 @@ class DetectionManager(QObject):
                 set_gimbal=lambda pan, tilt: self._set_gimbal_with_ui(pan, tilt)
             )
             self._follow_controller.start()
+
+            # Show follow overlay
+            if self._app and hasattr(self._app, '_follow_overlay'):
+                self._app._follow_overlay.show()
 
             # FollowDetectorはFollowController(ひいてはGimbalThread)より先に生成されるため、
             # GimbalThread生成後にここで配線する（follow_detector.pyのset_gimbal_thread参照）。
@@ -234,21 +235,15 @@ class DetectionManager(QObject):
             image_width = detection.get("frame_w", DEFAULT_FRAME_WIDTH)
             
             # Camera axis relative angle from bbox center
-            yaw_deg = ((bbox_x_center - (image_width / 2.0)) / image_width) * HORIZONTAL_FOV_DEG
+            cam_yaw_deg = ((bbox_x_center - (image_width / 2.0)) / image_width) * HORIZONTAL_FOV_DEG
             
-            # Body-relative target angle (internal calculation for PID control)
+            # Body-relative target angle (vehicle front = 0 degrees)
             current_pan_cmd = self._app._gimbal_pan if self._app and hasattr(self._app, '_gimbal_pan') else PAN_CENTER
-            body_target_angle = (current_pan_cmd - PAN_CENTER) + yaw_deg
+            pan_deg = pan_cmd_to_deg(current_pan_cmd)
+            body_target_angle = pan_deg + cam_yaw_deg
             
-            # Debug log
-            print(f"[DEBUG_ANGLE] pan_cmd={current_pan_cmd}, raw_bbox_x={bbox_x_center:.1f}, img_w={image_width}, yaw_deg={yaw_deg:.1f}, body_angle={body_target_angle:.1f}")
-            
-            # UI display signal output
-            # NOTE: Sign is inverted only for UI display to match intuitive screen direction
-            # (left/right) with coordinate system. Do not affect internal PID control or
-            # servo drive calculation logic.
-            display_target_angle = -body_target_angle
-            self.target_angle_updated.emit(display_target_angle)
+            # UI display signal output (vehicle front = 0 degrees)
+            self.target_angle_updated.emit(body_target_angle)
         
         if self._follow_controller:
             self._follow_controller.update(detection)

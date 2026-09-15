@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem,
     QHeaderView, QComboBox, QStackedWidget
 )
-from ollama_chat import OllamaChat
+from gemini_chat import GeminiChat
 from widgets.sensor_chart import SensorChart
 
 
@@ -170,9 +170,11 @@ def create_diagnostics_view(app):
         background-color: #0f172a;
         border: 1px solid #1e293b;
         border-radius: 6px;
-        padding: 8px;
-        color: #94a3b8;
-        font-size: 11px;
+        padding: 12px;
+        color: #e2e8f0;
+        font-size: 12px;
+        font-family: 'Segoe UI', sans-serif;
+        line-height: 1.5;
     """)
     right_layout.addWidget(app._chat_display, 1)
 
@@ -268,26 +270,30 @@ def _send_chat(app):
     if not text:
         return
 
-    app._chat_display.append(f'<span style="color: #06b6d4;">You:</span> {text}')
+    app._chat_display.append(f'<p style="text-align:right; margin:4px 0;"><span style="background-color:#06b6d4; color:white; padding:8px 12px; border-radius:10px; font-size:12px;">{text}</span></p>')
     app._chat_input.clear()
 
     sensor_data = {}
     if hasattr(app, '_temp_card'):
-        sensor_data["temperature"] = app._temp_card.value_label.text()
+        sensor_data["temperature"] = app._temp_card._text
     if hasattr(app, '_humidity_card'):
-        sensor_data["humidity"] = app._humidity_card.value_label.text()
+        sensor_data["humidity"] = app._humidity_card._text
     if hasattr(app, '_gas_card'):
-        sensor_data["gas"] = app._gas_card.value_label.text()
+        sensor_data["gas"] = app._gas_card._text
     if hasattr(app, '_distance_card'):
-        sensor_data["distance"] = app._distance_card.value_label.text()
+        sensor_data["distance"] = app._distance_card._text
 
-    ollama_url = app._config.get("ollama_url", "http://rpi5.local:11434/api/generate")
-    app._chat_worker = OllamaChat(ollama_url, text, sensor_data)
+    gemini_api_key = app._config.get("gemini_api_key", "")
+    if not gemini_api_key:
+        app._add_log("CHAT", "Gemini API key not configured")
+        return
+    app._chat_worker = GeminiChat(gemini_api_key, text, sensor_data)
     app._chat_worker.response.connect(lambda r: _on_chat_response(app, r))
     app._chat_worker.error.connect(lambda e: _on_chat_error(app, e))
+    app._chat_worker.tool_called.connect(lambda f, a: _on_tool_called(app, f, a))
     app._chat_worker.start()
 
-    app._chat_display.append('<span style="color: #475569;">AI: Thinking...</span>')
+    app._chat_display.append('<span style="color: #475569;">思考中...</span>')
 
 
 def _on_chat_response(app, response):
@@ -295,7 +301,10 @@ def _on_chat_response(app, response):
     cursor.movePosition(cursor.MoveOperation.End)
     cursor.select(cursor.SelectionType.BlockUnderCursor)
     cursor.removeSelectedText()
-    app._chat_display.append(f'<span style="color: #10b981;">AI:</span> {response}')
+    import re
+    response = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', response)
+    response = response.replace('\n', '<br>')
+    app._chat_display.append(f'<p style="text-align:left; margin:4px 0;"><span style="background-color:#1e293b; color:#10b981; padding:10px 14px; border-radius:10px; font-size:12px; line-height:1.6;">{response}</span></p>')
 
 
 def _on_chat_error(app, error):
@@ -303,7 +312,32 @@ def _on_chat_error(app, error):
     cursor.movePosition(cursor.MoveOperation.End)
     cursor.select(cursor.SelectionType.BlockUnderCursor)
     cursor.removeSelectedText()
-    app._chat_display.append(f'<span style="color: #ef4444;">Error:</span> {error}')
+    app._chat_display.append(f'<p style="text-align:left; margin:4px 0;"><span style="background-color:#1e293b; color:#ef4444; padding:10px 14px; border-radius:10px; font-size:12px;">Error: {error}</span></p>')
+
+
+def _on_tool_called(app, func_name, func_args):
+    if func_name == "create_custom_charts":
+        custom_groups = func_args.get("custom_groups", {})
+        normalize = func_args.get("normalize", False)
+        valid_groups = {}
+        normalize_flags = {}
+        for title, sensors in custom_groups.items():
+            if isinstance(sensors, str):
+                sensors = [sensors]
+            elif not isinstance(sensors, list):
+                continue
+            valid_sensors = [s for s in sensors if s in ("temperature", "humidity", "gas", "distance")]
+            if valid_sensors:
+                valid_groups[title] = valid_sensors
+                normalize_flags[title] = normalize
+        if not valid_groups:
+            app._chat_display.append('<span style="color: #475569;">System: No valid sensor names. Available: temperature, humidity, gas, distance</span>')
+            return
+        app._sensor_chart.rebuild_charts(valid_groups, normalize_flags)
+        if hasattr(app, '_last_readings') and app._last_readings:
+            app._sensor_chart.update_chart(app._last_readings)
+        norm_text = " (normalized)" if normalize else ""
+        app._chat_display.append(f'<span style="color: #475569;">System: Charts created: {", ".join(valid_groups.keys())}{norm_text}</span>')
 
 
 def _load_history(app):
@@ -336,6 +370,7 @@ def _load_history(app):
             app._history_table.setItem(i, 4, dist_item)
 
         if hasattr(app, '_sensor_chart'):
+            app._last_readings = readings
             app._sensor_chart.update_chart(readings)
 
     from cloud_worker import CloudWorker

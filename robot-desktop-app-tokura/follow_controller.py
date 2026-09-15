@@ -934,7 +934,12 @@ class ControlThread(threading.Thread):
                  + self.config.kd_lin * d_err_lin)
 
         # Unified heading error using body_target_angle (vehicle front = 0 degrees)
-        combined_heading_error = yaw_deg_offset / self.config.yaw_max
+        yaw_deg_for_steering = yaw_deg_offset
+        if self.config.predictive_control_enabled:
+            yaw_deg_predicted = detection.get("yaw_deg_predicted")
+            if yaw_deg_predicted is not None:
+                yaw_deg_for_steering = yaw_deg_predicted
+        combined_heading_error = yaw_deg_for_steering / self.config.yaw_max
 
         # API_DOCUMENTATION.md 2.2: GET /drive?v=&w= (Left_PWM=v+w, Right_PWM=v-w)。
         # w: 負=左旋回、正=右旋回。combined_heading_error>0は「左に曲がる必要がある」

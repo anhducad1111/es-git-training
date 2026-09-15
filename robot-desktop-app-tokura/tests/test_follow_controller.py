@@ -581,6 +581,47 @@ def test_following_uses_drive_when_heading_error_exceeds_straight_threshold():
     assert result["command"].startswith("drive:")
 
 
+def test_predictive_control_disabled_by_default_ignores_yaw_deg_predicted():
+    """既定(predictive_control_enabled=False)では、detectionにyaw_deg_predicted
+    が含まれていても無視し、従来通り生のyaw_degだけで操舵を決めることを確認する。
+    yaw_deg=0.0(直進で足りる)だがyaw_deg_predicted=60.0(大きく曲がる)という
+    ケースで、予測値が使われていればdrive:v,wになるはずが、無視されるので
+    forward/backwardのままになる。"""
+    thread = _make_control_thread()
+    thread._gimbal_thread = _StubGimbal(settled=True)
+    detection = {"yaw_deg": 0.0, "yaw_deg_predicted": 60.0, "dist_m": 1.5,
+                 "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+    result = thread._compute_command(detection)
+    assert not result["command"].startswith("drive:")
+
+
+def test_predictive_control_enabled_uses_yaw_deg_predicted_for_steering():
+    """predictive_control_enabled=Trueのとき、生のyaw_deg(0.0、直進で足りる)
+    ではなくyaw_deg_predicted(60.0、大きく曲がる)が操舵計算に使われ、
+    test_following_uses_drive_when_heading_error_exceeds_straight_thresholdと
+    同じくdrive:v,wにフォールバックすることを確認する。"""
+    thread = _make_control_thread(predictive_control_enabled=True)
+    thread._gimbal_thread = _StubGimbal(settled=True)
+    detection = {"yaw_deg": 0.0, "yaw_deg_predicted": 60.0, "dist_m": 1.5,
+                 "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+    result = thread._compute_command(detection)
+    assert result["command"].startswith("drive:")
+
+
+def test_predictive_control_enabled_falls_back_to_raw_yaw_when_predicted_missing():
+    """predictive_control_enabled=Trueでも、detectionにyaw_deg_predictedが
+    無い(古いFollowDetector互換・未初期化時)場合は生のyaw_degにフォールバック
+    することを確認する。"""
+    thread = _make_control_thread(predictive_control_enabled=True)
+    thread._gimbal_thread = _StubGimbal(settled=True)
+    detection = {"yaw_deg": 60.0, "dist_m": 1.5, "confidence": 0.9,
+                 "bbox": (300, 200, 20, 20), "frame_w": 640, "frame_h": 480}
+    result = thread._compute_command(detection)
+    assert result["command"].startswith("drive:")
+
+
 def test_command_thread_sets_speed_before_forward_command(monkeypatch):
     """回帰テスト: forward/backwardではESP32へ速度を先に反映してから移動コマンドを
     送る(逆順だと1tick古い速度でforward/backwardが実行されてしまう)。"""

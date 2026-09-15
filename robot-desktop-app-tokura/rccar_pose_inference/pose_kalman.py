@@ -26,14 +26,9 @@ class PoseKalmanFilter:
         self._process_noise_pos = process_noise_pos
         self._process_noise_yaw = process_noise_yaw
         self._measurement_noise = measurement_noise
-        # A genuine instantaneous heading flip (the car reversing direction;
-        # RcCarPoseDetector's yaw is the L->R axle's perpendicular, which has
-        # a 180-degree ambiguity resolved only by which wheel keypoint is
-        # "left" vs "right" -- reversing swaps that) looks, to a
-        # constant-velocity model, exactly like noise: the filter would
-        # otherwise fight it for several frames instead of reporting it.
-        # Above this threshold we treat the observation as ground truth and
-        # snap straight to it instead of blending. See update().
+        # A real 180° reversal (axle L/R ambiguity) looks identical to noise
+        # to a constant-velocity model. Above this threshold, snap to the
+        # observation instead of blending (see update()).
         self._yaw_snap_threshold_deg = yaw_snap_threshold_deg
         self._initialized = False
         self._coast_seconds = 0.0
@@ -117,9 +112,10 @@ class PoseKalmanFilter:
 
     @property
     def state(self) -> dict:
-        X, Z, vX, vZ, yaw_deg, _ = self._x
+        X, Z, vX, vZ, yaw_deg, yaw_rate = self._x
         return {
             "X": float(X), "Z": float(Z), "yaw_deg": float(yaw_deg),
             "dist_m": float(math.hypot(X, Z)),
             "vx_mps": float(vX), "vz_mps": float(vZ),
+            "yaw_rate_deg_s": float(yaw_rate),
         }

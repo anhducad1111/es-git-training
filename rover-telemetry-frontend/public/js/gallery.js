@@ -45,14 +45,60 @@ window.GalleryView = (function () {
     select.value = uid;
   }
 
+  // Browsers only decode a handful of video containers/codecs natively (H.264/VP8/VP9/AV1).
+  // Two distinct failure modes show up here, both invisible from the MIME type alone:
+  //   1. A container browsers don't support at all (AVI, most .mov) - filtered out up front.
+  //   2. A ".mp4" file whose *codec* isn't browser-supported (e.g. recordings written with
+  //      OpenCV's "mp4v" fourcc - valid MPEG-4 Part 2, but not H.264/avc1). The <video> tag
+  //      just sits at readyState 0 forever: no error event, no metadata, nothing - while the
+  //      same file plays fine in VLC/desktop players with broader codec support.
+  // Case 1 is cheap to catch by extension/MIME. Case 2 can only be detected by actually trying
+  // to load the video and giving up if metadata never arrives.
+  const UNSUPPORTED_CONTAINER_TYPES = ['video/x-msvideo', 'video/avi', 'video/quicktime'];
+  function isKnownUnsupportedContainer(m) {
+    return m.media_type === 'video' && UNSUPPORTED_CONTAINER_TYPES.includes(m.mime_type);
+  }
+
+  const METADATA_TIMEOUT_MS = 3000;
+  function unsupportedMessage(mimeType) {
+    return `This video (${Api.escapeHtml(mimeType || 'unknown format')}) can't be played in the browser. Use the Download button to view it in a desktop player.`;
+  }
+
+  // Wires a <video> element to fall back to an "unsupported" placeholder if it never reaches
+  // loadedmetadata (codec browsers can't decode) or fires an error (container browsers reject).
+  function watchVideoPlayability(video, mimeType, onUnsupported) {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      onUnsupported();
+    }, METADATA_TIMEOUT_MS);
+    video.addEventListener('loadedmetadata', () => { settled = true; clearTimeout(timer); });
+    video.addEventListener('error', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      onUnsupported();
+    });
+  }
+
   function openLightbox(index) {
     currentIndex = index;
     const m = currentMedia[index];
     const url = Api.mediaUrl(uid, m.id);
     const body = document.getElementById('media-lightbox-body');
-    body.innerHTML = m.media_type === 'photo'
-      ? `<img src="${url}" alt="media ${m.id}">`
-      : `<video src="${url}" controls autoplay></video>`;
+    if (m.media_type === 'photo') {
+      body.innerHTML = `<img src="${url}" alt="media ${m.id}">`;
+    } else if (isKnownUnsupportedContainer(m)) {
+      body.innerHTML = `<div class="media-unsupported">${unsupportedMessage(m.mime_type)}</div>`;
+    } else {
+      body.innerHTML = `<video src="${url}" controls autoplay></video>`;
+      const video = body.querySelector('video');
+      watchVideoPlayability(video, m.mime_type, () => {
+        if (currentIndex !== index) return; // user already moved on
+        body.innerHTML = `<div class="media-unsupported">${unsupportedMessage(m.mime_type)}</div>`;
+      });
+    }
     document.getElementById('media-lightbox-download').href = url;
     document.getElementById('media-lightbox').hidden = false;
   }
@@ -88,9 +134,14 @@ window.GalleryView = (function () {
       }
       gallery.innerHTML = data.media.map((m) => {
         const url = Api.mediaUrl(uid, m.id);
-        const preview = m.media_type === 'photo'
-          ? `<img src="${url}" alt="media ${m.id}" loading="lazy">`
-          : `<video src="${url}" muted></video>`;
+        let preview;
+        if (m.media_type === 'photo') {
+          preview = '<img src="' + url + '" alt="media ' + m.id + '" loading="lazy">';
+        } else if (isKnownUnsupportedContainer(m)) {
+          preview = '<div class="media-unsupported media-unsupported-thumb">⬇ Download to view</div>';
+        } else {
+          preview = '<video src="' + url + '" muted preload="metadata"></video>';
+        }
         return `
           <div class="media-item" data-id="${m.id}">
             <div class="media-preview">${preview}</div>
@@ -109,6 +160,14 @@ window.GalleryView = (function () {
         const id = Number(item.dataset.id);
         const index = currentMedia.findIndex((x) => x.id === id);
         item.querySelector('.media-preview').addEventListener('click', () => openLightbox(index));
+
+        const video = item.querySelector('.media-preview video');
+        if (video) {
+          const m = currentMedia[index];
+          watchVideoPlayability(video, m.mime_type, () => {
+            item.querySelector('.media-preview').innerHTML = '<div class="media-unsupported media-unsupported-thumb">⬇ Download to view</div>';
+          });
+        }
       });
 
       gallery.querySelectorAll('.media-download-btn').forEach((link) => {

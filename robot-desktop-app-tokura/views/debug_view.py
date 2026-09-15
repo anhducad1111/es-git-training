@@ -7,7 +7,7 @@ views/sidebar.pyの数行(このビューを参照する箇所)を取り除く�
 
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (
-    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QCheckBox, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QPushButton, QSlider, QTabWidget, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget
 )
@@ -374,10 +374,44 @@ def _create_follow_tuning_tab(app):
 
     box.setLayout(form)
     layout.addWidget(box)
+
+    # 実機キャリブレーションで超信地旋回(drive:0,w)が左右非対称と分かったため、
+    # 代わりにWSの簡易コマンド"left"/"right"(API_DOCUMENTATION.md 2.1)を
+    # 使う旋回モードを試せるようにする。左右の対応は未検証。
+    simple_turn_box = QGroupBox("旋回コマンド方式(実験用)")
+    simple_turn_form = QVBoxLayout()
+
+    app._debug_simple_turn_checkbox = QCheckBox("簡易コマンド(\"left\"/\"right\")で旋回する")
+    app._debug_simple_turn_checkbox.setChecked(FollowConfig().use_simple_turn_commands)
+    app._debug_simple_turn_checkbox.stateChanged.connect(lambda state: _on_simple_turn_toggle(app, state))
+    simple_turn_form.addWidget(app._debug_simple_turn_checkbox)
+
+    app._debug_simple_turn_flip_checkbox = QCheckBox("左右が逆に旋回する場合はこちらもON")
+    app._debug_simple_turn_flip_checkbox.setChecked(FollowConfig().simple_turn_direction_flipped)
+    app._debug_simple_turn_flip_checkbox.stateChanged.connect(lambda state: _on_simple_turn_flip_toggle(app, state))
+    simple_turn_form.addWidget(app._debug_simple_turn_flip_checkbox)
+
+    simple_turn_box.setLayout(simple_turn_form)
+    layout.addWidget(simple_turn_box)
+
     layout.addStretch()
 
     widget.setLayout(layout)
     return widget
+
+
+def _on_simple_turn_toggle(app, state):
+    enabled = bool(state)
+    if hasattr(app, "_detection_mgr") and app._detection_mgr._follow_controller:
+        app._detection_mgr._follow_controller.config.use_simple_turn_commands = enabled
+        app._add_log("DEBUG", f"旋回コマンド方式: {'left/right' if enabled else 'drive:0,w'}")
+
+
+def _on_simple_turn_flip_toggle(app, state):
+    flipped = bool(state)
+    if hasattr(app, "_detection_mgr") and app._detection_mgr._follow_controller:
+        app._detection_mgr._follow_controller.config.simple_turn_direction_flipped = flipped
+        app._add_log("DEBUG", f"left/right反転: {flipped}")
 
 
 def _on_follow_tuning_change(app, attr: str, slider_value: int, scale: int, decimals: int):

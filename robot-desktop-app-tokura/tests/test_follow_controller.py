@@ -33,7 +33,7 @@ def _make_control_thread(**config_overrides):
 def test_follow_config_defaults_for_distance_band():
     config = FollowConfig()
     assert config.follow_distance == 0.4
-    assert config.distance_band == 0.075
+    assert config.distance_band == 0.08
     assert config.min_pwm == 180
     assert config.blind_approach_pwm == 150
     assert config.head_on_threshold == 20.0
@@ -349,11 +349,11 @@ def test_following_drive_stops_after_burst_then_pauses(monkeypatch):
     あるため、FOLLOWING時の直進駆動もpan角度優先補正と同じ「短いバースト
     走行(既定0.3秒)→完全停止して静止確認(既定0.6秒)」方式にした。
     バースト時間が経過した直後の呼び出しでは必ずdrive:0,0が返ることを確認する。
-    ただしこれはdrive_pulse_near_dist_m(既定1.0m)以内の近距離限定の挙動
+    ただしこれはdrive_pulse_near_dist_m(既定0.75m)以内の近距離限定の挙動
     (実機で「遠距離では細切れ過ぎて遅い」と報告されたため)なので、
-    dist_m=0.8mで確認する。"""
+    dist_m=0.5mで確認する。"""
     thread = _make_control_thread()
-    detection = {"yaw_deg": 5.0, "dist_m": 0.8, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+    detection = {"yaw_deg": 5.0, "dist_m": 0.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
                  "frame_w": 640, "frame_h": 480}
 
     monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)
@@ -378,7 +378,9 @@ def test_following_drive_stops_after_burst_then_pauses(monkeypatch):
 
 def test_following_drive_resumes_after_pause_elapses(monkeypatch):
     thread = _make_control_thread()
-    detection = {"yaw_deg": 5.0, "dist_m": 0.8, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+    # dist_m=0.5はdrive_pulse_near_dist_m(既定0.75m)以内なのでdrive_burst_sec
+    # (近距離用)が使われる
+    detection = {"yaw_deg": 5.0, "dist_m": 0.5, "confidence": 0.9, "bbox": (300, 200, 20, 20),
                  "frame_w": 640, "frame_h": 480}
 
     monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)
@@ -400,7 +402,7 @@ def test_following_drive_resumes_after_pause_elapses(monkeypatch):
 def test_following_drive_uses_longer_burst_beyond_pulse_near_dist(monkeypatch):
     """実機で「遠距離では動きが細切れ過ぎて遅い」と報告される一方、
     「連続前進のままだと向き・位置がずれていく」とも報告されたため、
-    drive_pulse_near_dist_m(既定1.0m)より遠い場合は完全連続駆動にはせず、
+    drive_pulse_near_dist_m(既定0.75m)より遠い場合は完全連続駆動にはせず、
     バースト時間をdrive_burst_far_sec(既定1.0秒)に延ばして約1秒ごとに
     確認・補正の小停止をする。近距離用のdrive_burst_sec(既定0.3秒)経過
     時点ではまだ止まらないが、drive_burst_far_sec経過後は止まることを確認する。"""
@@ -466,6 +468,47 @@ def test_pulsed_spin_command_is_stopped_during_off_phase(monkeypatch):
     monkeypatch.setattr("follow_controller.time.time", lambda: on_sec + 0.01)
     command = thread._pulsed_spin_command(150)
     assert command == "drive:0,0"
+
+
+def test_simple_turn_commands_use_right_and_left(monkeypatch):
+    """実機キャリブレーションで超信地旋回(drive:0,w)が左右非対称と判明したため、
+    use_simple_turn_commands=Trueのときは"left"/"right"(API_DOCUMENTATION.md
+    2.1の簡易コマンド)を使う。正のspin_wはright、負はleftになることを確認する。"""
+    thread = _make_control_thread(use_simple_turn_commands=True)
+    monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)  # ON区間の先頭
+    assert thread._pulsed_spin_command(150) == "right"
+    assert thread._pulsed_spin_command(-150) == "left"
+
+
+def test_simple_turn_commands_stop_during_off_phase(monkeypatch):
+    thread = _make_control_thread(use_simple_turn_commands=True)
+    on_sec = thread.config.spin_pulse_on_sec
+    monkeypatch.setattr("follow_controller.time.time", lambda: on_sec + 0.01)
+    assert thread._pulsed_spin_command(150) == "stop"
+
+
+def test_simple_turn_direction_flipped_reverses_left_right(monkeypatch):
+    thread = _make_control_thread(use_simple_turn_commands=True, simple_turn_direction_flipped=True)
+    monkeypatch.setattr("follow_controller.time.time", lambda: 0.0)
+    assert thread._pulsed_spin_command(150) == "left"
+    assert thread._pulsed_spin_command(-150) == "right"
+
+
+def test_turn_only_branch_reports_turn_speed_so_speed_command_is_sent(monkeypatch):
+    """回帰テスト: use_simple_turn_commands時は"left"/"right"がCommandThread側で
+    speed:Nを伴って送信される必要があるが、この分岐は_prev_v_cmdを0にリセット
+    するため、返り値の"speed"がabs(_prev_v_cmd)のままだと0になりspeed:Nが
+    送られない(CommandThreadはspeed>0のときしかset_speedを呼ばない)。
+    turn_speedがそのまま"speed"に載ることを確認する。"""
+    thread = _make_control_thread(use_simple_turn_commands=True)
+    # pan_offset=0(閾値15度以下)でpan優先補正を回避しつつ、yaw_deg=130で
+    # combined_heading_error(=0.15*130/45=0.433)がTURN_ONLY_HEADING_ERROR(0.35)を
+    # 超えるようにし、実際にTURN_ONLY分岐(この修正の対象)を通す。
+    thread._gimbal_thread = _StubGimbal(settled=True, current_pan=85.0, gimbal_center_pan=85.0)
+    detection = {"yaw_deg": 130.0, "dist_m": 2.0, "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+    result = thread._compute_command(detection)
+    assert result["speed"] == thread.config.turn_speed
 
 
 def test_pulsed_spin_command_applies_feedforward_pan_delta_when_chassis_enabled(monkeypatch):

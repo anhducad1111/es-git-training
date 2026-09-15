@@ -447,8 +447,8 @@ RoverWebSocket.send
 | yaw_max | 45.0度 | ヘディング誤差正規化の基準角 |
 | min_distance | 0.3m | 最小距離（安全停止） |
 | max_distance | 2.0m | 最大距離（安全停止） |
-| follow_distance | 0.4m | 目標追従距離（32.5-47.5cm帯の中心） |
-| distance_band | ±0.075m | 目標距離帯の幅（この範囲内では前後進せず向きのみ補正） |
+| follow_distance | 0.4m | 目標追従距離（32-48cm帯の中心） |
+| distance_band | ±0.08m | 目標距離帯の幅（この範囲内では前後進せず向きのみ補正） |
 | base_speed | 180 | 基準速度 |
 | turn_speed | 190 | 旋回時速度（実機で150はパワー不足と確認） |
 | min_pwm | 180 | 最小PWM |
@@ -466,7 +466,7 @@ TURNING            # 大きな旋回が必要
 WAITING            # 距離帯外で待機
 SEARCHING          # bbox未検出中
 HEAD_ON_HOLD       # 対象が正面を向いている等の特殊姿勢
-HOLDING            # 距離帯(32.5-47.5cm)内で保持
+HOLDING            # 距離帯(32-48cm)内で保持
 APPROACHING_BLIND  # bboxロスト直後の慣性接近
 LOST_TIMEOUT       # ロストが規定時間継続 → 停止
 ```

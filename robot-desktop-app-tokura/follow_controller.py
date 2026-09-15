@@ -26,8 +26,8 @@ class FollowConfig:
     yaw_max: float = 45.0
     min_distance: float = 0.3
     max_distance: float = 2.0
-    follow_distance: float = 0.4  # 目標距離0.4m（32.5-47.5cm帯の中心、distance_bandは維持）
-    distance_band: float = 0.075    # ±距離帯幅（32.5-47.5cm実現）
+    follow_distance: float = 0.4  # 目標距離0.4m（32-48cm帯の中心、distance_bandは維持）
+    distance_band: float = 0.08    # ±距離帯幅（32-48cm実現。上限0.48mで完全停止させたい要望に合わせて0.075→0.08）
     base_speed: int = 180
     turn_speed: int = 190  # 150だとパワー不足で動きが悪いことが実機で確認された
     control_rate_hz: float = 10.0
@@ -45,7 +45,7 @@ class FollowConfig:
     state_hysteresis_frames: int = 3
     lost_timeout_sec: float = 5.0
     # FOLLOWING時の前進/後退PWM上限。実機で速すぎて衝突したため255から引き下げ、
-    # 距離帯(32.5-47.5cm)に近づくほどmin_pwm(180)寄りまで減速する（下のapproach_slowdown_dist参照）
+    # 距離帯(32-48cm)に近づくほどmin_pwm(180)寄りまで減速する（下のapproach_slowdown_dist参照）
     max_follow_pwm: int = 200
     # この距離(m)だけ距離帯の外側にいると、まだmax_follow_pwmまで加速してよい。
     # 距離帯に近づくにつれて比例的にmin_pwmまで減速する
@@ -63,6 +63,15 @@ class FollowConfig:
     # speed:Nを使ってジャイロPIDの恩恵を受け、大きく操舵が必要なときのみ
     # drive:v,wの差動制御を使う。
     straight_command_w_threshold: int = 10
+    # 実機のキャリブレーションで、超信地旋回(drive:0,w、PID非経由の差動PWM直接
+    # 指定)が左右非対称(同じ|w|でも左旋回の方が右旋回よりずっと多く回る)である
+    # ことが確認された。API_DOCUMENTATION.md 2.1の"left"/"right"(WSの簡易
+    # コマンド、Left/Right各輪を100%で逆回転させる固定動作)なら機構差の影響を
+    # 受けにくいのではないか、という実験用のフラグ。ONにすると、旋回コマンドは
+    # drive:0,wの代わりに"left"/"right"(+speed:turn_speed)を送るようになる。
+    use_simple_turn_commands: bool = False
+    # "left"/"right"の左右対応は実機で未検証。逆に旋回する場合はこれをTrueにする。
+    simple_turn_direction_flipped: bool = False
     # GimbalThreadが参照できない場合(テスト等)のパン中央値フォールバック。
     # GimbalThread._gimbal_center_pan(既定85.0)と揃えること
     gimbal_center_pan_deg: float = 85.0
@@ -106,7 +115,7 @@ class FollowConfig:
     # して約1秒ごとに短く止めて追従状況を確認・補正する方式にする。
     # 近距離(この距離(m)以下)ではdrive_burst_secのまま(頻繁に確認)。
     # 停止時間(drive_pause_sec)は近距離・遠距離で共通。
-    drive_pulse_near_dist_m: float = 1.0
+    drive_pulse_near_dist_m: float = 0.75
     drive_burst_far_sec: float = 1.0
     # 旋回中、車体の回転によってカメラの絶対的な向きがどれだけズレるかを
     # 見越して、ジンバルのpanを先読みで補正する(フィードフォワード)。
@@ -831,7 +840,7 @@ class ControlThread(threading.Thread):
             self._prev_err_lin = 0.0
             self._prev_v_cmd = 0
             self._reset_drive_pulse()
-            return self._stop_command("ホールド(32.5-47.5cm帯)")
+            return self._stop_command("ホールド(32-48cm帯)")
 
         if confidence < self.config.min_confidence:
             self._reset_drive_pulse()
@@ -955,6 +964,14 @@ class ControlThread(threading.Thread):
         self._pan_priority_burst_start = None
         self._pan_priority_pause_until = 0.0
 
+        # 旋回分岐(TURN_ONLY/距離帯内向き調整)ではspin_w由来のPWMをdrive:0,wの
+        # 文字列に埋め込むため、返却する"speed"フィールド自体は使われない
+        # (_prev_v_cmd=0のまま)。ただしuse_simple_turn_commands時は"left"/
+        # "right"を送るため、CommandThreadに正しいspeed:turn_speedを先に
+        # 送らせる必要がある(speed>0でないとCommandThreadがset_speedを
+        # 呼ばない)。旋回分岐に入った場合はここへturn_speedを記録しておく。
+        spin_speed_for_command = None
+
         TURN_ONLY_HEADING_ERROR = 0.35
         if abs(combined_heading_error) > TURN_ONLY_HEADING_ERROR:
             # 見失いそうなほど旋回が必要 -> 両輪逆回転の超信地旋回(v=0)。
@@ -964,6 +981,7 @@ class ControlThread(threading.Thread):
             self._reset_drive_pulse()
             spin_w = self.config.turn_speed if combined_heading_error <= 0 else -self.config.turn_speed
             command = self._pulsed_spin_command(spin_w)
+            spin_speed_for_command = self.config.turn_speed
         elif err_lin > self.config.distance_band:
             v = self._ramp_speed_signed(self._distance_proportional_pwm(err_lin))
             burst_sec = self.config.drive_burst_sec if dist_m <= self.config.drive_pulse_near_dist_m else self.config.drive_burst_far_sec
@@ -978,11 +996,12 @@ class ControlThread(threading.Thread):
             self._reset_drive_pulse()
             spin_w = self.config.turn_speed if combined_heading_error <= 0 else -self.config.turn_speed
             command = self._pulsed_spin_command(spin_w)
+            spin_speed_for_command = self.config.turn_speed
 
         return {
             "type": "control",
             "command": command,
-            "speed": abs(self._prev_v_cmd),
+            "speed": spin_speed_for_command if spin_speed_for_command is not None else abs(self._prev_v_cmd),
             "log": f"heading:{combined_heading_error:+.2f} dist:{err_lin:+.2f}m {command}",
         }
 
@@ -1054,6 +1073,11 @@ class ControlThread(threading.Thread):
             if self._log:
                 self._log("FOLLOW", f"[FF] 旋回フィードフォワード: spin_w={spin_w} delta_pan={delta:+.2f}°")
 
+        if self.config.use_simple_turn_commands:
+            is_right = spin_w > 0
+            if self.config.simple_turn_direction_flipped:
+                is_right = not is_right
+            return "right" if is_right else "left"
         return f"drive:0,{spin_w}"
 
     def _pulsed_spin_command(self, spin_w: int) -> str:
@@ -1072,7 +1096,7 @@ class ControlThread(threading.Thread):
         is_on = phase < self.config.spin_pulse_on_sec
         if is_on:
             return self._spin_drive_command(spin_w)
-        return "drive:0,0"
+        return "stop" if self.config.use_simple_turn_commands else "drive:0,0"
 
     def _forward_or_drive_command(self, v: int, w: int) -> str:
         """API_DOCUMENTATION.md 2.1/2.6: WSの"forward"/"backward"はESP32側の
@@ -1094,7 +1118,7 @@ class ControlThread(threading.Thread):
         return f"drive:{v},{w}"
 
     def _distance_proportional_pwm(self, dist_error_m: float) -> int:
-        """距離帯(32.5-47.5cm)からどれだけ離れているかに応じてPWMを決める。
+        """距離帯(32-48cm)からどれだけ離れているかに応じてPWMを決める。
         距離帯のすぐ外側ではmin_pwm(180)寄りの低速、approach_slowdown_dist(既定1.0m)
         以上離れていればmax_follow_pwm(既定200)まで出す。実機で「速すぎて衝突した」
         ため、固定でmin_pwmに加算していた旧ロジックから距離比例の減速に変更した。

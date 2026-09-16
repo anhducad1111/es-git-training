@@ -30,16 +30,6 @@ class DetectionManager(QObject):
         self._follow_detector = None
         self._follow_controller = None
         self._follow_detections = []
-        
-        self._last_detection_time = None
-        self._target_lost_timeout = 1.0
-        self._target_lost_timer = QTimer()
-        self._target_lost_timer.timeout.connect(self._check_target_lost)
-        self._is_target_lost = False
-        
-        self._last_aruco_time = None
-        self._aruco_lost_timeout = 2.0
-        self._is_aruco_lost = False
 
         # ターゲット/ArUcoロスト警告(_on_follow_detected/_check_target_lost参照)。
         # toggle_follow_mode()の停止分岐でしかリセットされていなかったため、
@@ -167,7 +157,9 @@ class DetectionManager(QObject):
                 config.kp_lin = self._app._follow_kp_slider.value() / 10.0
                 config.ki_lin = self._app._follow_ki_slider.value() / 10.0
                 config.kd_lin = self._app._follow_kd_slider.value() / 10.0
-            
+            if self._app and hasattr(self._app, '_predictive_control_check'):
+                config.predictive_control_enabled = self._app._predictive_control_check.isChecked()
+
             self._follow_controller = FollowController(
                 config=config,
                 dry_run=False,
@@ -282,26 +274,28 @@ class DetectionManager(QObject):
                 self._log("FOLLOW", "ArUco marker lost")
             
     def set_frame(self, bgr):
-        """Set frame for detection."""
+        """Set an already-decoded BGR frame for detection."""
         if self._follow_mode_active and self._follow_detector and self._follow_detector.isRunning():
             self._follow_detector.set_frame(bgr)
+
+    def set_qimage(self, image):
+        """Set a raw QImage for detection; BGRA->BGR conversion happens on
+        FollowDetector's own thread instead of the caller's (GUI) thread."""
+        if self._follow_mode_active and self._follow_detector and self._follow_detector.isRunning():
+            self._follow_detector.set_qimage(image)
     
     def _set_gimbal_with_ui(self, pan, tilt):
-        """Send gimbal command and update UI labels."""
-        from views.sidebar import _actual_to_display_pan, _actual_to_display_tilt
+        """Send gimbal command and update UI labels.
+
+        FollowControllerのset_gimbalコールバックとして実際の自動制御(follow
+        mode中のジンバル移動)でも使われるため、表示更新(update_gimbal_displays)
+        とservoコマンド送信(_send_command)は独立させ、表示側の変更が送信の
+        タイミング・有無に影響しないようにしている。"""
+        from views.sidebar import update_gimbal_displays
         if self._app:
             self._app._gimbal_pan = int(pan)
             self._app._gimbal_tilt = int(tilt)
-            if hasattr(self._app, '_gimbal_pan_input'):
-                self._app._gimbal_pan_input.setText(str(_actual_to_display_pan(int(pan))))
-            if hasattr(self._app, '_gimbal_tilt_input'):
-                self._app._gimbal_tilt_input.setText(str(_actual_to_display_tilt(int(tilt))))
-            if hasattr(self._app, '_gimbal_hud'):
-                self._app._gimbal_hud.set_gimbal(int(pan), int(tilt))
-            if hasattr(self._app, '_target_angle_display'):
-                target_angle = int(pan) - PAN_CENTER
-                sign = "+" if target_angle >= 0 else ""
-                self._app._target_angle_display.setText(f"{sign}{target_angle:.1f}°")
+            update_gimbal_displays(self._app, pan, tilt)
             self._app._send_command(f"servo:{int(pan)},{int(tilt)}")
             
     def stop_all(self):

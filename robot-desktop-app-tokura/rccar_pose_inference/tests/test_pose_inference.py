@@ -453,3 +453,53 @@ def test_infer_trusts_reacquired_detection_after_occlusion_despite_apparent_spee
     # yaw_snap_threshold_deg is for on a genuine reversal) - just confirm it
     # moved toward the true 45 deg instead of staying pinned at the stale 0.
     assert result.yaw_deg > 1.0
+
+
+def test_predict_yaw_deg_projects_using_yaw_rate():
+    inference = PoseInference.__new__(PoseInference)
+    inference._prediction_time_sec = 0.5
+
+    state = {"X": 0.0, "Z": 1.0, "yaw_deg": 10.0, "dist_m": 1.0,
+              "vx_mps": 0.0, "vz_mps": 0.0, "yaw_rate_deg_s": 20.0}
+
+    # future_yaw = 10 + 20 * 0.5 = 20
+    assert inference._predict_yaw_deg(state) == pytest.approx(20.0, abs=1e-6)
+
+
+def test_predict_yaw_deg_wraps_across_180_boundary():
+    inference = PoseInference.__new__(PoseInference)
+    inference._prediction_time_sec = 1.0
+
+    state = {"X": 0.0, "Z": 1.0, "yaw_deg": 170.0, "dist_m": 1.0,
+              "vx_mps": 0.0, "vz_mps": 0.0, "yaw_rate_deg_s": 20.0}
+
+    # future_yaw = 170 + 20 = 190 -> wraps to -170
+    assert inference._predict_yaw_deg(state) == pytest.approx(-170.0, abs=1e-6)
+
+
+def test_infer_reports_yaw_deg_predicted_once_kalman_initialized():
+    inference = _make_gimbal_test_inference()
+    inference._gimbal_provider = None
+
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    result = inference.infer(frame)
+
+    assert result.yaw_deg_predicted is not None
+
+
+def test_infer_reports_none_yaw_deg_predicted_when_no_detection(tmp_path):
+    inference = PoseInference.__new__(PoseInference)
+    inference._ground = None
+    inference._aruco = None
+    inference._use_aruco_dist = False
+    inference._gimbal_provider = None
+    inference._kalman = PoseKalmanFilter()
+    inference._max_coast_sec = 1.0
+    inference._prediction_time_sec = 0.5
+    inference._model = _StubModel(_FakeResult(boxes=_FakeBoxes(xyxy=np.empty((0, 4)), conf=np.empty(0))))
+    inference._confidence = 0.35
+    inference._last_infer_time = None
+
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    result = inference.infer(frame)
+    assert result.yaw_deg_predicted is None

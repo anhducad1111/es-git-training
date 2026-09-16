@@ -7,18 +7,6 @@ class ESP32API:
         self.cam_ip = cam_ip
         self._timeout = 3
 
-    def set_speed(self, speed):
-        """GET /speed?val={80-255}"""
-        try:
-            resp = requests.get(
-                f"http://{self.car_ip}/speed",
-                params={"val": speed},
-                timeout=self._timeout,
-            )
-            return resp.status_code == 200
-        except:
-            return False
-
     def set_brake(self, enabled):
         """GET /api/distance?brake={0|1}"""
         try:
@@ -104,38 +92,3 @@ class ESP32API:
         except:
             return False
 
-    def get_pid(self):
-        """GET /api/pid"""
-        try:
-            resp = requests.get(
-                f"http://{self.car_ip}/api/pid",
-                timeout=self._timeout,
-            )
-            if resp.status_code == 200:
-                return resp.json()
-        except:
-            pass
-        return None
-
-    def set_pid(self, kp=None, ki=None, kd=None, enabled=None, bias=None):
-        """GET /api/pid?kp=&ki=&kd=&enabled=&bias="""
-        params = {}
-        if kp is not None:
-            params["kp"] = kp
-        if ki is not None:
-            params["ki"] = ki
-        if kd is not None:
-            params["kd"] = kd
-        if enabled is not None:
-            params["enabled"] = 1 if enabled else 0
-        if bias is not None:
-            params["bias"] = bias
-        try:
-            resp = requests.get(
-                f"http://{self.car_ip}/api/pid",
-                params=params,
-                timeout=self._timeout,
-            )
-            return resp.status_code == 200
-        except:
-            return False

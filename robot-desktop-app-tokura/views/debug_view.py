@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 from calibration import CalibrationLogger, GyroYawIntegrator
 from cloud_worker import CloudWorker
 from follow_controller import FollowConfig
+from pid_defaults import GYRO_PID_DEFAULTS
 
 TABLE_STYLE = """
     QTableWidget {
@@ -469,12 +470,18 @@ def _create_gyro_pid_tab(app):
     form = QVBoxLayout()
     form.setSpacing(14)
 
-    app._debug_pid_enabled_btn = QPushButton("ENABLED: UNKNOWN")
+    app._debug_pid_enabled_btn = QPushButton(
+        f"ENABLED: {'ON' if GYRO_PID_DEFAULTS['enabled'] else 'OFF'}"
+    )
     app._debug_pid_enabled_btn.setCheckable(True)
+    app._debug_pid_enabled_btn.setChecked(GYRO_PID_DEFAULTS["enabled"])
     app._debug_pid_enabled_btn.setFixedHeight(40)
     app._debug_pid_enabled_btn.clicked.connect(lambda: _on_pid_enabled_toggle(app))
     form.addWidget(app._debug_pid_enabled_btn)
 
+    # REFRESH前でも欄が空にならないよう、実機で確認済みの良好値
+    # (pid_defaults.py)を初期表示しておく。SettingsタブやAPPLY未実行時に
+    # ここを見ても「本来あるべき値」が分かるようにするため。
     app._debug_pid_inputs = {}
     for key, label_text in [("kp", "kp"), ("ki", "ki"), ("kd", "kd"),
                              ("bias", "bias"), ("turn", "turn (意味未確認、要検証)")]:
@@ -486,6 +493,7 @@ def _create_gyro_pid_tab(app):
 
         field = QLineEdit()
         field.setStyleSheet(_PID_FIELD_STYLE)
+        field.setText(str(GYRO_PID_DEFAULTS[key]))
         row.addWidget(field, 1)
 
         app._debug_pid_inputs[key] = field

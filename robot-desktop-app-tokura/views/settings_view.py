@@ -1,9 +1,11 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QCheckBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QProgressBar, QPushButton, QSlider, QVBoxLayout,
     QWidget, QFrame
 )
+
+from pid_defaults import GYRO_PID_DEFAULTS
 
 
 CARD_STYLE = """
@@ -378,7 +380,7 @@ def _create_pid_group(app):
     toggle_row = QHBoxLayout()
     app._pid_toggle = QPushButton("ON")
     app._pid_toggle.setCheckable(True)
-    app._pid_toggle.setChecked(True)
+    app._pid_toggle.setChecked(GYRO_PID_DEFAULTS["enabled"])
     app._pid_toggle.setFixedHeight(28)
     app._pid_toggle.setStyleSheet(TOGGLE_ON_STYLE)
     app._pid_toggle.clicked.connect(lambda: _toggle_pid(app))
@@ -394,11 +396,11 @@ def _create_pid_group(app):
     kp_row.addWidget(kp_label)
     app._kp_slider = QSlider(Qt.Orientation.Horizontal)
     app._kp_slider.setRange(0, 100)
-    app._kp_slider.setValue(20)
+    app._kp_slider.setValue(round(GYRO_PID_DEFAULTS["kp"] * 100))
     app._kp_slider.setStyleSheet(SLIDER_STYLE)
     app._kp_slider.valueChanged.connect(lambda v: _on_pid_change(app))
     kp_row.addWidget(app._kp_slider, 1)
-    app._kp_label = QLabel("20")
+    app._kp_label = QLabel(str(app._kp_slider.value()))
     app._kp_label.setStyleSheet(VALUE_LABEL_STYLE)
     app._kp_label.setFixedWidth(50)
     app._kp_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -413,11 +415,11 @@ def _create_pid_group(app):
     ki_row.addWidget(ki_label)
     app._ki_slider = QSlider(Qt.Orientation.Horizontal)
     app._ki_slider.setRange(0, 100)
-    app._ki_slider.setValue(5)
+    app._ki_slider.setValue(round(GYRO_PID_DEFAULTS["ki"] * 100))
     app._ki_slider.setStyleSheet(SLIDER_STYLE)
     app._ki_slider.valueChanged.connect(lambda v: _on_pid_change(app))
     ki_row.addWidget(app._ki_slider, 1)
-    app._ki_label = QLabel("5")
+    app._ki_label = QLabel(str(app._ki_slider.value()))
     app._ki_label.setStyleSheet(VALUE_LABEL_STYLE)
     app._ki_label.setFixedWidth(60)
     app._ki_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -432,11 +434,11 @@ def _create_pid_group(app):
     kd_row.addWidget(kd_label)
     app._kd_slider = QSlider(Qt.Orientation.Horizontal)
     app._kd_slider.setRange(0, 100)
-    app._kd_slider.setValue(10)
+    app._kd_slider.setValue(round(GYRO_PID_DEFAULTS["kd"] * 100))
     app._kd_slider.setStyleSheet(SLIDER_STYLE)
     app._kd_slider.valueChanged.connect(lambda v: _on_pid_change(app))
     kd_row.addWidget(app._kd_slider, 1)
-    app._kd_label = QLabel("10")
+    app._kd_label = QLabel(str(app._kd_slider.value()))
     app._kd_label.setStyleSheet(VALUE_LABEL_STYLE)
     app._kd_label.setFixedWidth(60)
     app._kd_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -451,11 +453,11 @@ def _create_pid_group(app):
     bias_row.addWidget(bias_label)
     app._pid_bias_slider = QSlider(Qt.Orientation.Horizontal)
     app._pid_bias_slider.setRange(-50, 50)
-    app._pid_bias_slider.setValue(0)
+    app._pid_bias_slider.setValue(GYRO_PID_DEFAULTS["bias"])
     app._pid_bias_slider.setStyleSheet(SLIDER_STYLE)
     app._pid_bias_slider.valueChanged.connect(lambda v: _on_pid_change(app))
     bias_row.addWidget(app._pid_bias_slider, 1)
-    app._pid_bias_label = QLabel("0")
+    app._pid_bias_label = QLabel(str(app._pid_bias_slider.value()))
     app._pid_bias_label.setStyleSheet(VALUE_LABEL_STYLE)
     app._pid_bias_label.setFixedWidth(60)
     app._pid_bias_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -663,6 +665,12 @@ def _create_follow_group(app):
     cam_offset_row.addWidget(app._follow_cam_offset_label)
     layout.addLayout(cam_offset_row)
 
+    app._predictive_control_check = QCheckBox("予測ヨー追従(実験的)")
+    app._predictive_control_check.setChecked(False)
+    app._predictive_control_check.setStyleSheet("color: #cbd5e1; background-color: transparent; border: none;")
+    app._predictive_control_check.toggled.connect(lambda checked: _on_predictive_control_toggled(app, checked))
+    layout.addWidget(app._predictive_control_check)
+
     group.setLayout(layout)
     return group
 
@@ -823,6 +831,16 @@ def _on_follow_param_change(app):
         app._detection_mgr._follow_controller.config.ki_lin = ki_lin
         app._detection_mgr._follow_controller.config.kd_lin = kd_lin
         app._detection_mgr._follow_controller.config.camera_yaw_offset = cam_offset
+
+
+def _on_predictive_control_toggled(app, checked):
+    """follow mode実行中にチェックボックスを切り替えたとき、既に動いている
+    FollowControllerのconfigへ即座に反映する(_on_follow_param_changeと同じ
+    パターン。kp_lin等もself.configから都度読むため実行中の変更が効く)。
+    follow mode開始前の状態はdetection_manager.toggle_follow_mode()が
+    起動時に読み取る(config.predictive_control_enabled = app._predictive_control_check.isChecked())。"""
+    if hasattr(app, '_detection_mgr') and app._detection_mgr._follow_controller:
+        app._detection_mgr._follow_controller.config.predictive_control_enabled = checked
 
 
 def _select_ota_file(app):

@@ -126,3 +126,24 @@ def test_default_position_confidence_matches_full_trust_behavior():
     kf.update(x=0.0, z=0.5, yaw_deg=0.0)  # position_confidence omitted -> full trust
 
     assert kf.state["Z"] < 0.9
+
+
+def test_state_exposes_yaw_rate_deg_s():
+    kf = PoseKalmanFilter()
+    kf.update(x=0.0, z=1.0, yaw_deg=0.0)
+    assert kf.state["yaw_rate_deg_s"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_yaw_rate_deg_s_reflects_observed_turning():
+    kf = PoseKalmanFilter()
+    kf.update(x=0.0, z=1.0, yaw_deg=0.0)
+    for _ in range(5):  # let the filter converge like a steady track
+        kf.predict(dt=0.1)
+        kf.update(x=0.0, z=1.0, yaw_deg=0.0)
+
+    # Target turns ~10 deg over 0.1s -> ~100 deg/s (below the 90-deg snap
+    # threshold, so this is treated as an ordinary turn, not a reversal).
+    kf.predict(dt=0.1)
+    kf.update(x=0.0, z=1.0, yaw_deg=10.0)
+
+    assert kf.state["yaw_rate_deg_s"] > 0.0

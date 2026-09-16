@@ -6,6 +6,7 @@ import pytest
 from follow_controller import (
     CommandThread,
     ControlThread,
+    DetectionThread,
     FollowConfig,
     FollowState,
     StateHysteresis,
@@ -39,6 +40,11 @@ def test_follow_config_defaults_for_distance_band():
     assert config.head_on_threshold == 20.0
     assert config.state_hysteresis_frames == 3
     assert config.lost_timeout_sec == 5.0
+
+
+def test_follow_config_predictive_control_defaults_to_disabled():
+    config = FollowConfig()
+    assert config.predictive_control_enabled is False
 
 
 # --- Task 2: FollowState ---
@@ -576,6 +582,47 @@ def test_following_uses_drive_when_heading_error_exceeds_straight_threshold():
     assert result["command"].startswith("drive:")
 
 
+def test_predictive_control_disabled_by_default_ignores_yaw_deg_predicted():
+    """既定(predictive_control_enabled=False)では、detectionにyaw_deg_predicted
+    が含まれていても無視し、従来通り生のyaw_degだけで操舵を決めることを確認する。
+    yaw_deg=0.0(直進で足りる)だがyaw_deg_predicted=60.0(大きく曲がる)という
+    ケースで、予測値が使われていればdrive:v,wになるはずが、無視されるので
+    forward/backwardのままになる。"""
+    thread = _make_control_thread()
+    thread._gimbal_thread = _StubGimbal(settled=True)
+    detection = {"yaw_deg": 0.0, "yaw_deg_predicted": 60.0, "dist_m": 1.5,
+                 "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+    result = thread._compute_command(detection)
+    assert not result["command"].startswith("drive:")
+
+
+def test_predictive_control_enabled_uses_yaw_deg_predicted_for_steering():
+    """predictive_control_enabled=Trueのとき、生のyaw_deg(0.0、直進で足りる)
+    ではなくyaw_deg_predicted(60.0、大きく曲がる)が操舵計算に使われ、
+    test_following_uses_drive_when_heading_error_exceeds_straight_thresholdと
+    同じくdrive:v,wにフォールバックすることを確認する。"""
+    thread = _make_control_thread(predictive_control_enabled=True)
+    thread._gimbal_thread = _StubGimbal(settled=True)
+    detection = {"yaw_deg": 0.0, "yaw_deg_predicted": 60.0, "dist_m": 1.5,
+                 "confidence": 0.9, "bbox": (300, 200, 20, 20),
+                 "frame_w": 640, "frame_h": 480}
+    result = thread._compute_command(detection)
+    assert result["command"].startswith("drive:")
+
+
+def test_predictive_control_enabled_falls_back_to_raw_yaw_when_predicted_missing():
+    """predictive_control_enabled=Trueでも、detectionにyaw_deg_predictedが
+    無い(古いFollowDetector互換・未初期化時)場合は生のyaw_degにフォールバック
+    することを確認する。"""
+    thread = _make_control_thread(predictive_control_enabled=True)
+    thread._gimbal_thread = _StubGimbal(settled=True)
+    detection = {"yaw_deg": 60.0, "dist_m": 1.5, "confidence": 0.9,
+                 "bbox": (300, 200, 20, 20), "frame_w": 640, "frame_h": 480}
+    result = thread._compute_command(detection)
+    assert result["command"].startswith("drive:")
+
+
 def test_command_thread_sets_speed_before_forward_command(monkeypatch):
     """回帰テスト: forward/backwardではESP32へ速度を先に反映してから移動コマンドを
     送る(逆順だと1tick古い速度でforward/backwardが実行されてしまう)。"""
@@ -642,6 +689,59 @@ def test_following_forward_speed_ramps_up_gradually_not_instantly():
     thread._last_cmd_t = 0.0
     second = thread._compute_command(detection)
     assert second["speed"] >= first["speed"]  # 段階的に増えていく
+
+
+# --- Regression tests: DetectionThread._process_detection yaw_deg_predicted passthrough ---
+
+
+def test_process_detection_passes_through_yaw_deg_predicted():
+    """回帰テスト: DetectionThread._process_detection()は8個の固定キーだけの
+    新しいdictを組み立てて返していたため、FollowDetectorが付けたyaw_deg_predicted
+    が実際にはControlThreadへ届いていなかった(予測ヨー機能が実行時に完全な
+    no-opになっていた)。この橋渡しでyaw_deg_predictedが失われないことを確認する。"""
+    thread = DetectionThread(Queue(), Queue(), FollowConfig())
+    detection = {"yaw_deg": 10.0, "dist_m": 1.0, "confidence": 0.9,
+                 "bbox": (0, 0, 10, 10), "frame_w": 640, "frame_h": 480,
+                 "yaw_deg_predicted": 25.0}
+    result = thread._process_detection(detection)
+    assert result["yaw_deg_predicted"] == 25.0
+
+
+def test_process_detection_yaw_deg_predicted_defaults_to_none_when_absent():
+    """yaw_deg_predictedが入力detectionに無い場合、結果dictではNoneになることを確認。"""
+    thread = DetectionThread(Queue(), Queue(), FollowConfig())
+    detection = {"yaw_deg": 10.0, "dist_m": 1.0, "confidence": 0.9,
+                 "bbox": (0, 0, 10, 10), "frame_w": 640, "frame_h": 480}
+    result = thread._process_detection(detection)
+    assert result["yaw_deg_predicted"] is None
+
+
+def test_reset_motion_state_zeroes_ramp_and_pid_without_stopping_thread():
+    """回帰テスト: カメラ切断で強制stopを送った後、接続が復活してdetectionが
+    再開したときに古い_prev_v_cmd等を前提にランプ計算されると、実際には
+    停止している車体との食い違いでコマンドがぎくしゃくすると報告された。
+    reset_motion_state()はstop()と違いスレッドを止めず(_running維持)、
+    ランプ・PID・バースト状態だけをゼロに戻すことを確認する。"""
+    thread = _make_control_thread()
+    thread._running = True
+    thread._prev_v_cmd = 190
+    thread._err_lin_i = 2.5
+    thread._prev_err_lin = 0.3
+    thread._prev_dist_m = 1.2
+    thread._searching_since = 123.0
+    thread._pan_priority_burst_start = 456.0
+    thread._pan_priority_pause_until = 789.0
+
+    thread.reset_motion_state()
+
+    assert thread._running is True  # stop()と違いスレッドは止めない
+    assert thread._prev_v_cmd == 0
+    assert thread._err_lin_i == 0.0
+    assert thread._prev_err_lin == 0.0
+    assert thread._prev_dist_m is None
+    assert thread._searching_since is None
+    assert thread._pan_priority_burst_start is None
+    assert thread._pan_priority_pause_until == 0.0
 
 
 # --- Task 6: LOST_TIMEOUT ---

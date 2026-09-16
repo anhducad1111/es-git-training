@@ -27,3 +27,6 @@ __pycache__/
 Thumbs.db
 robot-desktop-app-tokura/config.py
 robot-desktop-app-tokura/config.local.json
+
+# Secrets (API keys, tokens)
+secrets.py

@@ -158,30 +158,36 @@ class RoverTeleopApp(QWidget):
 
     def start_connections(self):
         self._conn_mgr.start_all()
-        # TelemetryPollerのdata_receivedをConnectionManager経由で接続。
-        # reconnect_rover()でpollerが差し替わってもシグナルが途切れない。
         self._conn_mgr.telemetry_data.connect(self._on_telemetry_received)
-        # ConnectionManagerが生成したESP32APIをappにも持たせる。sidebar.py等の
-        # UI側は`hasattr(app, '_esp32_api')`で存在チェックしているが、この属性が
-        # 一度も設定されておらず、PIDトグル・kp/ki/kdスライダー・ブレーキ・LED・
-        # 画質調整が全てエラーも出さず黙って無効化されていた(既知バグ、ここで修正)。
         self._esp32_api = self._conn_mgr.esp32_api
-        self._cloud_mgr.initialize()
-        self._video_mgr._cloud_api = self._cloud_mgr.cloud_api
-        
-        port = self._config.get("remote_control_port", 8765)
-        self._remote_server = RemoteControlServer("0.0.0.0", port)
-        self._remote_server.command_received.connect(self._relay_command)
-        self._remote_server.set_rover_connected(
-            self._conn_mgr.rover_ws is not None
-            and self._conn_mgr.rover_ws.is_connected
-        )
-        self._conn_mgr.rover_connected.connect(
-            lambda: self._remote_server.set_rover_connected(True)
-        )
-        self._conn_mgr.rover_disconnected.connect(
-            lambda: self._remote_server.set_rover_connected(False)
-        )
+        try:
+            self._cloud_mgr.initialize()
+        except Exception as e:
+            print(f"[WARNING] CloudManager initialize failed: {e}")
+            self._add_log("API", f"Cloud API unavailable: {e}")
+        try:
+            self._video_mgr._cloud_api = self._cloud_mgr.cloud_api
+        except Exception as e:
+            print(f"[WARNING] VideoManager cloud API setup failed: {e}")
+            self._video_mgr._cloud_api = None
+
+        try:
+            port = self._config.get("remote_control_port", 8765)
+            self._remote_server = RemoteControlServer("0.0.0.0", port)
+            self._remote_server.command_received.connect(self._relay_command)
+            self._remote_server.set_rover_connected(
+                self._conn_mgr.rover_ws is not None
+                and self._conn_mgr.rover_ws.is_connected
+            )
+            self._conn_mgr.rover_connected.connect(
+                lambda: self._remote_server.set_rover_connected(True)
+            )
+            self._conn_mgr.rover_disconnected.connect(
+                lambda: self._remote_server.set_rover_connected(False)
+            )
+        except Exception as e:
+            print(f"[WARNING] RemoteControlServer setup failed: {e}")
+            self._remote_server = None
         self._remote_server.start()
         self._add_log("REMOTE", f"Remote control server listening on port {port}")
         

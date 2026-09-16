@@ -157,24 +157,24 @@ def create_sidebar(app):
 
     dpad_base = """
         QPushButton {
-            background-color: #0f172a;
-            border: 1px solid #1e293b;
-            color: #475569;
+            background-color: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #3b82f6;
             font-weight: 700;
             font-size: 18px;
         }
         QPushButton:pressed {
-            background-color: #06b6d4;
-            color: #0a0e1a;
-            border-color: #06b6d4;
+            background-color: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
         }
     """
 
     dpad_active = """
         QPushButton {
-            background-color: #06b6d4;
-            color: #0a0e1a;
-            border: 1px solid #06b6d4;
+            background-color: #3b82f6;
+            color: white;
+            border: 1px solid #3b82f6;
             font-weight: 700;
             font-size: 18px;
         }
@@ -182,9 +182,9 @@ def create_sidebar(app):
 
     dpad_center = """
         QPushButton {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            color: #64748b;
+            background-color: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
             font-weight: 700;
             font-size: 16px;
         }

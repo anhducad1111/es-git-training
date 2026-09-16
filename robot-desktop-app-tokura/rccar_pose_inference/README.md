@@ -39,13 +39,19 @@ result: DetectionResult = detector.infer(frame)  # frame: np.ndarray (BGR, cv2�
 ```python
 @dataclass(frozen=True)
 class DetectionResult:
-    yaw_deg: float | None       # 車の向き（度）。欠測時はNone
+    yaw_deg: float | None       # 車の向き（度、ロボット本体相対）。欠測時はNone
     dist_m: float | None        # 距離（m）。欠測時はNone
     confidence: float           # YOLO検出スコア（coast中は減衰した値）
     bbox: tuple[int, int, int, int] | None  # (x, y, w, h)、画像座標
     frame_w: int
     frame_h: int
     timestamp: float            # time.time()
+    bearing_deg: float | None   # atan2(X,Z)によるカメラ視点の角度誤差(ジンバル追従用)
+    vx_mps: float | None        # Kalmanフィルタの速度推定(X方向、m/s)
+    vz_mps: float | None        # Kalmanフィルタの速度推定(Z方向、m/s)
+    dist_m_predicted: float | None      # prediction_time_sec先まで投影した距離
+    yaw_deg_predicted: float | None     # prediction_time_sec先まで投影したyaw
+    aruco_detected: bool = False        # このフレームでArUcoマーカーが見えたか
 ```
 
 `infer()`はブロッキングでよい（呼び出し側がスレッド/タイマーで~10Hz呼び出す想定）。**`bbox`の有無と`yaw_deg`/`dist_m`の有無は独立**: 遠距離で`bbox`はあるが`yaw_deg`/`dist_m`がNoneというケースは正常（`APPROACHING_BLIND`状態が前提とする挙動）。
@@ -76,12 +82,20 @@ detector = PoseInference(
   "yaw_snap_threshold_deg": 90.0,
   "calibration_tilt_deg": 70.0,
   "tilt_max_deviation_deg": 10.0,
-  "gimbal_center_pan_deg": 90.0
+  "gimbal_center_pan_deg": 90.0,
+  "prediction_time_sec": 0.5,
+  "use_aruco_dist": true,
+  "max_plausible_speed_mps": 2.0,
+  "tilt_curve": null
 }
 ```
 
 - `sigma_ground_m` / `sigma_aruco_m`: Ground/ArUco距離推定の標準偏差（融合の重み。既存の実測MAE値をそのまま採用済み）
 - `max_coast_sec`: 予測のみで補間する上限秒数
+- `prediction_time_sec`: `dist_m_predicted`/`yaw_deg_predicted`を何秒先まで投影するか（既定0.5秒、`0.0`で「予測=現在値」と等価になり実質無効化）
+- `use_aruco_dist`: ArUco距離融合を行うかどうか（`false`ならGround射影の距離のみ使う）
+- `max_plausible_speed_mps`: この速さ(m/s)を超える距離変化を外れ値とみなしKalman更新の信頼度を下げる閾値
+- `tilt_curve`: チルト角ごとの床平面射影定数(A/v0/fx)の較正カーブ（`captures/rccar_pose/tools/calib_tilt.py`で生成）。未設定なら`calibration_tilt_deg`±`tilt_max_deviation_deg`の単一角度ゲートにフォールバック
 - `yaw_snap_threshold_deg`: この角度以上のyaw変化は「車の反転」とみなし、平滑化せず即座に反映する（既定90°）
 - `calibration_tilt_deg` / `tilt_max_deviation_deg`: チルトがこの範囲外なら距離推定を信頼しない。**`GimbalThread`のチルト復帰ロジックの目標角と同じ値を使うこと**（ズレると効果が薄れる）
 - `gimbal_center_pan_deg`: ジンバル中央のpan値（既定90.0、サーボ範囲0-180の中央）
@@ -95,13 +109,13 @@ python -m pytest rccar_pose_inference/tests/ -v
 
 28テスト全件パス確認済み（2026-09-11）。`ultralytics`・`cv2`・`numpy`が必要（実モデルはロードせずモック化しているテストが大半だが、`test_infer_combines_keypoint_pose_aruco_fusion_and_kalman`等は`ultralytics.YOLO`をmonkeypatchしている）。
 
-## 実装者が行う残作業（このパッケージの外、本体アプリ側）
+## 本体アプリへの配線状況
 
-このパッケージ自体は完結しているが、**本体アプリに配線するまでは何も変わらない**。以下は`docs/superpowers/plans/2026-09-11-pose-inference-module.md`と`docs/superpowers/plans/2026-09-11-gimbal-pose-compensation.md`のTaskを本パッケージに合わせて読み替えたチェックリスト（詳細な理由・コード例は各プラン文書を参照）:
+以下は`docs/superpowers/plans/2026-09-11-pose-inference-module.md`と`docs/superpowers/plans/2026-09-11-gimbal-pose-compensation.md`のTaskに対応する、本体アプリ（`robot-desktop-app-tokura/`直下）側の配線状況。詳細な理由・コード例は各プラン文書を参照。
 
-1. **`follow_detector.py`の切り替え**（[[pose-inference-module]] Task 6相当）: `from app2.detectors import RcCarPoseDetector`を`from rccar_pose_inference import PoseInference`に置き換え、`result.boxes`/`result.yaw_deg`のような古いDetection形式への直接アクセス（現状バグって動いていない箇所）を`DetectionResult`ベースに書き換える
-2. **`GimbalThread`への状態取得追加**（gimbal-pose-compensation Task 3）: `follow_controller.py`の`GimbalThread`に`get_pan_tilt_state() -> tuple[float, float, bool]`と`is_settled()`を追加する。実装コードは`docs/superpowers/plans/2026-09-11-gimbal-pose-compensation.md`のTask 3にそのまま書いてある
-3. **`PoseInference`構築時に`gimbal_provider`を渡す**（gimbal-pose-compensation Task 6 Step 1-2）: `follow_detector.py`の`FollowDetector`に`gimbal_thread`を注入できるようにし、`PoseInference(..., gimbal_provider=gimbal_thread.get_pan_tilt_state)`で構築する
-4. **`ControlThread._compute_command()`の事後yaw補正を削除**（gimbal-pose-compensation Task 6 Step 3）: `yaw_deg = yaw_deg + camera_offset`の行を削除する。理由: 本パッケージの`PoseInference.infer()`が返す`yaw_deg`は既にロボット本体相対（変換済み）なので、ここで再度加算すると二重補正になる。`pan_error`を使った`combined_heading_error`の計算（操舵判断用の別機構）は削除しないこと
-5. **【必須】実機での符号検証**（gimbal-pose-compensation Task 6 Step 4）: `gimbal_transform.rotate_pose_to_robot_frame`の`camera_left_rotation_deg`の符号は、`GimbalThread`のパン値増減と実際のサーボ回転方向の対応関係に依存し、**コードだけでは確定できない**（`GimbalThread.get_camera_yaw_offset()`のdocstringと実装が矛盾している既知の問題がある）。プラン文書のTask 6 Step 4の手順に従い、実機でパンを既知方向に動かして`X`の符号が直感と一致するか確認すること。逆であれば`_apply_gimbal_compensation()`内の`camera_left_rotation_deg = pan_deg - self._gimbal_center_pan_deg`の符号を反転する（`gimbal_transform.py`自体は変更不要）
-6. 上記1-5が終わったら、`docs/superpowers/plans/2026-09-11-gimbal-tracking-design.md`のチルト復帰ロジック（`GimbalThread._compute_tilt_step`）も未実装であれば合わせて実装する（本パッケージの`tilt_max_deviation_deg`ゲートは「チルトが外れている間は距離を捨てる」防御であり、「チルトを戻す」制御そのものは別途必要）
+1. **`follow_detector.py`の切り替え** — ✅ 完了。`FollowDetector`は`rccar_pose_inference.PoseInference`を直接importし、`DetectionResult`ベースで動作している（`app2.detectors.RcCarPoseDetector`への依存はない）
+2. **`GimbalThread`への状態取得追加** — ✅ 完了。`follow_controller.py`の`GimbalThread`に`get_pan_tilt_state() -> tuple[float, float, bool]`と`is_settled()`が実装済み
+3. **`PoseInference`構築時に`gimbal_provider`を渡す** — ✅ 完了。`FollowDetector._gimbal_provider()`が`GimbalThread.get_pan_tilt_state`を呼ぶ形で配線されている（`detection_manager.py`が`FollowController`生成後に`FollowDetector.set_gimbal_thread()`で接続する）
+4. **`ControlThread._compute_command()`の事後yaw補正を削除** — ✅ 完了。`follow_controller.py`のコメントに「camera_yaw_offset相当の再補正は行わない（二重補正になるため削除済み）」と明記されている。`pan_error`を使った`combined_heading_error`の計算（操舵判断用の別機構）はそのまま残っている
+5. **【未検証】実機での符号確認** — ⚠️ 未完了。`gimbal_transform.rotate_pose_to_robot_frame`の`camera_left_rotation_deg`の符号は、`GimbalThread`のパン値増減と実際のサーボ回転方向の対応関係に依存し、**コードだけでは確定できない**（`GimbalThread.get_camera_yaw_offset()`のdocstringと`_track_target()`の実装が矛盾している既知の問題がある）。実機でパンを既知方向に動かして`X`の符号が直感と一致するか確認すること。逆であれば`_apply_gimbal_compensation()`内の`camera_left_rotation_deg = pan_deg - self._gimbal_center_pan_deg`の符号を反転する（`gimbal_transform.py`自体は変更不要）。同様に`follow_controller.py`の`FollowConfig.feedforward_pan_sign`（旋回フィードフォワードの符号）も実機ログのみで暫定決定されており、正式な検証は未完了
+6. **チルト復帰ロジック** — ✅ 完了。`GimbalThread._track_target()`がデッドバンド内でキャリブレーション角度(既定70°)へ復帰するロジックを実装済み（`docs/superpowers/plans/2026-09-11-gimbal-tracking-design.md`参照）

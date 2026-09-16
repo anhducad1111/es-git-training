@@ -6,6 +6,7 @@
 
 ## Features
 - [Object Detection](OBJECT_DETECTION.md) - HOG and YOLOv8 detection
+- [Follow Mode](APP_TECHNICAL.md#12-既存の追従モード実装) - Autonomous car-follows-car mode: pose inference pipeline (§12.3) and control state machine (§12.1-12.2)
 - [Snapshot](SNAPSHOT.md) - Frame capture with sensor overlay and paginated gallery
 - [Image Processing](IMAGE_PROCESSING.md) - Filter processing (Auto Correct, Contrast, Denoise, Bicubic)
 - [Video Recording](VIDEO_RECORDING.md) - Video capture and cloud upload

@@ -19,7 +19,8 @@ The `docs/` folder contains planning, design, and technical documents for this a
 | `wireframe.md` | UI wireframes and component descriptions |
 | `CONFIGURATION.md`, `CLOUD_API.md`, `ESP32_API.md` | Integration references |
 | `OBJECT_DETECTION.md`, `SNAPSHOT.md`, `IMAGE_PROCESSING.md`, `VIDEO_RECORDING.md`, `GIMBAL_CONTROL.md`, `SPEED_CONTROL.md`, `UI_LAYOUT.md` | Feature-specific references |
-| `FOLLOW_MODE_PID_IMPLEMENTATION.md`, `FOLLOW_MODE_HYBRID_CONTROL.md`, `FOLLOW_MODE_IMPLEMENTATION.md` | Follow-mode control design notes |
+
+Follow-mode's inference and control behavior (formerly three separate early design-notes files, now superseded and removed) is documented in `APP_TECHNICAL.md` §3.2/§3.3/§12 (control) and `rccar_pose_inference/README.md` (inference pipeline).
 
 ---
 

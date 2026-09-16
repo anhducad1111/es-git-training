@@ -3,6 +3,8 @@
 ## Overview
 Real-time object detection using HOG and YOLOv8 models in separate QThread.
 
+> This is the general-purpose HOG/YOLOv8 detection tab (`DETECT` button, 80 COCO classes). It is unrelated to the car-following **Follow Mode**'s pose inference (YOLOv8-pose keypoints → yaw/distance estimation), which is documented separately in `APP_TECHNICAL.md` §12.3 and `rccar_pose_inference/README.md`.
+
 ## HOG Detection
 Histogram of Oriented Gradients for person detection.
 

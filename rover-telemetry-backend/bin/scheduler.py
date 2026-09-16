@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runs aggregate.php every minute and retention.php once a day.
 
-Stand-in for a real cron/Task Scheduler entry (see docs/api-contract.md:
+Stand-in for a real cron/Task Scheduler entry (see docs/api.md:
 "Schedule bin/aggregate.php (every minute) and bin/retention.php (nightly)
 via cron"). Windows has no cron, so this loops in the foreground instead -
 keep the terminal window open, or launch it as a background process

@@ -290,6 +290,10 @@ tr.rejected td { color: #9096a2; }
 #control-gimbal-right { grid-column: 3; grid-row: 2; }
 #control-gimbal-down { grid-column: 2; grid-row: 3; }
 
+.control-mouse-aim-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+/* crosshair cursor + highlighted border cue that mouse-aim mode is capturing pointer movement */
+.control-video-panel.control-mouse-aim-active { border-color: var(--accent); cursor: crosshair; }
+
 @media (max-width: 900px) {
   .control-video-row { grid-template-columns: 1fr; }
 }

@@ -3,6 +3,14 @@ window.ControlView = (function () {
   const CAMERA_ADDRESS_STORAGE_KEY = 'roverControlCameraAddress';
   const RECONNECT_DELAY_MS = 2000;
   const DEFAULT_CAMERA_ADDRESS = '192.168.1.117';
+  // This rover's camera sits level/centered when the *wire* command is servo:85,70, not
+  // the generic midpoint (90,90) — physical mounting offset, not a UI convention. gimbalPan/
+  // gimbalTilt are pre-inversion UI values (see servoCommandString), so the UI-space center
+  // is the wire center reflected through that same 180-x inversion.
+  const WIRE_CENTER_PAN = 85;
+  const WIRE_CENTER_TILT = 70;
+  const CENTER_PAN = 180 - WIRE_CENTER_PAN;
+  const CENTER_TILT = 180 - WIRE_CENTER_TILT;
 
   let el;
   let address = '';
@@ -11,8 +19,8 @@ window.ControlView = (function () {
   let reconnectTimer = null;
   let allowState = 'disconnected';
   let roverConnected = false;
-  let gimbalPan = 90;
-  let gimbalTilt = 90;
+  let gimbalPan = CENTER_PAN;
+  let gimbalTilt = CENTER_TILT;
 
   let telemetryUid = null;
   let telemetryTimer = null;
@@ -125,6 +133,7 @@ window.ControlView = (function () {
                 <button class="control-drive-btn control-input" id="control-gimbal-right" data-pan-delta="5" data-tilt-delta="0">→</button>
                 <button class="control-drive-btn control-input" id="control-gimbal-down" data-pan-delta="0" data-tilt-delta="-5">↓</button>
               </div>
+              <button id="control-gimbal-mouse-aim" class="control-input control-side-btn control-mouse-aim-btn">MOUSE AIM · OFF</button>
             </div>
             <div class="card control-card">
               <div class="card-label">DRIVE</div>
@@ -150,6 +159,7 @@ window.ControlView = (function () {
           <span class="control-key-chip">IJKL gimbal</span>
           <span class="control-key-chip">C center</span>
           <span class="control-key-chip control-key-chip-danger">SPACE stop</span>
+          <span class="control-key-chip">ESC cancel mouse aim</span>
         </div>
       </div>
     </div>
@@ -240,11 +250,13 @@ window.ControlView = (function () {
       renderConnectionState(allowState);
       renderRoverWarning();
       syncCameraToAllowState();
+      if (allowState !== 'allowed') exitMouseAim();
     } else if (data.type === 'rejected') {
       allowState = 'not-allowed';
       renderConnectionState(allowState);
       renderRoverWarning();
       syncCameraToAllowState();
+      exitMouseAim();
     }
   }
 
@@ -287,6 +299,7 @@ window.ControlView = (function () {
   }
 
   function disconnect() {
+    exitMouseAim();
     clearReconnectTimer();
     if (ws && ws.readyState === WebSocket.OPEN && allowState === 'allowed') {
       ws.send(JSON.stringify({ type: 'command', command: 'stop' }));
@@ -338,17 +351,26 @@ window.ControlView = (function () {
     needle.setAttribute('transform', `rotate(${value - 90} 50 52)`);
   }
 
-  function fmtOffset(value) {
-    const offset = value - 90;
+  function fmtOffset(value, center) {
+    const offset = value - center;
     return `${offset >= 0 ? '+' : ''}${offset}°`;
   }
 
+  // This rover's pan/tilt servos are mounted so a higher wire angle points the camera DOWN
+  // and LEFT, the opposite of the UI's convention (gimbalPan/gimbalTilt, HUD, buttons, and
+  // keys all treat higher pan = right, higher tilt = up). Invert only here, at the wire
+  // boundary, so every control path (buttons, IJKL, mouse-aim) stays correct without
+  // duplicating the flip.
+  function servoCommandString() {
+    return `servo:${180 - gimbalPan},${180 - gimbalTilt}`;
+  }
+
   function updateGimbal() {
-    document.getElementById('control-tilt-offset').textContent = fmtOffset(gimbalTilt);
-    document.getElementById('control-pan-offset').textContent = fmtOffset(gimbalPan);
+    document.getElementById('control-tilt-offset').textContent = fmtOffset(180 - gimbalTilt, WIRE_CENTER_TILT);
+    document.getElementById('control-pan-offset').textContent = fmtOffset(180 - gimbalPan, WIRE_CENTER_PAN);
     setDialNeedle('control-tilt-dial', gimbalTilt);
     setDialNeedle('control-pan-dial', gimbalPan);
-    sendCommand(`servo:${gimbalPan},${gimbalTilt}`);
+    sendCommand(servoCommandString());
   }
 
   function adjustGimbal(panDelta, tiltDelta) {
@@ -358,9 +380,78 @@ window.ControlView = (function () {
   }
 
   function centerGimbal() {
-    gimbalPan = 90;
-    gimbalTilt = 90;
+    gimbalPan = CENTER_PAN;
+    gimbalTilt = CENTER_TILT;
     updateGimbal();
+  }
+
+  // --- Mouse-aim mode: cursor position over the video panel drives the gimbal directly. ---
+
+  const MOUSE_AIM_SEND_INTERVAL_MS = 80;
+  let mouseAimActive = false;
+  let mouseAimSendTimer = null;
+  let mouseAimPendingSend = false;
+
+  function setGimbalFromPointer(evt, panelEl) {
+    const rect = panelEl.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (evt.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (evt.clientY - rect.top) / rect.height));
+    // Left edge -> pan 0, right edge -> pan 180 (matches the L key / right grid button
+    // increasing gimbalPan for "right"). Top edge -> tilt 180 (up), bottom -> 0.
+    gimbalPan = Math.round(180 * x);
+    gimbalTilt = Math.round(180 * (1 - y));
+    document.getElementById('control-tilt-offset').textContent = fmtOffset(180 - gimbalTilt, WIRE_CENTER_TILT);
+    document.getElementById('control-pan-offset').textContent = fmtOffset(180 - gimbalPan, WIRE_CENTER_PAN);
+    setDialNeedle('control-tilt-dial', gimbalTilt);
+    setDialNeedle('control-pan-dial', gimbalPan);
+    // Throttle the actual servo command — mousemove fires far faster than the relay needs.
+    if (mouseAimSendTimer) {
+      mouseAimPendingSend = true;
+      return;
+    }
+    sendCommand(servoCommandString());
+    mouseAimSendTimer = setTimeout(() => {
+      mouseAimSendTimer = null;
+      if (mouseAimPendingSend) {
+        mouseAimPendingSend = false;
+        sendCommand(servoCommandString());
+      }
+    }, MOUSE_AIM_SEND_INTERVAL_MS);
+  }
+
+  function updateMouseAimButton() {
+    const btn = document.getElementById('control-gimbal-mouse-aim');
+    if (!btn) return;
+    btn.textContent = `MOUSE AIM · ${mouseAimActive ? 'ON' : 'OFF'}`;
+    btn.classList.toggle('active', mouseAimActive);
+    const panel = document.querySelector('.control-video-panel');
+    if (panel) panel.classList.toggle('control-mouse-aim-active', mouseAimActive);
+  }
+
+  function exitMouseAim() {
+    if (!mouseAimActive) return;
+    mouseAimActive = false;
+    if (mouseAimSendTimer) {
+      clearTimeout(mouseAimSendTimer);
+      mouseAimSendTimer = null;
+    }
+    mouseAimPendingSend = false;
+    updateMouseAimButton();
+  }
+
+  function enterMouseAim() {
+    if (mouseAimActive) return;
+    if (allowState !== 'allowed') return;
+    mouseAimActive = true;
+    updateMouseAimButton();
+  }
+
+  function toggleMouseAim() {
+    if (mouseAimActive) {
+      exitMouseAim();
+    } else {
+      enterMouseAim();
+    }
   }
 
   // --- Telemetry overlay (read-only, from the existing HTTP telemetry API — independent of the WS relay) ---
@@ -426,12 +517,13 @@ window.ControlView = (function () {
     address = loadSaved(ADDRESS_STORAGE_KEY);
     document.getElementById('control-address').value = address;
     renderConnectionState('disconnected');
-    // Paint the dials at their 90/90 default without going through updateGimbal(), which
-    // would also (harmlessly, but needlessly) attempt to sendCommand() before any connection exists.
+    // Paint the dials at their CENTER_PAN/CENTER_TILT default without going through
+    // updateGimbal(), which would also (harmlessly, but needlessly) attempt to
+    // sendCommand() before any connection exists.
     setDialNeedle('control-tilt-dial', gimbalTilt);
     setDialNeedle('control-pan-dial', gimbalPan);
-    document.getElementById('control-tilt-offset').textContent = fmtOffset(gimbalTilt);
-    document.getElementById('control-pan-offset').textContent = fmtOffset(gimbalPan);
+    document.getElementById('control-tilt-offset').textContent = fmtOffset(180 - gimbalTilt, WIRE_CENTER_TILT);
+    document.getElementById('control-pan-offset').textContent = fmtOffset(180 - gimbalPan, WIRE_CENTER_PAN);
 
     document.getElementById('control-connect').addEventListener('click', () => {
       const value = document.getElementById('control-address').value.trim();
@@ -481,6 +573,7 @@ window.ControlView = (function () {
         activeDriveKey = null;
         sendCommand('stop');
       }
+      exitMouseAim();
     });
 
     // Keybinds mirror robot-desktop-app exactly: W/S/A/D drive, IJKL gimbal (±5° per press,
@@ -490,6 +583,14 @@ window.ControlView = (function () {
       if (!el.classList.contains('active')) return;
       const activeTag = document.activeElement && document.activeElement.tagName;
       if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
+      if (evt.key === 'Escape') {
+        if (mouseAimActive) {
+          evt.preventDefault();
+          exitMouseAim();
+        }
+        return;
+      }
 
       const key = evt.key.toLowerCase();
       const driveKeyToCommand = { w: 'forward', s: 'backward', a: 'left', d: 'right' };
@@ -543,6 +644,16 @@ window.ControlView = (function () {
 
     document.getElementById('control-gimbal-center').addEventListener('click', () => {
       centerGimbal();
+    });
+
+    document.getElementById('control-gimbal-mouse-aim').addEventListener('click', () => {
+      toggleMouseAim();
+    });
+
+    const videoPanel = el.querySelector('.control-video-panel');
+    videoPanel.addEventListener('mousemove', (evt) => {
+      if (!mouseAimActive) return;
+      setGimbalFromPointer(evt, videoPanel);
     });
 
     document.getElementById('control-snapshot').addEventListener('click', () => {

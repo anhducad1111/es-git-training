@@ -10,9 +10,9 @@ This guide covers two audiences:
 2. **Administrators** — how to set up and run the cloud system itself (on a Raspberry Pi or any LAMP-style host).
 
 For the full API and database reference, see:
-- [`api-reference.ja.md`](./api-reference.ja.md) / [`api-contract.md`](./api-contract.md) — API endpoints
-- [`database.ja.md`](./database.ja.md) — database schema
-- [`raspi-mysql-setup.ja.md`](./raspi-mysql-setup.ja.md) — Raspberry Pi + MariaDB setup steps
+- [`api.md`](./api.md) — API endpoints, usage, and response formats
+- [`database.md`](./database.md) — database schema
+- [`raspi-mysql-setup.md`](./raspi-mysql-setup.md) — Raspberry Pi + MariaDB setup steps
 
 ---
 
@@ -44,12 +44,12 @@ The **Cockpit (teleoperation)** tab is the one exception: it does not go through
 ### 2.1 Requirements
 
 - A host that can run PHP (built-in server, or php-fpm behind Apache/nginx). Raspberry Pi 5 is the reference deployment target.
-- MariaDB (MySQL-compatible) — see the step-by-step Raspberry Pi install guide in [`raspi-mysql-setup.ja.md`](./raspi-mysql-setup.ja.md) if it isn't installed yet.
+- MariaDB (MySQL-compatible) — see the step-by-step Raspberry Pi install guide in [`raspi-mysql-setup.md`](./raspi-mysql-setup.md) if it isn't installed yet.
 - Enough disk space for stored media/firmware files and telemetry history (see "Storage growth" in the design proposal, §8.3).
 
 ### 2.2 Quick setup checklist
 
-1. **Install and start MariaDB** on the host (see `raspi-mysql-setup.ja.md` §1.5 if starting from scratch).
+1. **Install and start MariaDB** on the host (see `raspi-mysql-setup.md` §1.5 if starting from scratch).
 2. **Create the database and app user**:
    ```sql
    CREATE DATABASE rover_telemetry CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;

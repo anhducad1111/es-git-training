@@ -269,6 +269,7 @@ class DetectionThread(threading.Thread):
         return {
             "valid": valid,
             "yaw_deg": yaw_deg,
+            "yaw_deg_predicted": detection.get("yaw_deg_predicted"),
             "dist_m": dist_m,
             "confidence": confidence,
             "bbox": bbox,

@@ -6,6 +6,7 @@ import pytest
 from follow_controller import (
     CommandThread,
     ControlThread,
+    DetectionThread,
     FollowConfig,
     FollowState,
     StateHysteresis,
@@ -688,6 +689,31 @@ def test_following_forward_speed_ramps_up_gradually_not_instantly():
     thread._last_cmd_t = 0.0
     second = thread._compute_command(detection)
     assert second["speed"] >= first["speed"]  # 段階的に増えていく
+
+
+# --- Regression tests: DetectionThread._process_detection yaw_deg_predicted passthrough ---
+
+
+def test_process_detection_passes_through_yaw_deg_predicted():
+    """回帰テスト: DetectionThread._process_detection()は8個の固定キーだけの
+    新しいdictを組み立てて返していたため、FollowDetectorが付けたyaw_deg_predicted
+    が実際にはControlThreadへ届いていなかった(予測ヨー機能が実行時に完全な
+    no-opになっていた)。この橋渡しでyaw_deg_predictedが失われないことを確認する。"""
+    thread = DetectionThread(Queue(), Queue(), FollowConfig())
+    detection = {"yaw_deg": 10.0, "dist_m": 1.0, "confidence": 0.9,
+                 "bbox": (0, 0, 10, 10), "frame_w": 640, "frame_h": 480,
+                 "yaw_deg_predicted": 25.0}
+    result = thread._process_detection(detection)
+    assert result["yaw_deg_predicted"] == 25.0
+
+
+def test_process_detection_yaw_deg_predicted_defaults_to_none_when_absent():
+    """yaw_deg_predictedが入力detectionに無い場合、結果dictではNoneになることを確認。"""
+    thread = DetectionThread(Queue(), Queue(), FollowConfig())
+    detection = {"yaw_deg": 10.0, "dist_m": 1.0, "confidence": 0.9,
+                 "bbox": (0, 0, 10, 10), "frame_w": 640, "frame_h": 480}
+    result = thread._process_detection(detection)
+    assert result["yaw_deg_predicted"] is None
 
 
 # --- Task 6: LOST_TIMEOUT ---

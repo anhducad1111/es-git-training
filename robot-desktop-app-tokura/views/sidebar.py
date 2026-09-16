@@ -27,6 +27,33 @@ def _display_to_actual_tilt(display):
     return _GIMBAL_TILT_OFFSET - display
 
 
+def update_gimbal_displays(app, pan, tilt):
+    """ジンバルpan/tilt変更時のUI表示更新(pan/tilt入力欄・ジンバルHUD・
+    target_angle表示)をまとめたもの。
+
+    app.py::_on_gimbal_update / _on_mouse_gimbal、
+    detection_manager.py::_set_gimbal_with_ui の3箇所にほぼ同じ表示更新
+    ブロックが重複しており、しかもtarget_angleの計算式が箇所によって違って
+    いた(detection_manager.py側は`int(pan) - PAN_CENTER`というスケーリング
+    係数無しの簡易式で、pan=85(コマンドでのセンター、表示上は0°になる想定)
+    から離れるほど本来の角度とズレていた。pan_cmd_to_deg()を使う側は
+    pan=85で正しく0°になる)。表示更新だけをここに集約し、各呼び出し元固有の
+    副作用(servoコマンド送信のタイミング・有無。特にdetection_manager.py側は
+    FollowControllerのset_gimbalコールバックとして実際の自動制御でも使われて
+    いるため、この関数はUI表示のみに徹し、送信には一切踏み込まない)。"""
+    from follow_controller import pan_cmd_to_deg
+    if hasattr(app, '_gimbal_pan_input'):
+        app._gimbal_pan_input.setText(str(_actual_to_display_pan(int(pan))))
+    if hasattr(app, '_gimbal_tilt_input'):
+        app._gimbal_tilt_input.setText(str(_actual_to_display_tilt(int(tilt))))
+    if hasattr(app, '_gimbal_hud'):
+        app._gimbal_hud.set_gimbal(int(pan), int(tilt))
+    if hasattr(app, '_target_angle_display'):
+        target_angle = pan_cmd_to_deg(int(pan))
+        sign = "+" if target_angle >= 0 else ""
+        app._target_angle_display.setText(f"{sign}{target_angle:.1f}°")
+
+
 def create_sidebar(app):
     sidebar = QWidget()
     sidebar.setFixedWidth(320)

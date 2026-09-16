@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from config import load_config, save_config
+from pid_defaults import GYRO_PID_DEFAULTS
 from styles import DARK_STYLE
 from views.header import create_header
 from views.main_view import create_main_view
@@ -48,33 +49,22 @@ class RoverTeleopApp(QWidget):
         # (接続イベントはfollow mode開始より先に一度だけ発火するため、フラグで保持する)
         self._camera_connected = False
 
-        # ジャイロ直進PID(/api/pid)の適用はデバウンス+非同期(CloudWorker)で行う。
-        # 以前はスライダーを動かすたびに同期HTTPリクエスト(esp32_api.set_pid)を
-        # 直接呼んでおり、ドラッグ中に何度もGUIスレッドをブロックしていた
-        # (robot-desktop-app-tokura版はCloudWorker+400msデバウンスで解決していた
-        # ため、同じ方式に合わせる)。
+        # PID/LED/速度スライダーは、以前はドラッグ中に動かすたびESP32へ同期
+        # リクエストを直接送っており、GUIスレッドのブロックや無駄な送信が
+        # 起きていた。3つとも同じデバウンス+CloudWorker非同期方式に統一する。
         self._pid_apply_timer = QTimer()
         self._pid_apply_timer.setSingleShot(True)
         self._pid_apply_timer.timeout.connect(self._apply_pid_params)
         self._pid_workers = []
 
-        # LEDスライダー(views/sidebar.py)も同じ理由で、動かすたびに
-        # esp32_api.set_led()を同期HTTPで直接呼んでおり、ドラッグ中GUIスレッドが
-        # 何度もブロックされて映像が激しくカクつく原因になっていた。さらに実機
-        # 検証の結果、ESP32-CamのHTTPサーバは映像ストリーム配信中は他の
-        # リクエストを一切処理できない(ストリームを止めた直後は正常応答する)
-        # ことが分かったため、_apply_led()では送信の間だけ一瞬カメラを止める。
-        # PIDと同じデバウンス+CloudWorkerの非同期方式に合わせる
+        # LEDのみ: ESP32-CamはMJPEGストリーム配信中は他のHTTPリクエストを
+        # 一切処理できないため、_apply_led()では送信の間だけ一瞬カメラを止める。
         self._led_apply_timer = QTimer()
         self._led_apply_timer.setSingleShot(True)
         self._led_apply_timer.timeout.connect(self._apply_led_from_slider)
         self._led_workers = []
 
-        # 速度スライダー(views/sidebar.py)も同じ理由で、ドラッグ中に動かすたびに
-        # speed:N をWebSocketへ即送信しており、無駄な送信とログ行の大量発生に
-        # なっていた。PID/LEDと同じデバウンス方式に合わせ、操作が止まってから
-        # 150ms後の1回だけ実際に送信する(ラベル/メーター表示はドラッグ中も
-        # 即座に更新する)。
+        # 速度のみ150msデバウンス(ラベル/メーター表示はドラッグ中も即時更新)。
         self._speed_apply_timer = QTimer()
         self._speed_apply_timer.setSingleShot(True)
         self._speed_apply_timer.timeout.connect(self._apply_speed_change)
@@ -106,11 +96,7 @@ class RoverTeleopApp(QWidget):
         self._remote_server = None
         self._obstacle_brake_active = False
         self._speed_limit_active = False
-        
-        self._speed_timer = QTimer()
-        self._speed_timer.timeout.connect(self._input_handler._tick_speed)
-        self._speed_timer.setInterval(50)
-        
+
         self.init_ui()
         self.connect_signals()
         self.start_connections()
@@ -252,20 +238,13 @@ class RoverTeleopApp(QWidget):
                     self._latency_display.update_latency((now - frame_time) * 1000)
 
                 if self._detection_mgr._follow_mode_active:
-                    import cv2
-                    import numpy as np
-                    ptr = image.bits()
-                    ptr.setsize(image.sizeInBytes())
-                    arr = np.array(ptr).reshape(image.height(), image.width(), 4)
-                    # QImage.Format_RGB32 is stored in memory as B,G,R,A (not
-                    # R,G,B,A) on little-endian platforms - confirmed by
-                    # inspecting the raw bytes of a known pure-red pixel.
-                    # COLOR_RGBA2BGR treats the input as R,G,B,A and was
-                    # therefore swapping the red/blue channels of every frame
-                    # fed into follow-mode's pose inference (a real,
-                    # long-standing accuracy bug, not a tuning issue).
-                    bgr = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)
-                    self._detection_mgr.set_frame(bgr)
+                    # QImage(BGRA)->numpy(BGR) conversion is deferred to
+                    # FollowDetector's own thread (set_qimage/_consume_pending_image
+                    # in follow_detector.py) instead of running here on the GUI
+                    # thread. It used to run synchronously on every paint tick,
+                    # competing with the video canvas repaint and causing visible
+                    # stutter in the on-screen feed while follow mode was active.
+                    self._detection_mgr.set_qimage(image)
             elif isinstance(frame, bytes):
                 from video_worker import VideoWorker
                 if not hasattr(self, '_video_worker'):
@@ -544,6 +523,25 @@ class RoverTeleopApp(QWidget):
             gimbal_thread = self._detection_mgr._follow_controller._gimbal_thread
             if gimbal_thread:
                 gimbal_thread.on_camera_disconnected()
+        # カメラ切断時、FollowDetectorが最後に受け取った古いフレームを
+        # 再推論し続け、同じ検出結果(yaw/dist)を返し続けることで「実際には
+        # 映像が止まっているのに過去の計算のまま前進し続ける」ことが実機で
+        # 報告された。古いフレームを破棄して新フレームが届くまで検出を
+        # 止めるだけでは、ESP32側に最後に送ったdrive/forwardコマンドが
+        # そのまま残ってしまう(コマンドの自動タイムアウトは無い)ため、
+        # 即座にstopも送って車体を止める。
+        if self._detection_mgr and self._detection_mgr._follow_detector:
+            self._detection_mgr._follow_detector.clear_frame()
+        if self._detection_mgr and self._detection_mgr._follow_mode_active:
+            self._send_command("stop")
+            # 切断前の速度ランプ・距離PID等の内部状態を残したままにすると、
+            # 接続復活後の最初のコマンドが「実際には止まっている車体」との
+            # 食い違いでぎくしゃくする。接続が復活してdetectionが再開したら
+            # 必ずゼロから組み立て直すよう、ここでリセットしておく
+            # (follow modeのスレッド自体は止めない。新しいフレームが届き
+            # 次第、自動的に追従を再開する)。
+            if self._detection_mgr._follow_controller:
+                self._detection_mgr._follow_controller.reset_motion_state()
 
     def _on_camera_error(self, error):
         """Handle camera stream error."""
@@ -551,6 +549,7 @@ class RoverTeleopApp(QWidget):
 
     def _on_rover_connected(self):
         """Handle rover WebSocket connected."""
+        self._enforce_gyro_pid_defaults()
         if hasattr(self, '_rover_status'):
             self._rover_status.setText("ONLINE")
             self._rover_status.setStyleSheet("""
@@ -690,20 +689,10 @@ class RoverTeleopApp(QWidget):
 
     def _on_gimbal_update(self, pan, tilt):
         """Update gimbal UI when manually controlled."""
-        from views.sidebar import _actual_to_display_pan, _actual_to_display_tilt
-        from follow_controller import pan_cmd_to_deg
+        from views.sidebar import update_gimbal_displays
         self._gimbal_pan = int(pan)
         self._gimbal_tilt = int(tilt)
-        if hasattr(self, '_gimbal_pan_input'):
-            self._gimbal_pan_input.setText(str(_actual_to_display_pan(int(pan))))
-        if hasattr(self, '_gimbal_tilt_input'):
-            self._gimbal_tilt_input.setText(str(_actual_to_display_tilt(int(tilt))))
-        if hasattr(self, '_gimbal_hud'):
-            self._gimbal_hud.set_gimbal(int(pan), int(tilt))
-        if hasattr(self, '_target_angle_display'):
-            target_angle = pan_cmd_to_deg(int(pan))
-            sign = "+" if target_angle >= 0 else ""
-            self._target_angle_display.setText(f"{sign}{target_angle:.1f}°")
+        update_gimbal_displays(self, pan, tilt)
 
     def _on_target_lost(self):
         """Show target lost warning on video canvas."""
@@ -843,15 +832,31 @@ class RoverTeleopApp(QWidget):
             "kd": round(self._kd_slider.value() / 100.0, 3),
             "enabled": 1 if self._pid_toggle.isChecked() else 0,
             "bias": self._pid_bias_slider.value(),
+            # SettingsタブのPID STRAIGHTにturn用のスライダーが無いため、
+            # ここで送らないとESP32側のturnが他クライアント操作等で
+            # ずれたまま放置される。pid_defaults.pyの既定値を常に付ける。
+            "turn": GYRO_PID_DEFAULTS["turn"],
         }
+        self._send_pid_params(params, source="Settings")
+
+    def _enforce_gyro_pid_defaults(self):
+        """ローバー接続確立のたびに、既知の良好値(pid_defaults.py)を
+        ESP32へ強制送信する。ESP32の/api/pidは他クライアント(ブラウザ等)
+        からも変更できるAPIのため、起動時・再接続時に必ずこれで上書きし、
+        「気づいたら変な値になっていた」を防ぐ。"""
+        params = dict(GYRO_PID_DEFAULTS)
+        params["enabled"] = 1 if params["enabled"] else 0
+        self._send_pid_params(params, source="Startup")
+
+    def _send_pid_params(self, params, source="PID"):
         query = "&".join(f"{k}={v}" for k, v in params.items())
         url = f"http://{self._config['car_ip']}/api/pid?{query}"
         worker = CloudWorker("GET", url)
         worker.result.connect(lambda data: self._add_log(
-            "PID", f"Applied kp={data.get('kp')} ki={data.get('ki')} kd={data.get('kd')} "
-                   f"enabled={data.get('enabled')} bias={data.get('bias')}"
+            "PID", f"[{source}] Applied kp={data.get('kp')} ki={data.get('ki')} kd={data.get('kd')} "
+                   f"enabled={data.get('enabled')} bias={data.get('bias')} turn={data.get('turn')}"
         ))
-        worker.error.connect(lambda e: self._add_log("PID", f"Apply failed: {e}"))
+        worker.error.connect(lambda e: self._add_log("PID", f"[{source}] Apply failed: {e}"))
         self._pid_workers.append(worker)
         worker.finished.connect(lambda: self._pid_workers.remove(worker) if worker in self._pid_workers else None)
         worker.start()
@@ -933,22 +938,12 @@ class RoverTeleopApp(QWidget):
         self._input_handler.handle_key_release(event)
 
     def _on_mouse_gimbal(self, pan, tilt):
-        from views.sidebar import _actual_to_display_pan, _actual_to_display_tilt
-        from follow_controller import pan_cmd_to_deg
+        from views.sidebar import update_gimbal_displays
         self._input_handler._gimbal_pan = int(pan)
         self._input_handler._gimbal_tilt = int(tilt)
         self._gimbal_pan = int(pan)
         self._gimbal_tilt = int(tilt)
-        if hasattr(self, '_gimbal_pan_input'):
-            self._gimbal_pan_input.setText(str(_actual_to_display_pan(int(pan))))
-        if hasattr(self, '_gimbal_tilt_input'):
-            self._gimbal_tilt_input.setText(str(_actual_to_display_tilt(int(tilt))))
-        if hasattr(self, '_gimbal_hud'):
-            self._gimbal_hud.set_gimbal(int(pan), int(tilt))
-        if hasattr(self, '_target_angle_display'):
-            target_angle = pan_cmd_to_deg(int(pan))
-            sign = "+" if target_angle >= 0 else ""
-            self._target_angle_display.setText(f"{sign}{target_angle:.1f}°")
+        update_gimbal_displays(self, pan, tilt)
         self._send_command(f"servo:{int(pan)},{int(tilt)}")
 
     def closeEvent(self, event):

@@ -716,6 +716,34 @@ def test_process_detection_yaw_deg_predicted_defaults_to_none_when_absent():
     assert result["yaw_deg_predicted"] is None
 
 
+def test_reset_motion_state_zeroes_ramp_and_pid_without_stopping_thread():
+    """回帰テスト: カメラ切断で強制stopを送った後、接続が復活してdetectionが
+    再開したときに古い_prev_v_cmd等を前提にランプ計算されると、実際には
+    停止している車体との食い違いでコマンドがぎくしゃくすると報告された。
+    reset_motion_state()はstop()と違いスレッドを止めず(_running維持)、
+    ランプ・PID・バースト状態だけをゼロに戻すことを確認する。"""
+    thread = _make_control_thread()
+    thread._running = True
+    thread._prev_v_cmd = 190
+    thread._err_lin_i = 2.5
+    thread._prev_err_lin = 0.3
+    thread._prev_dist_m = 1.2
+    thread._searching_since = 123.0
+    thread._pan_priority_burst_start = 456.0
+    thread._pan_priority_pause_until = 789.0
+
+    thread.reset_motion_state()
+
+    assert thread._running is True  # stop()と違いスレッドは止めない
+    assert thread._prev_v_cmd == 0
+    assert thread._err_lin_i == 0.0
+    assert thread._prev_err_lin == 0.0
+    assert thread._prev_dist_m is None
+    assert thread._searching_since is None
+    assert thread._pan_priority_burst_start is None
+    assert thread._pan_priority_pause_until == 0.0
+
+
 # --- Task 6: LOST_TIMEOUT ---
 
 

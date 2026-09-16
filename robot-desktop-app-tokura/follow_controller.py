@@ -825,29 +825,17 @@ class ControlThread(threading.Thread):
         dist_m_predicted = detection.get("dist_m_predicted")
         bbox = detection.get("bbox")
         confidence = detection.get("confidence", 0.0)
-        frame_w = detection.get("frame_w", DEFAULT_FRAME_WIDTH)
 
-        # Body-relative target angle (vehicle front = 0 degrees)
-        # pan_deg: gimbal servo angle in physical degrees
-        if self._gimbal_thread:
-            current_pan_cmd = self._gimbal_thread._current_pan
-        else:
-            current_pan_cmd = PAN_CENTER
-        pan_deg = pan_cmd_to_deg(current_pan_cmd)
-
-        # cam_yaw_deg: target offset from camera center
-        if bbox:
-            bx, by, bw, bh = bbox
-            bbox_x_center = bx + bw / 2
-            cam_yaw_deg = ((bbox_x_center - (frame_w / 2.0)) / frame_w) * HORIZONTAL_FOV_DEG
-        else:
-            cam_yaw_deg = 0.0
-
-        # body_target_angle: combined angle from vehicle front
-        body_target_angle = pan_deg + cam_yaw_deg
-
-        # Use body_target_angle for state resolution and heading control
-        yaw_deg_offset = body_target_angle
+        # yaw_degはPoseInference.infer()（rccar_pose_inference）が返した時点で
+        # 既にジンバルのpan/tilt状態を使って車体本体相対に変換済みのため、ここで
+        # camera_yaw_offset相当の再補正は行わない（二重補正になるため削除済み。
+        # 旧: yaw_deg + GimbalThread.get_camera_yaw_offset()）。
+        # (以前のマージでpan_deg+bbox位置から求めるbody_target_angleに一時的に
+        # 置き換えられていたが、これは上記のPoseInference側の変換と二重補正に
+        # なる上、bboxさえあれば常に非Noneになるためresolve_follow_state()の
+        # yaw欠測判定(APPROACHING_BLIND)・正対判定(HEAD_ON_HOLD)が機能しなく
+        # なっていた。実機で「昔はうまく動いていた」との確認により元に戻す。)
+        yaw_deg_offset = yaw_deg
 
         candidate_state = resolve_follow_state(yaw_deg_offset, dist_m, bbox, self.config)
         self.state = self._hysteresis.update(candidate_state)
@@ -878,6 +866,15 @@ class ControlThread(threading.Thread):
         self._searching_since = None
 
         if self.state == FollowState.APPROACHING_BLIND:
+            # state_hysteresis_frames(既定3)により、実際の検出がこの1フレームで
+            # さらに悪化してbboxが消えていても、self.stateはまだ前回確定した
+            # APPROACHING_BLINDのまま数フレーム遅れて反映される。その間に
+            # bbox[0]へアクセスしてクラッシュしていた(実機で報告されたバグ、
+            # ControlThread.run()のtry/exceptで握りつぶされ次tickで自動復帰は
+            # していたが、根本的にはここでNoneチェックすべき)。
+            if bbox is None:
+                self._reset_drive_pulse()
+                return self._stop_command("探索中(bbox消失)")
             return self._handle_approaching_blind(bbox, detection.get("frame_w", 640))
 
         if self.state == FollowState.HOLDING:
@@ -890,6 +887,17 @@ class ControlThread(threading.Thread):
         if confidence < self.config.min_confidence:
             self._reset_drive_pulse()
             return self._stop_command(f"信頼度不足({confidence:.2f})")
+
+        if dist_m is None:
+            # state_hysteresis_framesにより、この1フレームでdist/yawが両方
+            # Noneになっていても、self.stateはまだ前回確定したFOLLOWINGのまま
+            # 数フレーム遅れて反映される。その間に以下の距離PID計算で
+            # dist_m(None) - self._prev_dist_m(float)を実行してクラッシュして
+            # いた(実機で報告されたバグ、ControlThread.run()のtry/exceptで
+            # 握りつぶされ次tickで自動復帰はしていたが、根本的にはここで
+            # Noneチェックすべき)。
+            self._reset_drive_pulse()
+            return self._stop_command("距離データなし")
 
         # ジンバルが対象を追って補正中(is_settled()==False)はシャシーを減速して待つ。
         # 推論(~10Hz)が追いつく前にジンバルとシャシーが同時に動くと、互いの動きが
@@ -934,13 +942,20 @@ class ControlThread(threading.Thread):
         lin_v = (self.config.kp_lin * err_lin + self.config.ki_lin * self._err_lin_i
                  + self.config.kd_lin * d_err_lin)
 
-        # Unified heading error using body_target_angle (vehicle front = 0 degrees)
         yaw_deg_for_steering = yaw_deg_offset
         if self.config.predictive_control_enabled:
             yaw_deg_predicted = detection.get("yaw_deg_predicted")
             if yaw_deg_predicted is not None:
                 yaw_deg_for_steering = yaw_deg_predicted
-        combined_heading_error = yaw_deg_for_steering / self.config.yaw_max
+        error_x = yaw_deg_for_steering / self.config.yaw_max
+        if self._gimbal_thread:
+            pan_angle = self._gimbal_thread._current_pan
+            pan_center = self._gimbal_thread._gimbal_center_pan
+        else:
+            pan_angle = self.config.gimbal_center_pan_deg
+            pan_center = self.config.gimbal_center_pan_deg
+        pan_error = (pan_center - pan_angle) / pan_center
+        combined_heading_error = 0.15 * error_x + 0.85 * pan_error
 
         # API_DOCUMENTATION.md 2.2: GET /drive?v=&w= (Left_PWM=v+w, Right_PWM=v-w)。
         # w: 負=左旋回、正=右旋回。combined_heading_error>0は「左に曲がる必要がある」
@@ -951,7 +966,7 @@ class ControlThread(threading.Thread):
         # ジンバルのpanが車体正面から大きくずれている場合(=車体自体は対象の方を
         # 向いていない)は、距離が離れていても接近より先に旋回してpan角度を
         # 正面(pan_center)へ戻すことを優先する。
-        pan_offset_deg = abs(body_target_angle)
+        pan_offset_deg = abs(pan_angle - pan_center)
         if pan_offset_deg > self.config.pan_priority_threshold_deg:
             self._prev_v_cmd = 0
             self._reset_drive_pulse()  # 旋回優先中は直進駆動のバースト/停止確認を持ち越さない
@@ -1237,6 +1252,22 @@ class ControlThread(threading.Thread):
         self._prev_err_lin = 0.0
         self._prev_v_cmd = 0
 
+    def reset_motion_state(self):
+        """stop()と違いスレッドは止めず、速度ランプ・距離PID・バースト駆動/
+        旋回の内部状態だけをゼロに戻す。カメラ切断で強制stopを送った後、
+        接続が復活してdetectionが再開したとき、切断前の続き(古い_prev_v_cmd
+        など)を前提に速度ランプが計算されてしまうと、実際には停止している
+        車体との食い違いでコマンドがぎくしゃくする(実機で報告された懸念)。
+        切断のたびにこれを呼び、再開時は必ずゼロから組み立て直す。"""
+        self._err_lin_i = 0.0
+        self._prev_err_lin = 0.0
+        self._prev_v_cmd = 0
+        self._prev_dist_m = None
+        self._searching_since = None
+        self._reset_drive_pulse()
+        self._pan_priority_burst_start = None
+        self._pan_priority_pause_until = 0.0
+
 
 class CommandThread(threading.Thread):
     def __init__(self, input_queue: Queue, send_command: Callable[[str], None], 
@@ -1367,6 +1398,14 @@ class FollowController:
             # Stop motors when disabling chassis follow
             if self._send_command:
                 self._send_command("stop")
+
+    def reset_motion_state(self):
+        """カメラ切断(app._on_camera_disconnected)で強制stopを送った直後に
+        呼ぶ。ControlThreadのスレッド自体は止めず、速度ランプ・距離PID・
+        バースト駆動/旋回の内部状態だけをゼロに戻し、接続復活後の再開が
+        切断前の続きではなく必ずゼロから始まるようにする。"""
+        if self._control_thread:
+            self._control_thread.reset_motion_state()
 
     def start(self):
         self._active = True

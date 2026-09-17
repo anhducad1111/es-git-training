@@ -583,7 +583,7 @@ def _show_current_page(app):
     for i, snap in enumerate(page_data):
         card = QFrame()
         card.setFrameShape(QFrame.Shape.StyledPanel)
-        card.setFixedSize(220, 190)
+        card.setFixedSize(320, 280)
         card.setStyleSheet("""
             QFrame {
                 background-color: #0a0e1a;
@@ -601,7 +601,7 @@ def _show_current_page(app):
         card_layout.setSpacing(0)
 
         thumb_label = QLabel()
-        thumb_label.setFixedSize(208, 140)
+        thumb_label.setFixedSize(308, 220)
         thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         thumb_label.setStyleSheet("background-color: #0f172a; border-radius: 4px; color: #64748b; font-size: 9px;")
         thumb_label.setText("Loading...")
@@ -641,7 +641,7 @@ def _show_current_page(app):
                 
                 if pixmap and not pixmap.isNull():
                     scaled = pixmap.scaled(
-                        208, 140,
+                        308, 220,
                         Qt.AspectRatioMode.KeepAspectRatio,
                         Qt.TransformationMode.SmoothTransformation,
                     )

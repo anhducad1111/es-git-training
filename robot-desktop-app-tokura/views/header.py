@@ -226,6 +226,23 @@ def create_header(app):
     """)
     layout.addWidget(app._web_ip_input)
 
+    cloud_label = QLabel("CLOUD")
+    cloud_label.setStyleSheet("color: #475569; font-size: 10px; letter-spacing: 1px;")
+    layout.addWidget(cloud_label)
+
+    app._cloud_api_input = QLineEdit(app._config.get("cloud_api_url", ""))
+    app._cloud_api_input.setFixedWidth(220)
+    app._cloud_api_input.setStyleSheet("""
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 4px;
+        padding: 4px 8px;
+        color: #06b6d4;
+        font-size: 11px;
+        font-family: 'JetBrains Mono', monospace;
+    """)
+    layout.addWidget(app._cloud_api_input)
+
     separator3 = QLabel()
     separator3.setFixedWidth(1)
     separator3.setFixedHeight(20)

@@ -24,7 +24,7 @@ def create_main_view(app):
     from widgets.gimbal_hud import GimbalHUD
     app._gimbal_hud = GimbalHUD()
     app._gimbal_hud.setParent(app._video_canvas)
-    app._gimbal_hud.move(10, app._video_canvas.height() - 260)
+    app._gimbal_hud.move(10, 280)
 
     from widgets.fps_display import FPSDisplay
     app._fps_display = FPSDisplay()
@@ -102,6 +102,22 @@ def create_main_view(app):
     app._aruco_lost_warning.adjustSize()
     app._aruco_lost_warning.move((app._video_canvas.width() - app._aruco_lost_warning.width()) // 2, 10)
     app._aruco_lost_warning.hide()
+
+    app._auto_brake_warning = QLabel("⚠ AUTO BRAKE")
+    app._auto_brake_warning.setParent(app._video_canvas)
+    app._auto_brake_warning.setStyleSheet("""
+        background-color: rgba(239, 68, 68, 0.95);
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 2px;
+        padding: 6px 16px;
+        border-radius: 4px;
+        border: 1px solid rgba(239, 68, 68, 0.5);
+    """)
+    app._auto_brake_warning.adjustSize()
+    app._auto_brake_warning.move((app._video_canvas.width() - app._auto_brake_warning.width()) // 2, 35)
+    app._auto_brake_warning.hide()
 
     from widgets.follow_overlay import FollowModeOverlay
     app._follow_overlay = FollowModeOverlay(app._video_canvas)

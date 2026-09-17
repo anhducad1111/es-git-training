@@ -164,8 +164,8 @@ class DetectionManager(QObject):
                 config=config,
                 dry_run=False,
                 log_callback=self._log,
-                send_command=lambda cmd: self._app._send_command(cmd) if self._app else self._log("CMD", cmd),
-                set_speed=lambda spd: self._app._send_command(f"speed:{spd}") if self._app else self._log("SPEED", str(spd)),
+                send_command=lambda cmd: self._app._send_command(cmd, _is_system=True) if self._app else self._log("CMD", cmd),
+                set_speed=lambda spd: self._app._send_command(f"speed:{spd}", _is_system=True) if self._app else self._log("SPEED", str(spd)),
                 set_gimbal=lambda pan, tilt: self._set_gimbal_with_ui(pan, tilt)
             )
             self._follow_controller.start()
@@ -296,7 +296,7 @@ class DetectionManager(QObject):
             self._app._gimbal_pan = int(pan)
             self._app._gimbal_tilt = int(tilt)
             update_gimbal_displays(self._app, pan, tilt)
-            self._app._send_command(f"servo:{int(pan)},{int(tilt)}")
+            self._app._send_command(f"servo:{int(pan)},{int(tilt)}", _is_system=True)
             
     def stop_all(self):
         """Stop all detection."""

@@ -1,8 +1,9 @@
+from datetime import datetime
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTextEdit, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem,
-    QHeaderView, QComboBox, QStackedWidget
+    QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem,
+    QHeaderView, QComboBox, QStackedWidget, QScrollArea
 )
 from gemini_chat import GeminiChat
 from widgets.sensor_chart import SensorChart
@@ -164,19 +165,36 @@ def create_diagnostics_view(app):
     """)
     right_layout.addWidget(chat_title)
 
-    app._chat_display = QTextEdit()
-    app._chat_display.setReadOnly(True)
-    app._chat_display.setStyleSheet("""
-        background-color: #0f172a;
-        border: 1px solid #1e293b;
-        border-radius: 6px;
-        padding: 12px;
-        color: #e2e8f0;
-        font-size: 12px;
-        font-family: 'Segoe UI', sans-serif;
-        line-height: 1.5;
+    app._chat_scroll = QScrollArea()
+    app._chat_scroll.setWidgetResizable(True)
+    app._chat_scroll.setStyleSheet("""
+        QScrollArea {
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 6px;
+        }
+        QScrollBar:vertical {
+            background: #0f172a;
+            width: 6px;
+        }
+        QScrollBar::handle:vertical {
+            background: #334155;
+            border-radius: 3px;
+        }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+            height: 0;
+        }
     """)
-    right_layout.addWidget(app._chat_display, 1)
+
+    app._chat_content = QWidget()
+    app._chat_content.setStyleSheet("background-color: #0f172a;")
+    app._chat_content_layout = QVBoxLayout()
+    app._chat_content_layout.setContentsMargins(8, 8, 8, 8)
+    app._chat_content_layout.setSpacing(4)
+    app._chat_content_layout.addStretch()
+    app._chat_content.setLayout(app._chat_content_layout)
+    app._chat_scroll.setWidget(app._chat_content)
+    right_layout.addWidget(app._chat_scroll, 1)
 
     chat_input_layout = QHBoxLayout()
     chat_input_layout.setSpacing(8)
@@ -197,11 +215,12 @@ def create_diagnostics_view(app):
     send_btn = QPushButton("SEND")
     send_btn.setFixedWidth(60)
     send_btn.setStyleSheet("""
-        background-color: #06b6d4;
-        color: #0a0e1a;
+        background-color: #06C755;
+        color: white;
         font-weight: 700;
         font-size: 10px;
         border: none;
+        border-radius: 8px;
         letter-spacing: 1px;
     """)
     send_btn.clicked.connect(lambda: _send_chat(app))
@@ -265,12 +284,153 @@ def _switch_view(app, view):
         _load_history(app)
 
 
+CHART_LABELS = ["temperature", "humidity", "gas", "distance"]
+
+
+def _add_chat_bubble(app, text, is_user=False, is_system=False):
+    ts = datetime.now().strftime("%H:%M")
+
+    bubble = QLabel()
+    bubble.setWordWrap(True)
+    bubble.setTextFormat(Qt.TextFormat.RichText)
+    bubble.setMaximumWidth(280)
+
+    time_label = QLabel(ts)
+    time_label.setStyleSheet("font-size: 7pt; color: #64748b; background: transparent; border: none;")
+
+    if is_system:
+        bubble.setText(text)
+        bubble.setStyleSheet("""
+            QLabel {
+                background-color: #1e293b;
+                color: #94a3b8;
+                padding: 8px 12px;
+                border-radius: 10px;
+                font-size: 11px;
+            }
+        """)
+        row = QHBoxLayout()
+        row.setContentsMargins(40, 2, 40, 0)
+        row.addStretch()
+        row.addWidget(bubble)
+        row.addStretch()
+        time_row = QHBoxLayout()
+        time_row.setContentsMargins(40, 0, 40, 4)
+        time_row.addStretch()
+        time_row.addWidget(time_label)
+        time_row.addStretch()
+    elif is_user:
+        bubble.setText(text)
+        bubble.setStyleSheet("""
+            QLabel {
+                background-color: #06C755;
+                color: white;
+                padding: 8px 12px;
+                border-radius: 10px;
+                font-size: 11px;
+            }
+        """)
+        row = QHBoxLayout()
+        row.setContentsMargins(4, 2, 4, 0)
+        row.addStretch()
+        row.addWidget(bubble)
+        time_row = QHBoxLayout()
+        time_row.setContentsMargins(4, 0, 4, 4)
+        time_row.addStretch()
+        time_row.addWidget(time_label)
+    else:
+        import re
+        formatted = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+        formatted = formatted.replace('\n', '<br>')
+        bubble.setText(formatted)
+        bubble.setStyleSheet("""
+            QLabel {
+                background-color: #1e293b;
+                color: #10b981;
+                padding: 8px 12px;
+                border-radius: 10px;
+                font-size: 11px;
+            }
+        """)
+        row = QHBoxLayout()
+        row.setContentsMargins(4, 2, 4, 0)
+        row.addWidget(bubble)
+        row.addStretch()
+        time_row = QHBoxLayout()
+        time_row.setContentsMargins(4, 0, 4, 4)
+        time_row.addWidget(time_label)
+        time_row.addStretch()
+
+    container = QWidget()
+    container_layout = QVBoxLayout()
+    container_layout.setContentsMargins(0, 0, 0, 0)
+    container_layout.setSpacing(0)
+    container_layout.addLayout(row)
+    container_layout.addLayout(time_row)
+    container.setLayout(container_layout)
+    container.setStyleSheet("background: transparent;")
+
+    app._chat_content_layout.insertWidget(app._chat_content_layout.count() - 1, container)
+    app._chat_scroll.verticalScrollBar().setValue(app._chat_scroll.verticalScrollBar().maximum())
+
+
+def _handle_chart_command(app, message):
+    tokens = message.split()
+    normalize = False
+    sensors = []
+    chart_name = None
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "/chart":
+            i += 1
+            continue
+        if token == "-n":
+            normalize = True
+            i += 1
+            continue
+        if token == "-m":
+            if i + 1 < len(tokens) and tokens[i + 1] not in CHART_LABELS and tokens[i + 1] not in ("-n",):
+                chart_name = tokens[i + 1]
+                i += 2
+                continue
+            else:
+                i += 1
+                continue
+        if token in CHART_LABELS:
+            sensors.append(token)
+        i += 1
+
+    app._chat_input.clear()
+    _add_chat_bubble(app, message, is_user=True)
+
+    if not sensors:
+        _add_chat_bubble(app, "利用可能なセンサー: temperature, humidity, gas, distance<br>使い方: /chart temperature humidity -n -m \"My Chart\"", is_system=True)
+        return
+
+    name = chart_name if chart_name else "Command Chart"
+    custom_groups = {name: sensors}
+    normalize_flags = {name: normalize}
+    app._sensor_chart.rebuild_charts(custom_groups, normalize_flags)
+
+    if hasattr(app, '_last_readings') and app._last_readings:
+        app._sensor_chart.update_chart(app._last_readings)
+
+    norm_text = " (正規化)" if normalize else ""
+    name_text = f" as '{chart_name}'" if chart_name else ""
+    _add_chat_bubble(app, f"チャート作成: {', '.join(sensors)}{name_text}{norm_text}", is_system=True)
+
+
 def _send_chat(app):
     text = app._chat_input.text().strip()
     if not text:
         return
 
-    app._chat_display.append(f'<p style="text-align:right; margin:4px 0;"><span style="background-color:#06b6d4; color:white; padding:8px 12px; border-radius:10px; font-size:12px;">{text}</span></p>')
+    if text.startswith("/chart"):
+        _handle_chart_command(app, text)
+        return
+
+    _add_chat_bubble(app, text, is_user=True)
     app._chat_input.clear()
 
     sensor_data = {}
@@ -293,26 +453,15 @@ def _send_chat(app):
     app._chat_worker.tool_called.connect(lambda f, a: _on_tool_called(app, f, a))
     app._chat_worker.start()
 
-    app._chat_display.append('<span style="color: #475569;">思考中...</span>')
+    _add_chat_bubble(app, "思考中...", is_system=True)
 
 
 def _on_chat_response(app, response):
-    cursor = app._chat_display.textCursor()
-    cursor.movePosition(cursor.MoveOperation.End)
-    cursor.select(cursor.SelectionType.BlockUnderCursor)
-    cursor.removeSelectedText()
-    import re
-    response = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', response)
-    response = response.replace('\n', '<br>')
-    app._chat_display.append(f'<p style="text-align:left; margin:4px 0;"><span style="background-color:#1e293b; color:#10b981; padding:10px 14px; border-radius:10px; font-size:12px; line-height:1.6;">{response}</span></p>')
+    _add_chat_bubble(app, response, is_user=False)
 
 
 def _on_chat_error(app, error):
-    cursor = app._chat_display.textCursor()
-    cursor.movePosition(cursor.MoveOperation.End)
-    cursor.select(cursor.SelectionType.BlockUnderCursor)
-    cursor.removeSelectedText()
-    app._chat_display.append(f'<p style="text-align:left; margin:4px 0;"><span style="background-color:#1e293b; color:#ef4444; padding:10px 14px; border-radius:10px; font-size:12px;">Error: {error}</span></p>')
+    _add_chat_bubble(app, f"Error: {error}", is_system=True)
 
 
 def _on_tool_called(app, func_name, func_args):
@@ -331,13 +480,13 @@ def _on_tool_called(app, func_name, func_args):
                 valid_groups[title] = valid_sensors
                 normalize_flags[title] = normalize
         if not valid_groups:
-            app._chat_display.append('<span style="color: #475569;">System: No valid sensor names. Available: temperature, humidity, gas, distance</span>')
+            _add_chat_bubble(app, "利用可能なセンサー: temperature, humidity, gas, distance", is_system=True)
             return
         app._sensor_chart.rebuild_charts(valid_groups, normalize_flags)
         if hasattr(app, '_last_readings') and app._last_readings:
             app._sensor_chart.update_chart(app._last_readings)
-        norm_text = " (normalized)" if normalize else ""
-        app._chat_display.append(f'<span style="color: #475569;">System: Charts created: {", ".join(valid_groups.keys())}{norm_text}</span>')
+        norm_text = " (正規化)" if normalize else ""
+        _add_chat_bubble(app, f"チャート作成: {', '.join(valid_groups.keys())}{norm_text}", is_system=True)
 
 
 def _load_history(app):

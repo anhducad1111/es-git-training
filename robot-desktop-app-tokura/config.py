@@ -15,7 +15,6 @@ DEFAULT_CONFIG = {
     "follow_mode_url": "http://rpi5.local/follow/start",
     "motor_speed": 220,
     "auto_brake": True,
-    "brake_threshold": 30,
     "hf_token": HF_TOKEN,
     "remote_control_port": 8765,
     "cam_quality": 14,

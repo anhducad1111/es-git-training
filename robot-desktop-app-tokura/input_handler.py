@@ -6,7 +6,7 @@ class InputHandler(QObject):
     
     key_state_changed = pyqtSignal(str, bool)
     
-    def __init__(self, send_command_callback, log_callback, on_emergency_stop=None, on_chassis_follow_toggle=None, on_gimbal_update=None, on_snapshot=None, on_toggle_recording=None):
+    def __init__(self, send_command_callback, log_callback, on_emergency_stop=None, on_chassis_follow_toggle=None, on_gimbal_update=None, on_snapshot=None, on_toggle_recording=None, on_w_released=None):
         super().__init__()
         self._send_command = send_command_callback
         self._log = log_callback
@@ -15,12 +15,17 @@ class InputHandler(QObject):
         self._on_gimbal_update = on_gimbal_update
         self._on_snapshot = on_snapshot
         self._on_toggle_recording = on_toggle_recording
+        self._on_w_released = on_w_released
         
         self._gimbal_pan = 85
         self._gimbal_tilt = 70
         self._global_speed = 220
         self._speed_delta = 0
         self._driving_forward = True
+        self._w_pressed = False
+        self._s_pressed = False
+        self._ad_pressed = False
+        self._obstacle_stop = False
         
         self._speed_timer = QTimer()
         self._speed_timer.timeout.connect(self._tick_speed)
@@ -33,18 +38,26 @@ class InputHandler(QObject):
             
         key = event.key()
         
+        # 50cm以下では前進コマンドをブロック
+        if self._obstacle_stop and key == Qt.Key.Key_W:
+            return
+            
         if key == Qt.Key.Key_W:
             self._driving_forward = True
+            self._w_pressed = True
             self._send_command("forward")
             self.key_state_changed.emit("forward", True)
         elif key == Qt.Key.Key_S:
             self._driving_forward = False
+            self._s_pressed = True
             self._send_command("backward")
             self.key_state_changed.emit("backward", True)
         elif key == Qt.Key.Key_A:
+            self._ad_pressed = True
             self._send_command("left")
             self.key_state_changed.emit("left", True)
         elif key == Qt.Key.Key_D:
+            self._ad_pressed = True
             self._send_command("right")
             self.key_state_changed.emit("right", True)
         elif key == Qt.Key.Key_Space:
@@ -94,15 +107,21 @@ class InputHandler(QObject):
         key = event.key()
         
         if key == Qt.Key.Key_W:
+            self._w_pressed = False
             self._send_command("stop")
             self.key_state_changed.emit("forward", False)
+            if self._on_w_released:
+                self._on_w_released()
         elif key == Qt.Key.Key_S:
+            self._s_pressed = False
             self._send_command("stop")
             self.key_state_changed.emit("backward", False)
         elif key == Qt.Key.Key_A:
+            self._ad_pressed = False
             self._send_command("stop")
             self.key_state_changed.emit("left", False)
         elif key == Qt.Key.Key_D:
+            self._ad_pressed = False
             self._send_command("stop")
             self.key_state_changed.emit("right", False)
         elif key in (Qt.Key.Key_Shift, Qt.Key.Key_Control):

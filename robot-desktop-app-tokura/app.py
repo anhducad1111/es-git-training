@@ -89,13 +89,17 @@ class RoverTeleopApp(QWidget):
         self._conn_mgr = ConnectionManager(self._config, self.log_message.emit)
         self._video_mgr = VideoManager(None, self.log_message.emit)
         self._detection_mgr = DetectionManager(self.log_message.emit, app=self)
-        self._input_handler = InputHandler(self._send_command, self.log_message.emit, on_emergency_stop=self._emergency_stop, on_chassis_follow_toggle=self._toggle_chassis_follow, on_gimbal_update=self._on_gimbal_update, on_snapshot=self._take_snapshot, on_toggle_recording=self._toggle_recording)
+        self._input_handler = InputHandler(self._send_command, self.log_message.emit, on_emergency_stop=self._emergency_stop, on_chassis_follow_toggle=self._toggle_chassis_follow, on_gimbal_update=self._on_gimbal_update, on_snapshot=self._take_snapshot, on_toggle_recording=self._toggle_recording, on_w_released=self._on_w_released)
         self._cloud_mgr = CloudManager(self._config, self.log_message.emit)
         self._latest_telemetry = {}
         self._allow_remote_control = False
         self._remote_server = None
         self._obstacle_brake_active = False
         self._speed_limit_active = False
+        self._obstacle_pulse_active = False
+        self._obstacle_pulse_on = False
+        self._obstacle_pulse_timer = QTimer()
+        self._obstacle_pulse_timer.timeout.connect(self._obstacle_pulse_tick)
 
         self.init_ui()
         self.connect_signals()
@@ -539,7 +543,7 @@ class RoverTeleopApp(QWidget):
         if self._detection_mgr and self._detection_mgr._follow_detector:
             self._detection_mgr._follow_detector.clear_frame()
         if self._detection_mgr and self._detection_mgr._follow_mode_active:
-            self._send_command("stop")
+            self._send_command("stop", _is_system=True)
             # 切断前の速度ランプ・距離PID等の内部状態を残したままにすると、
             # 接続復活後の最初のコマンドが「実際には止まっている車体」との
             # 食い違いでぎくしゃくする。接続が復活してdetectionが再開したら
@@ -632,47 +636,87 @@ class RoverTeleopApp(QWidget):
                     font-family: 'JetBrains Mono', monospace;
                 """)
         
-        # Obstacle warning + auto-brake + speed limit
+            # Obstacle warning + auto-brake + pulse control
         if hasattr(self, '_obstacle_warning') and "distance" in data:
-            distance = data["distance"]
-            threshold = self._config.get("brake_threshold", 30)
+            try:
+                distance = float(data["distance"])
+            except (TypeError, ValueError):
+                distance = 999
             auto_brake = self._config.get("auto_brake", True)
-            if auto_brake and distance < threshold:
-                self._obstacle_warning.setText(f"⚠ OBSTACLE: {distance:.0f} cm")
+            w_pressed = hasattr(self, '_input_handler') and self._input_handler._w_pressed
+            s_pressed = hasattr(self, '_input_handler') and self._input_handler._s_pressed
+            ad_pressed = hasattr(self, '_input_handler') and self._input_handler._ad_pressed
+            any_movement = w_pressed or s_pressed or ad_pressed
+            
+            self._add_log("DEBUG", f"dist={distance:.1f}cm brake={auto_brake} w={w_pressed} s={s_pressed} ad={ad_pressed}")
+            
+            if auto_brake and distance < 50:
+                # 50cm以下: 完全停止 + 移動ブロック
+                self._obstacle_warning.setText(f"⚠ OBSTACLE: {distance:.0f} cm - STOP")
                 self._obstacle_warning.adjustSize()
                 self._obstacle_warning.move(
                     (self._video_canvas.width() - self._obstacle_warning.width()) // 2, 10
                 )
                 self._obstacle_warning.show()
-                if not self._obstacle_brake_active:
-                    self._obstacle_brake_active = True
-                    self._send_command("stop")
-                    self._add_log("SAFETY", f"Auto-brake: {distance:.0f} cm < {threshold} cm → STOP")
+                if hasattr(self, '_auto_brake_warning'):
+                    self._auto_brake_warning.adjustSize()
+                    self._auto_brake_warning.move(
+                        (self._video_canvas.width() - self._auto_brake_warning.width()) // 2, 35
+                    )
+                    self._auto_brake_warning.show()
+                # 移動ブロック（前進のみ）
+                if hasattr(self, '_input_handler'):
+                    self._input_handler._obstacle_stop = True
+                # 移動キー押下中はstopを送らない（操作を妨げない）
+                if not any_movement:
+                    if self._obstacle_pulse_active:
+                        self._obstacle_pulse_active = False
+                        self._obstacle_pulse_timer.stop()
+                        self._obstacle_pulse_on = False
+                    self._send_command("stop", _is_system=True)
+                self._add_log("SAFETY", f"Auto-brake: {distance:.0f} cm < 50cm →完全停止")
+            
+            elif auto_brake and distance < 100 and w_pressed:
+                # 50-100cm & W押下: パルス動作（動いて止まるを繰り返す）
+                self._obstacle_warning.setText(f"⚠ OBSTACLE: {distance:.0f} cm - PULSE")
+                self._obstacle_warning.adjustSize()
+                self._obstacle_warning.move(
+                    (self._video_canvas.width() - self._obstacle_warning.width()) // 2, 10
+                )
+                self._obstacle_warning.show()
+                if hasattr(self, '_auto_brake_warning'):
+                    self._auto_brake_warning.adjustSize()
+                    self._auto_brake_warning.move(
+                        (self._video_canvas.width() - self._auto_brake_warning.width()) // 2, 35
+                    )
+                    self._auto_brake_warning.show()
+                # 移動ブロック解除（パルス動作中は許可）
+                if hasattr(self, '_input_handler'):
+                    self._input_handler._obstacle_stop = False
+                # パルス動作開始（まだ始まっていない場合）
+                if not self._obstacle_pulse_active:
+                    self._obstacle_pulse_active = True
+                    self._obstacle_pulse_on = False
+                    # 距離に応じてパルス間隔を調整（近いほど短く）
+                    pulse_interval = max(200, int(distance * 3))
+                    self._obstacle_pulse_timer.start(pulse_interval)
+                    self._add_log("SAFETY", f"Auto-brake: {distance:.0f} cm → パルス開始 ({pulse_interval}ms)")
+            
             else:
+                # 100cm以上 or W未押下: 通常動作
                 self._obstacle_warning.hide()
-                self._obstacle_brake_active = False
-
-            # Speed limit: 150-255 range, reduced when distance < 150cm (forward only)
-            MIN_SPEED = 150
-            SPEED_DIST_MAX = 150
-            is_reversing = hasattr(self, '_input_handler') and not self._input_handler._driving_forward
-            if not is_reversing and distance < SPEED_DIST_MAX:
-                ratio = distance / SPEED_DIST_MAX
-                ratio = ratio * ratio
-                limited = int(MIN_SPEED + (self._global_speed - MIN_SPEED) * ratio)
-                limited = max(MIN_SPEED, min(self._global_speed, limited))
-                if not self._speed_limit_active or limited != self._current_speed:
-                    self._speed_limit_active = True
-                    self._current_speed = limited
-                    self._send_command(f"speed:{limited}")
-                    if hasattr(self, '_speed_label'):
-                        self._speed_label.setText(f"{limited}")
-            elif self._speed_limit_active:
-                self._speed_limit_active = False
-                self._current_speed = self._global_speed
-                self._send_command(f"speed:{self._global_speed}")
-                if hasattr(self, '_speed_label'):
-                    self._speed_label.setText(f"{self._global_speed}")
+                if hasattr(self, '_auto_brake_warning'):
+                    self._auto_brake_warning.hide()
+                # 移動ブロック解除
+                if hasattr(self, '_input_handler'):
+                    self._input_handler._obstacle_stop = False
+                # パルス停止
+                if self._obstacle_pulse_active:
+                    self._obstacle_pulse_active = False
+                    self._obstacle_pulse_timer.stop()
+                    self._obstacle_pulse_on = False
+                    self._send_command("stop", _is_system=True)
+                    self._add_log("SAFETY", "Auto-brake: 解除")
         
         # Update diagnostics sensor cards
         if hasattr(self, '_temp_card') and "temperature" in data:
@@ -767,10 +811,39 @@ class RoverTeleopApp(QWidget):
         self._video_mgr.take_snapshot(pixmap, bbox=bbox, detection=detection)
 
     def _emergency_stop(self):
-        self._send_command("stop")
+        self._send_command("stop", _is_system=True)
         self._add_log("STOP", "Emergency stop activated")
         if self._detection_mgr and self._detection_mgr.follow_mode_active:
             self._detection_mgr.toggle_follow_mode()
+    
+    def _on_w_released(self):
+        """Wキーが離された時のコールバック（パルス停止）"""
+        if self._obstacle_pulse_active:
+            self._obstacle_pulse_active = False
+            self._obstacle_pulse_timer.stop()
+            self._obstacle_pulse_on = False
+    
+    def _obstacle_pulse_tick(self):
+        """パルス動作の_tick（動いて止まるを繰り返す）"""
+        if not self._obstacle_pulse_active:
+            return
+        
+        # Wが押されていない場合はパルス停止（stop送信なし）
+        w_pressed = hasattr(self, '_input_handler') and self._input_handler._w_pressed
+        if not w_pressed:
+            self._obstacle_pulse_active = False
+            self._obstacle_pulse_timer.stop()
+            self._obstacle_pulse_on = False
+            return
+        
+        if self._obstacle_pulse_on:
+            # ON → OFF（停止）
+            self._obstacle_pulse_on = False
+            self._send_command("stop", _is_system=True)
+        else:
+            # OFF → ON（前進）
+            self._obstacle_pulse_on = True
+            self._send_command("w", _is_system=True)
     
     def _toggle_chassis_follow(self):
         """Toggle chassis follow mode (v key)."""
@@ -799,8 +872,8 @@ class RoverTeleopApp(QWidget):
         self._add_log("REMOTE", f"Relay: {command}")
         self._conn_mgr.send_command(command)
 
-    def _send_command(self, command):
-        if self._allow_remote_control:
+    def _send_command(self, command, _is_system=False):
+        if self._allow_remote_control and not _is_system:
             self._allow_remote_control = False
             self._web_control_btn.setChecked(False)
             self._web_control_btn.setText("WEB CONTROL: OFF")
@@ -821,7 +894,7 @@ class RoverTeleopApp(QWidget):
         self._speed_apply_timer.start(150)
 
     def _apply_speed_change(self):
-        self._send_command(f"speed:{self._global_speed}")
+        self._send_command(f"speed:{self._global_speed}", _is_system=True)
 
     def _schedule_pid_apply(self):
         """ジャイロ直進PID(/api/pid)の適用をデバウンスする。スライダーを
@@ -950,7 +1023,7 @@ class RoverTeleopApp(QWidget):
         self._gimbal_pan = int(pan)
         self._gimbal_tilt = int(tilt)
         update_gimbal_displays(self, pan, tilt)
-        self._send_command(f"servo:{int(pan)},{int(tilt)}")
+        self._send_command(f"servo:{int(pan)},{int(tilt)}", _is_system=True)
 
     def closeEvent(self, event):
         if hasattr(self, '_ota_url_input'):

@@ -55,7 +55,7 @@ class CloudManager:
             "humidity_pct": data.get("humidity", 0),
             "gas_ppm": data.get("gas", 0),
             "distance_cm": data.get("distance", 0),
-            "auto_brake": data.get("obstacle", False),
+            "auto_brake": self._config.get("auto_brake", True),
         }
         worker = CloudWorker("POST", url, payload=payload)
         self._cloud_workers.append(worker)

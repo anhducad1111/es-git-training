@@ -1,5 +1,5 @@
 import math
-from PyQt6.QtCore import Qt, QPointF, QTimer
+from PyQt6.QtCore import Qt, QPointF, QRectF, QTimer
 from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont
 from PyQt6.QtWidgets import QWidget
 
@@ -11,7 +11,7 @@ class GimbalHUD(QWidget):
         self._tilt = 90.0
         self._current_pan = 90.0
         self._current_tilt = 90.0
-        self.setFixedSize(120, 180)
+        self.setFixedSize(120, 210)
         self.setStyleSheet("background: transparent;")
         
         self._timer = QTimer()
@@ -35,16 +35,12 @@ class GimbalHUD(QWidget):
         h = self.height()
         cx = w // 2
         
-        painter.translate(cx, h // 2)
-        painter.scale(1, -1)
-        painter.translate(-cx, -h // 2)
-        
         pink = QColor(255, 42, 133)
         dim_pink = QColor(255, 42, 133, 80)
         white = QColor(255, 255, 255, 200)
         dim_white = QColor(148, 163, 184, 100)
         
-        header_y = 10
+        header_y = 14
         painter.setPen(QPen(dim_pink, 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(5, header_y - 5, w - 10, 25, 4, 4)
@@ -58,7 +54,12 @@ class GimbalHUD(QWidget):
         painter.setPen(QPen(pink, 1))
         painter.drawText(cx - 15, header_y + 10, f"{int(self._current_pan)}°")
         
-        tilt_cy = 70
+        painter.save()
+        painter.translate(cx, h // 2)
+        painter.scale(1, -1)
+        painter.translate(-cx, -h // 2)
+        
+        tilt_cy = 80
         r = 30
         
         painter.setPen(QPen(dim_pink, 1))
@@ -67,12 +68,6 @@ class GimbalHUD(QWidget):
         
         painter.setPen(QPen(QColor(59, 130, 246, 80), 1, Qt.PenStyle.DashLine))
         painter.drawLine(cx - 22, tilt_cy, cx + 22, tilt_cy)
-        
-        painter.setFont(QFont("JetBrains Mono", 6))
-        painter.setPen(QPen(dim_white, 1))
-        painter.drawText(cx + r + 2, tilt_cy - 15, "UP")
-        painter.drawText(cx + r + 2, tilt_cy + 3, "LVL")
-        painter.drawText(cx + r + 2, tilt_cy + 18, "DN")
         
         for offset in [-24, -12, 0, 12, 24]:
             is_zero = offset == 0
@@ -100,25 +95,17 @@ class GimbalHUD(QWidget):
         painter.drawEllipse(QPointF(start_x, start_y), 2, 2)
         
         tilt_offset = int(self._current_tilt - 90)
-        painter.setFont(QFont("JetBrains Mono", 6))
+        painter.setFont(QFont("JetBrains Mono", 8))
         painter.setPen(QPen(pink, 1))
-        painter.drawText(cx - 10, tilt_cy + r + 18, f"{tilt_offset:+d}°")
+        painter.drawText(QRectF(cx - 18, tilt_cy - r + 8, 36, 16), Qt.AlignmentFlag.AlignCenter, f"{tilt_offset:+d}°")
         
-        pan_cy = 135
+        pan_cy = 150
         painter.setPen(QPen(dim_pink, 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawEllipse(QPointF(cx, pan_cy), r, r)
         
         painter.setPen(QPen(QColor(59, 130, 246, 80), 1, Qt.PenStyle.DashLine))
         painter.drawLine(cx - 22, pan_cy, cx + 22, pan_cy)
-        
-        painter.setFont(QFont("JetBrains Mono", 6))
-        painter.setPen(QPen(pink, 1))
-        painter.drawText(cx - 3, pan_cy - r - 2, "N")
-        painter.setPen(QPen(dim_white, 1))
-        painter.drawText(cx - 3, pan_cy + r + 8, "S")
-        painter.drawText(cx - r - 8, pan_cy + 3, "W")
-        painter.drawText(cx + r + 2, pan_cy + 3, "E")
         
         for deg in range(0, 181, 15):
             rad = math.pi * (1 - deg / 180)
@@ -145,8 +132,10 @@ class GimbalHUD(QWidget):
         painter.drawEllipse(QPointF(cx, pan_cy), 2, 2)
         
         pan_offset = int(self._current_pan - 90)
-        painter.setFont(QFont("JetBrains Mono", 6))
+        painter.setFont(QFont("JetBrains Mono", 8))
         painter.setPen(QPen(pink, 1))
-        painter.drawText(cx - 10, pan_cy + r + 18, f"{pan_offset:+d}°")
+        painter.drawText(QRectF(cx - 18, pan_cy - r + 8, 36, 16), Qt.AlignmentFlag.AlignCenter, f"{pan_offset:+d}°")
+        
+        painter.restore()
         
         painter.end()

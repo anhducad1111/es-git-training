@@ -77,14 +77,6 @@ def create_sidebar(app):
         letter-spacing: 1px;
     """)
     header_col.addWidget(header_label)
-    
-    app._link_label = QLabel("Link: 98% (Optimal)")
-    app._link_label.setStyleSheet("""
-        color: #10b981;
-        font-size: 10px;
-        font-weight: 500;
-    """)
-    header_col.addWidget(app._link_label)
     header_layout.addLayout(header_col)
     
     header_layout.addStretch()

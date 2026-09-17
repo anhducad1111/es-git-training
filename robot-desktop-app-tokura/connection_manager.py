@@ -108,7 +108,7 @@ class ConnectionManager(QObject):
 
     def _start_telemetry(self):
         """Start telemetry polling."""
-        self._telemetry_poller = TelemetryPoller(self._config['car_ip'])
+        self._telemetry_poller = TelemetryPoller(self._config['car_ip'], interval_ms=200)
         self._telemetry_poller.error.connect(lambda e: self._log("TELEMETRY", f"Error: {e[:60]}"))
         self._telemetry_poller.data_received.connect(self.telemetry_data.emit)
         self._telemetry_poller.start()
